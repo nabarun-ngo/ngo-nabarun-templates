@@ -9,6 +9,10 @@ on:
         required: false
         type: string
         default: 'target'
+      files_to_copy:
+        required: false
+        type: string
+        default: ''
     outputs:
       jar_path:
         description: "Path of the JAR file"
@@ -49,5 +53,25 @@ jobs:
           JAR_PATH=$(find ${{ inputs.target_folder }} -name "*.jar" | grep -v "sources.jar" | grep -v "javadoc.jar")
           echo "jar_path=${JAR_PATH}" >> $GITHUB_OUTPUT
           echo "JAR file path: ${JAR_PATH}"
+      
+      - name: Copy Files to ${{ inputs.target_folder }} folder
+        if: ${{ inputs.files_to_copy != '' }}
+        run: |
+          # Convert the comma-separated list into an array
+          IFS=',' read -r -a FILES <<< "${{ inputs.files_to_copy }}"
+          TARGET_DIR="${{ inputs.target_folder }}"
+
+          # Create the target directory if it doesn't exist
+          mkdir -p "$TARGET_DIR"
+
+          # Iterate over the files array and copy them
+          for FILE in "${FILES[@]}"; do
+            if [ -f "$FILE" ]; then
+              echo "Copying $FILE to $TARGET_DIR"
+              cp "$FILE" "$TARGET_DIR"
+            else
+              echo "File $FILE does not exist. Skipping..."
+            fi
+          done
 
      
