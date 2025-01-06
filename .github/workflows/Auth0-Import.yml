@@ -1,1 +1,20 @@
-
+name: Auth0 Import Data from Google Drive
+on:
+  workflow_call:
+    inputs:
+      branch_name:
+        required: true
+        type: string
+      target_folder:
+        required: true
+        type: string
+    secrets:
+      auth0_secrets:
+        required: true
+jobs:
+  build_jar:
+    name: 'Checkout Repo and Build JAR'
+    uses: nabarun-ngo/ngo-nabarun-devops/.github/workflows/Build-JAR.yml@main
+    with:
+      branch_name : ${{ inputs.branch_name }}
+      target_folder: ${{ inputs.target_folder }}
