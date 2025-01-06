@@ -35,7 +35,7 @@ on:
       app_doppler_service_token:
         required: true
 jobs:
-  triage:
+  build-and-deploy:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository | tag ${{ inputs.tag_name }}
@@ -96,7 +96,10 @@ jobs:
           promote: true
           deliverables: ${{ env.JAR_PATH }}
           flags: '--appyaml=${{ inputs.gae_app_yaml_path }}'
-      
+  
+  clean-gcp-resources:
+    runs-on: ubuntu-latest
+    steps:     
       - name: Encode Variable to Base64
         id: encode
         run: |
