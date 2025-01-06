@@ -23,7 +23,7 @@ jobs:
         uses: k0staa/download-gdrive-file-action@v1
         with:
           service-account-key-json: ${{ secrets.gcp_service_account }}
-          download-file-name: 'Documents/Application_Access_Management_v3.xlsx'
+          download-file-name: 'Application_Access_Management_v3.xlsx'
           
       - name: Checkout repository | Branch ${{ inputs.branch_name }}
         uses: actions/checkout@v4
