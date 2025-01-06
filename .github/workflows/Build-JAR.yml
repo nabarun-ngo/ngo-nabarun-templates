@@ -20,6 +20,7 @@ on:
    
 jobs:
   build-jar:
+    name: 'Checkout Repo and Build JAR'
     runs-on: ubuntu-latest
     outputs:
       jar_path: ${{ steps.get-jar-path.outputs.jar_path }}
