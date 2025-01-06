@@ -34,20 +34,41 @@ on:
         required: true
       app_doppler_service_token:
         required: true
-jobs:
-  build_jar:
-    name: 'Checkout Repo and Build JAR'
-    uses: nabarun-ngo/ngo-nabarun-devops/.github/workflows/Build-JAR.yml@main
-    with:
-      branch_name : ${{ inputs.tag_name }}
-      target_folder: ${{ inputs.target_folder }}
-      files_to_copy: ${{ inputs.gae_app_yaml_path }}
-      
-  deploy_to_gcp:
-    name: 'Deploy JAR to GCP App Engine'
+jobs:  
+  build_and_deploy_to_gcp:
+    name: 'Build and Deploy to GCP App Engine'
     runs-on: ubuntu-latest
-    needs: build_jar
     steps:
+      - name: Checkout repository | Tag ${{ inputs.tag_name }}
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag_name }}
+
+      - name: Set up Java
+        uses: actions/setup-java@v2
+        with:
+          java-version: '17' 
+          distribution: 'adopt'
+
+      - name: Cache Maven dependencies
+        uses: actions/cache@v3
+        with:
+          path: ~/.m2/repository
+          key: maven-${{ hashFiles('**/pom.xml') }}
+          restore-keys: |
+            maven-   
+        
+      - name: Build with Maven
+        run: |
+          mvn clean package
+          
+      - name: Get JAR file path
+        id: get-jar-path
+        run: |
+          JAR_PATH=$(find ${{ inputs.target_folder }} -name "*.jar" | grep -v "sources.jar" | grep -v "javadoc.jar")
+          echo "jar_path=${JAR_PATH}" >> $GITHUB_ENV
+          echo "JAR file path: ${JAR_PATH}"
+          
       - name: Setup Google Cloud CLI
         uses: google-github-actions/auth@v2
         with:
@@ -58,7 +79,7 @@ jobs:
       - name: Setup Application Variables
         uses: ikuanyshbekov/app-yaml-env-compiler@v1.0
         with:
-          path: '${{ inputs.target_folder }}/${{ inputs.gae_app_yaml_path }}'
+          path: '${{ inputs.gae_app_yaml_path }}'
         env:
          ENVIRONMENT: ${{ inputs.app_env }} 
          DOPPLER_PROJECT_NAME: ${{ inputs.app_doppler_project_name }}
@@ -72,12 +93,12 @@ jobs:
           project_id: ${{ inputs.gcp_project_id }}
           credentials: ${{ secrets.gcp_service_account }}
           promote: true
-          deliverables: ${{ needs.build_jar.outputs.jar_path }}
-          flags: '--appyaml=${{ inputs.target_folder }}/${{ inputs.gae_app_yaml_path }}'
+          deliverables: ${{ env.jar_path }}
+          flags: '--appyaml=${{ inputs.gae_app_yaml_path }}'
   
   clean_gcp_resources:
     runs-on: ubuntu-latest
-    needs: [build_jar,deploy_to_gcp]
+    needs: [build_and_deploy_to_gcp]
     steps:     
       - name: Encode Variable to Base64
         id: encode
