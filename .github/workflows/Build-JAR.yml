@@ -1,0 +1,53 @@
+name: Build and Create JAR
+on:
+  workflow_call:
+    inputs:
+      branch_name:
+        required: true
+        type: string
+      target_folder:
+        required: false
+        type: string
+        default: 'target'
+    outputs:
+      jar_path:
+        description: "Path of the JAR file"
+        value: ${{ jobs.build-jar.outputs.jar_path }}
+   
+jobs:
+  build-jar:
+    runs-on: ubuntu-latest
+    outputs:
+      jar_path: ${{ steps.get-jar-path.outputs.jar_path }}
+    steps:
+      - name: Checkout repository | ${{ inputs.branch_name }}
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.branch_name }}
+
+      - name: Set up Java
+        uses: actions/setup-java@v2
+        with:
+          java-version: '17' 
+          distribution: 'adopt'
+
+      - name: Cache Maven dependencies
+        uses: actions/cache@v3
+        with:
+          path: ~/.m2/repository
+          key: maven-${{ hashFiles('**/pom.xml') }}
+          restore-keys: |
+            maven-   
+        
+      - name: Build with Maven
+        run: |
+          mvn clean package
+          
+      - name: Get JAR file path
+        id: get-jar-path
+        run: |
+          JAR_PATH=$(find ${{ inputs.target_folder }} -name "*.jar" | grep -v "sources.jar" | grep -v "javadoc.jar")
+          echo "jar_path=${JAR_PATH}" >> $GITHUB_OUTPUT
+          echo "JAR file path: ${JAR_PATH}"
+
+     
