@@ -39,6 +39,7 @@ jobs:
     
   create_release:
     name: 'Create Release'
+    needs: create_tag
     runs-on: ubuntu-latest
     steps:
       - name: Determine if prerelease
@@ -64,7 +65,7 @@ jobs:
         if: ${{ steps.determine_release_type.outputs.is_prerelease == 'false' }}
         uses: ncipollo/release-action@v1
         with:
-          tag: ${{ jobs.create_tag.outputs.tag_name }}
-          name: Release ${{ jobs.create_tag.outputs.tag_name }}
-          body: ${{ jobs.create_tag.outputs.changelog }}
+          tag: ${{ needs.create_tag.outputs.tag_name }}
+          name: Release ${{ needs.create_tag.outputs.tag_name }}
+          body: ${{ needs.create_tag.outputs.changelog }}
   
