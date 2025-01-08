@@ -1,30 +1,42 @@
-name: Auth0 Import Data from Google Drive
+name: Auth0 Import Data
 on:
   workflow_call:
     inputs:
       branch_name:
         required: true
         type: string
-      target_folder:
+      source: # Options 'google_drive', 'repository'
         required: true
         type: string
+      auth0_import_tenant:
+        required: true
+        type: string
+      auth0_resource_server:
+        required: true
+        type: string
+      input_file:
+        required: true
+        type: string
+      java_version:
+        required: false
+        type: string
+        default: '17'
+      target_folder:
+        required: false
+        type: string
+        default: 'target'
+      
     secrets:
       auth0_secrets:
         required: true
       gcp_service_account:
-        required: true
+        required: false
 
 jobs:
-  run_jar:
+  import_data:
     name: 'Download from GCP and Build JAR'
     runs-on: ubuntu-latest
-    steps:
-      - name: Download file X from Google Drive to default (./) directory
-        uses: k0staa/download-gdrive-file-action@v1
-        with:
-          service-account-key-json: ${{ secrets.gcp_service_account }}
-          download-file-name: 'Application_Access_Management_v3.xlsx'
-          
+    steps:     
       - name: Checkout repository | Branch ${{ inputs.branch_name }}
         uses: actions/checkout@v4
         with:
@@ -33,7 +45,7 @@ jobs:
       - name: Set up Java
         uses: actions/setup-java@v2
         with:
-          java-version: '17' 
+          java-version: ${{ inputs.java_version }} 
           distribution: 'adopt'
 
       - name: Cache Maven dependencies
@@ -54,3 +66,14 @@ jobs:
           JAR_PATH=$(find ${{ inputs.target_folder }} -name "*.jar" | grep -v "sources.jar" | grep -v "javadoc.jar")
           echo "jar_path=${JAR_PATH}" >> $GITHUB_ENV
           echo "JAR file path: ${JAR_PATH}"
+          
+      - name: Download file ${{ inputs.input_file }} from Google Drive
+        uses: k0staa/download-gdrive-file-action@v1
+        if: ${{ inputs.source == 'google_drive' }}
+        with:
+          service-account-key-json: ${{ secrets.gcp_service_account }}
+          download-file-name: ${{ inputs.input_file }}
+
+      - name: Import Data from ${{ inputs.source }}
+        run: |
+          java -jar ${{ env.jar_path }} auth0-import-data -d ${{ inputs.auth0_import_tenant }} -i ${{ inputs.input_file }} -r ${{ inputs.auth0_resource_server }} -c '${{ secrets.auth0_secrets }}'
