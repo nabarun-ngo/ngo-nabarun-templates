@@ -95,5 +95,5 @@ jobs:
       - name: Dry run Verify Files
         if: ${{ inputs.dry_run == true }}
         run: |
-          echo "Files in the root directory recursively:"
-          find / -type f
+          echo "Files in the current directory and subdirectories:"
+          find . -type f
