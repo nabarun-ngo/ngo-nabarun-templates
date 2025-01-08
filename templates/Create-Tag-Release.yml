@@ -1,0 +1,73 @@
+name: Create Tag & Release 
+on:
+  workflow_call:
+     inputs:
+      source_branch:
+        required: true
+        type: string
+      pre_release_branches:
+         required: false
+         type: string
+         default: 'staging,stage'
+     outputs:
+      tag_name:
+        value: ${{ jobs.create_tag.outputs.tag_name }}
+        
+permissions:
+      contents: write    
+      
+jobs:
+  create_tag:
+    name: 'Create Tag'
+    runs-on: ubuntu-latest
+    outputs:
+      tag_name: ${{ steps.tag_version.outputs.new_tag }}
+      bump_type: ${{ steps.tag_version.outputs.release_type }} 
+      changelog: ${{ steps.tag_version.outputs.changelog }}
+      is_prerelease: ${{ steps.tag_version.outputs.is_prerelease }}
+      
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+         ref: ${{ inputs.source_branch }}
+         
+      - name: Bump version and push tag
+        id: tag_version
+        uses: mathieudutour/github-tag-action@v6.2
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          pre_release_branches: ${{ inputs.pre_release_branches }}
+          
+      - name: Determine if prerelease
+        id: determine_release_type
+        run: |
+          current_branch="${{ inputs.source_branch }}"
+          pre_release_branches="${{ inputs.pre_release_branches }}"
+          
+          # Convert comma-separated branches to an array
+          IFS=',' read -ra branches <<< "$pre_release_branches"
+          
+          is_prerelease="false"
+          for branch in "${branches[@]}"; do
+            if [[ "$current_branch" == "$branch" ]]; then
+              is_prerelease="true"
+              break
+            fi
+          done
+
+          echo "is_prerelease=$is_prerelease" >> $GITHUB_OUTPUT
+    
+  create_release:
+    name: 'Create Release'
+    needs: create_tag
+    if: ${{ needs.create_tag.outputs.is_prerelease == 'false' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create a GitHub release
+        uses: ncipollo/release-action@v1
+        with:
+          tag: ${{ needs.create_tag.outputs.tag_name }}
+          name: Release ${{ needs.create_tag.outputs.tag_name }}
+          body: ${{ needs.create_tag.outputs.changelog }}
+  
