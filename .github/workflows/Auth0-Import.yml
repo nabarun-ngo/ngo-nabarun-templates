@@ -38,7 +38,7 @@ on:
 
 jobs:
   import_data:
-    name: 'Download from GCP and Build JAR'
+    name: 'Import Data to Auth0'
     runs-on: ubuntu-latest
     steps:     
       - name: Checkout repository | Branch ${{ inputs.branch_name }}
@@ -78,7 +78,7 @@ jobs:
           service-account-key-json: ${{ secrets.gcp_service_account }}
           download-file-name: ${{ inputs.input_file }}
 
-      - name: Import Data from ${{ inputs.source }}
+      - name: Import Data to Auth0 from ${{ inputs.source }}
         if: ${{ inputs.dry_run == false }}
         run: |
           java -jar ${{ env.jar_path }} auth0-import-data -d ${{ inputs.auth0_import_tenant }} -i ${{ inputs.input_file }} -r ${{ inputs.auth0_resource_server }} -c '${{ secrets.auth0_secrets }}'
@@ -91,3 +91,9 @@ jobs:
           echo "Auth0 Import Tenant: ${{ inputs.auth0_import_tenant }}"
           echo "Input File: ${{ inputs.input_file }}"
           echo "Auth0 Resource Server: ${{ inputs.auth0_resource_server }}"
+          
+      - name: Dry run Verify Files
+        if: ${{ inputs.dry_run == true }}
+        run: |
+          echo "Files in the root directory recursively:"
+          find / -type f
