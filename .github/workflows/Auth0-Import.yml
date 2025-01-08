@@ -81,7 +81,7 @@ jobs:
       - name: Import Data to Auth0 from ${{ inputs.source }}
         if: ${{ inputs.dry_run == false }}
         run: |
-          java -jar ${{ env.jar_path }} auth0-import-data -d ${{ inputs.auth0_import_tenant }} -i ${{ inputs.input_file }} -r ${{ inputs.auth0_resource_server }} -c '${{ secrets.auth0_secrets }}'
+          java -jar ${{ env.jar_path }} auth0-import-data -d ${{ inputs.auth0_import_tenant }} -i ${{ inputs.input_file }} -rs ${{ inputs.auth0_resource_server }} -c '${{ secrets.auth0_secrets }}'
       
       - name: Dry Run Variables Output
         if: ${{ inputs.dry_run == true }}
