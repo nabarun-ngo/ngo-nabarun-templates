@@ -24,6 +24,8 @@ jobs:
       tag_name: ${{ steps.tag_version.outputs.new_tag }}
       bump_type: ${{ steps.tag_version.outputs.release_type }} 
       changelog: ${{ steps.tag_version.outputs.changelog }}
+      is_prerelease: ${{ steps.tag_version.outputs.is_prerelease }}
+      
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -36,12 +38,7 @@ jobs:
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           pre_release_branches: ${{ inputs.pre_release_branches }}
-    
-  create_release:
-    name: 'Create Release'
-    needs: create_tag
-    runs-on: ubuntu-latest
-    steps:
+          
       - name: Determine if prerelease
         id: determine_release_type
         run: |
@@ -60,9 +57,14 @@ jobs:
           done
 
           echo "is_prerelease=$is_prerelease" >> $GITHUB_OUTPUT
-          
+    
+  create_release:
+    name: 'Create Release'
+    needs: create_tag
+    if: ${{ needs.create_tag.outputs.is_prerelease == 'false' }}
+    runs-on: ubuntu-latest
+    steps:
       - name: Create a GitHub release
-        if: ${{ steps.determine_release_type.outputs.is_prerelease == 'false' }}
         uses: ncipollo/release-action@v1
         with:
           tag: ${{ needs.create_tag.outputs.tag_name }}
