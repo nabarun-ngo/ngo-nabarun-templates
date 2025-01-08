@@ -23,6 +23,7 @@ jobs:
     outputs:
       tag_name: ${{ steps.tag_version.outputs.new_tag }}
       bump_type: ${{ steps.tag_version.outputs.release_type }} 
+      changelog: ${{ steps.tag_version.outputs.changelog }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -63,7 +64,7 @@ jobs:
         if: ${{ steps.determine_release_type.outputs.is_prerelease == 'false' }}
         uses: ncipollo/release-action@v1
         with:
-          tag: ${{ steps.tag_version.outputs.new_tag }}
-          name: Release ${{ steps.tag_version.outputs.new_tag }}
-          body: ${{ steps.tag_version.outputs.changelog }}
+          tag: ${{ jobs.create_tag.outputs.tag_name }}
+          name: Release ${{ jobs.create_tag.outputs.tag_name }}
+          body: ${{ jobs.create_tag.outputs.changelog }}
   
