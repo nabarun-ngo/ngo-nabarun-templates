@@ -38,6 +38,7 @@ jobs:
       - name: Checkout repository | Branch ${{ inputs.branch_name }}
         uses: actions/checkout@v4
         with:
+          repository: nabarun-ngo/ngo-nabarun-tools
           ref: ${{ inputs.branch_name }}
 
       - name: Set up Java
