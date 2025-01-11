@@ -77,6 +77,11 @@ jobs:
         with:
           name: test-results
           path: target/cucumber.json
+      
+      - name: Test Result
+        run: |
+         echo "${{ failure() && "Test Failed" || "Test Passed" }}"
+         exit ${{ failure() && 1 || 0 }}
           
   upload_test_result:
     name: 'Upload Test Results'
