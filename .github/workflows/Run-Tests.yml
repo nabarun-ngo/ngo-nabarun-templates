@@ -65,17 +65,6 @@ jobs:
           key: maven-${{ hashFiles('**/pom.xml') }}
           restore-keys: |
             maven-   
-        
-      - name: Build with Maven
-        run: |
-          mvn clean package -DskipTests
-          
-      - name: Get JAR file path
-        id: get-jar-path
-        run: |
-          JAR_PATH=$(find ${{ inputs.target_folder }} -name "*.jar" | grep -v "sources.jar" | grep -v "javadoc.jar")
-          echo "jar_path=${JAR_PATH}" >> $GITHUB_ENV
-          echo "JAR file path: ${JAR_PATH}"
 
       - name: Run Cucumber Tests
         run: |
