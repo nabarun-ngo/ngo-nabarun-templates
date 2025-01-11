@@ -1,0 +1,115 @@
+name: Run Automated Test
+on:
+  workflow_call:
+    inputs:
+      test_env:
+        required: true
+        type: string
+      test_doppler_project_name:
+        required: true
+        type: string
+      java_version:
+        required: false
+        type: string
+        default: '17'
+      target_folder:
+        required: false
+        type: string
+        default: 'target'
+      repository_name:
+        required: false
+        type: string
+        default: 'nabarun-ngo/ngo-nabarun-test'
+      branch_name:
+        required: false
+        type: string
+        default: 'main'
+      
+    secrets:
+      test_doppler_service_token:
+        required: true
+      qmetry_api_key:
+        required: true
+        
+jobs:
+  run_test:
+    name: 'Run Test'
+    runs-on: ubuntu-latest
+    steps:     
+      - name: Checkout repository | Branch ${{ inputs.branch_name }}
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ inputs.repository_name }}
+          ref: ${{ inputs.branch_name }}
+
+      - name: Set up Java
+        uses: actions/setup-java@v2
+        with:
+          java-version: ${{ inputs.java_version }} 
+          distribution: 'adopt'
+
+      - name: Cache Maven dependencies
+        uses: actions/cache@v3
+        with:
+          path: ~/.m2/repository
+          key: maven-${{ hashFiles('**/pom.xml') }}
+          restore-keys: |
+            maven-   
+        
+      - name: Build with Maven
+        run: |
+          mvn clean package
+          
+      - name: Get JAR file path
+        id: get-jar-path
+        run: |
+          JAR_PATH=$(find ${{ inputs.target_folder }} -name "*.jar" | grep -v "sources.jar" | grep -v "javadoc.jar")
+          echo "jar_path=${JAR_PATH}" >> $GITHUB_ENV
+          echo "JAR file path: ${JAR_PATH}"
+
+      - name: Run Cucumber Tests
+        run: |
+          echo "Running tests with tags: ${{ github.event.inputs.cucumber_tags }}"
+          mvn test -Dcucumber.filter.tags="${{ github.event.inputs.cucumber_tags }}" -Denv=${{ env.ENV }}
+        continue-on-error: true
+
+      - name: Upload Test Results
+        uses: actions/upload-artifact@v3
+        with:
+          name: test-results
+          path: target/cucumber.json
+          
+  upload_test_result:
+    name: 'Upload Test Results'
+    runs-on: ubuntu-latest
+    needs: run_test
+    steps:
+      - name: Download artifact
+        uses: actions/download-artifact@v3
+        with:
+          name: test-results
+          
+      - name: Generate Upload URL
+        id: generate_url
+        uses: fjogeleit/http-request-action@v1.5
+        with:
+          url: 'https://qtmcloud.qmetry.com/rest/api/automation/importresult'
+          method: POST
+          headers: '{"Content-Type": "application/json","apiKey":"${{ inputs.qmetry_api_key }}"}'
+
+      - name: Extract URL from Response
+        run: |
+          echo "Parsing the response from the 'Generate URL' API"
+          RESPONSE_JSON="${{ steps.generate_url.outputs.response }}"
+          # Extract a specific field (e.g., 'id') from the response
+          URL=$(echo "${RESPONSE_JSON}" | jq -r '.url')
+          echo "Extracted URL: $URL"
+          echo "upload_url=$URL" >> $GITHUB_ENV
+
+      - name: Upload Test result
+        uses: fjogeleit/http-request-action@v1.5
+        with:
+          url: ${{ env.upload_url }}
+          method: PUT
+          headers: '{"Content-Type": "multipart/form-data"}'
+          file: cucumber.json
