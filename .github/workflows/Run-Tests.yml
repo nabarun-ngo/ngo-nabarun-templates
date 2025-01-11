@@ -80,7 +80,7 @@ jobs:
       - name: Run Cucumber Tests
         run: |
           echo "Running tests with tags: ${{ inputs.test_cucumber_tags }}"
-          mvn clean test -Dcucumber.filter.tags="${{ inputs.test_cucumber_tags }}" -DENVIRONMENT=${{ inputs.test_env }} -DCONFIG_SOURCE=doppler -DDOPPLER_PROJECT_NAME=${{ inputs.test_doppler_project_name }} -DDOPPLER_SERVICE_TOKEN=${{ inputs.test_doppler_service_token }}
+          mvn clean test -Dcucumber.filter.tags="${{ inputs.test_cucumber_tags }}" -DENVIRONMENT=${{ inputs.test_env }} -DCONFIG_SOURCE=doppler -DDOPPLER_PROJECT_NAME=${{ inputs.test_doppler_project_name }} -DDOPPLER_SERVICE_TOKEN=${{ secrets.test_doppler_service_token }}
         continue-on-error: true
 
       - name: Upload Test Results
