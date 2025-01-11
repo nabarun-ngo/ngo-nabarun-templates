@@ -23,7 +23,7 @@ on:
       branch_name:
         required: false
         type: string
-        default: 'main'
+        default: 'master'
       
     secrets:
       test_doppler_service_token:
