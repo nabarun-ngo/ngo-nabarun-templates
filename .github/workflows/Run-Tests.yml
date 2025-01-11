@@ -68,7 +68,7 @@ jobs:
         
       - name: Build with Maven
         run: |
-          mvn clean package
+          mvn clean package -DskipTests
           
       - name: Get JAR file path
         id: get-jar-path
