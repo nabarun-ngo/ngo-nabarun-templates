@@ -110,11 +110,18 @@ jobs:
           method: POST
           customHeaders: '{"Content-Type": "application/json","apiKey":"${{ secrets.qmetry_api_key }}"}'
           data: '{ "format": "cucumber", "testCycleToReuse": "${{ inputs.test_cycle }}", "attachFile": true, "isZip": false, "environment": "${{ inputs.test_env }}", "matchTestSteps": true }'
-
-      - name: Upload Test result
-        uses: fjogeleit/http-request-action@v1
-        with:
-          url: ${{ fromJson(steps.generate_url.outputs.response).url }}
-          method: PUT
-          customHeaders: '{"Content-Type": "multipart/form-data"}'
-          file: ./cucumber.json
+        
+      - name: Upload file using PUT request
+        run: |
+          curl -X PUT \
+            -H "Content-Type: multipart/form-data" \
+            -H "User-Agent: PostmanRuntime/7.43.0" \
+            -d @cucumber.json \
+            '${{ fromJson(steps.generate_url.outputs.response).url }}'
+      # - name: Upload Test result
+      #   uses: fjogeleit/http-request-action@v1
+      #   with:
+      #     url: ${{ fromJson(steps.generate_url.outputs.response).url }}
+      #     method: PUT
+      #     customHeaders: '{"Content-Type": "multipart/form-data"}'
+      #     file: ./cucumber.json
