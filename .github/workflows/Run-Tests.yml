@@ -108,7 +108,7 @@ jobs:
         with:
           url: 'https://qtmcloud.qmetry.com/rest/api/automation/importresult'
           method: POST
-          headers: '{"Content-Type": "application/json","apiKey":"${{ secrets.qmetry_api_key }}"}'
+          customHeaders: '{"Content-Type": "application/json","apiKey":"${{ secrets.qmetry_api_key }}"}'
           data: '{ "format": "cucumber", "testCycleToReuse": "${{ inputs.test_cycle }}", "attachFile": true, "isZip": false, "environment": "${{ inputs.test_env }}", "matchTestSteps": true }'
 
       - name: Extract URL from Response
