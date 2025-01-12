@@ -1,0 +1,17 @@
+name: Smoke Test
+
+on:
+  repository_dispatch:
+    types:
+      - backend-deployed
+      - frontend-deployed
+
+jobs:
+  smoke-test:
+    runs-on: ubuntu-latest
+    if: github.event.action == 'backend-deployed' || github.event.action == 'frontend-deployed'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      # Add your smoke test steps here
