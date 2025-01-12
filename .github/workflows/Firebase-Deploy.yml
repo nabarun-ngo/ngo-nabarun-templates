@@ -8,9 +8,9 @@ on:
       firebase_project_id:
         required: true
         type: string
-      is_prod_env:
+      npm_run_command:
         required: true
-        type: boolean
+        type: string
     secrets:
       firebase_service_account:
         required: true
@@ -33,7 +33,7 @@ jobs:
           fields: '{"version": "${{ inputs.tag_name }}"}'
           
       - name: Build NPM
-        run: npm ci --legacy-peer-deps && npm run ${{ input.is_prod_env && "build" || "buildstage" }}
+        run: npm ci --legacy-peer-deps && npm run ${{ input.npm_run_command }}
 
       - name: Deploy to Firebase
         uses: FirebaseExtended/action-hosting-deploy@v0
