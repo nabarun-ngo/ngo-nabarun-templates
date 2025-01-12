@@ -44,7 +44,7 @@ on:
 jobs:
   run_test:
     name: 'Run Test'
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     steps:     
       - name: Checkout repository | Branch ${{ inputs.branch_name }}
         uses: actions/checkout@v4
@@ -70,7 +70,6 @@ jobs:
         run: |
           echo "Running tests with tags: ${{ inputs.test_cucumber_tags }}"
           mvn clean test -Dcucumber.filter.tags="${{ inputs.test_cucumber_tags }}" -DENVIRONMENT=${{ inputs.test_env }} -DCONFIG_SOURCE=doppler -DDOPPLER_PROJECT_NAME=${{ inputs.test_doppler_project_name }} -DDOPPLER_SERVICE_TOKEN=${{ secrets.test_doppler_service_token }}
-        continue-on-error: true
 
       - name: Upload Test Results
         uses: actions/upload-artifact@v3
@@ -85,7 +84,7 @@ jobs:
   upload_test_result:
     name: 'Upload Test Results'
     if: ${{ inputs.upload_result == true }}
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     needs: run_test
     steps:
       - name: Download artifact
