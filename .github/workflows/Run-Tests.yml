@@ -111,19 +111,10 @@ jobs:
           customHeaders: '{"Content-Type": "application/json","apiKey":"${{ secrets.qmetry_api_key }}"}'
           data: '{ "format": "cucumber", "testCycleToReuse": "${{ inputs.test_cycle }}", "attachFile": true, "isZip": false, "environment": "${{ inputs.test_env }}", "matchTestSteps": true }'
 
-      - name: Extract URL from Response
-        run: |
-          echo "Parsing the response from the 'Generate URL' API"
-          RESPONSE_JSON="${{ steps.generate_url.outputs.response }}"
-          # Extract a specific field (e.g., 'id') from the response
-          URL=$(echo "${RESPONSE_JSON}" | jq -r '.url')
-          echo "Extracted URL: $URL"
-          echo "upload_url=$URL" >> $GITHUB_ENV
-
       - name: Upload Test result
         uses: fjogeleit/http-request-action@v1
         with:
-          url: ${{ env.upload_url }}
+          url: ${{ fromJson(steps.generate_url.outputs.response).url }}
           method: PUT
           headers: '{"Content-Type": "multipart/form-data"}'
           file: cucumber.json
