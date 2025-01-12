@@ -14,9 +14,11 @@ on:
       app_ui_version:
         required: false
         type: string
+        default: 'latest'
       app_server_version:
         required: false
         type: string
+        default: 'latest'
       java_version:
         required: false
         type: string
