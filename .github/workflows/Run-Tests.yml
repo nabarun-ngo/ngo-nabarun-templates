@@ -117,4 +117,4 @@ jobs:
           url: ${{ fromJson(steps.generate_url.outputs.response).url }}
           method: PUT
           headers: '{"Content-Type": "multipart/form-data"}'
-          file: cucumber.json
+          file: ./cucumber.json
