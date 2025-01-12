@@ -45,7 +45,10 @@ jobs:
   run_test:
     name: 'Run Test'
     runs-on: ubuntu-latest
-    steps:     
+    steps:   
+      - uses: browser-actions/setup-chrome@v1
+      - run: chrome --version
+      
       - name: Checkout repository | Branch ${{ inputs.branch_name }}
         uses: actions/checkout@v4
         with:
