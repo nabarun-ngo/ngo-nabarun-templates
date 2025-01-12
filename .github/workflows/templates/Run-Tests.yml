@@ -11,6 +11,12 @@ on:
       test_cucumber_tags:
         required: true
         type: string
+      app_ui_version:
+        required: false
+        type: string
+      app_server_version:
+        required: false
+        type: string
       java_version:
         required: false
         type: string
@@ -109,7 +115,7 @@ jobs:
           url: 'https://qtmcloud.qmetry.com/rest/api/automation/importresult'
           method: POST
           customHeaders: '{"Content-Type": "application/json","apiKey":"${{ secrets.qmetry_api_key }}"}'
-          data: '{ "format": "cucumber", "testCycleToReuse": "${{ inputs.test_cycle }}", "attachFile": true, "isZip": false, "environment": "${{ inputs.test_env }}", "matchTestSteps": true }'
+          data: '{ "format": "cucumber", "testCycleToReuse": "${{ inputs.test_cycle }}", "attachFile": true, "isZip": false, "environment": "${{ inputs.test_env }}", "matchTestSteps": true, "fields": { "testCaseExecution": { "customFields": [ { "name": "Server Version", "value": "${{ inputs.app_server_version }}" }, { "name": "UI Version", "value": "${{ inputs.app_ui_version }}" } ] } } }'
         
       - name: Upload file using PUT request
         run: |
@@ -118,10 +124,4 @@ jobs:
             -H "User-Agent: PostmanRuntime/7.43.0" \
             -d @cucumber.json \
             '${{ fromJson(steps.generate_url.outputs.response).url }}'
-      # - name: Upload Test result
-      #   uses: fjogeleit/http-request-action@v1
-      #   with:
-      #     url: ${{ fromJson(steps.generate_url.outputs.response).url }}
-      #     method: PUT
-      #     customHeaders: '{"Content-Type": "multipart/form-data"}'
-      #     file: ./cucumber.json
+      
