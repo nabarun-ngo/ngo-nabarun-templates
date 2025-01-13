@@ -14,6 +14,8 @@ on:
     secrets:
       firebase_service_account:
         required: true
+      repo_token:
+        required: true
      
 jobs:  
    build-and-deploy-prod:
@@ -38,7 +40,7 @@ jobs:
       - name: Deploy to Firebase
         uses: FirebaseExtended/action-hosting-deploy@v0
         with:
-          repoToken: ${{ secrets.GITHUB_TOKEN }}
+          repoToken: ${{ secrets.repo_token }}
           firebaseServiceAccount: '${{ secrets.firebase_service_account }}'
           channelId: live
           projectId: ${{ inputs.firebase_project_id }}
