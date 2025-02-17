@@ -17,6 +17,16 @@ on:
       input_file:
         required: true
         type: string
+      import_data:
+        required: true
+        type: boolean
+      import_user:
+        required: true
+        type: boolean
+      delete_old_user:
+        required: false
+        type: boolean
+        default: false
       java_version:
         required: false
         type: string
@@ -30,8 +40,9 @@ on:
         type: boolean
         default: false
       
+      
     secrets:
-      auth0_secrets:
+      doppler_secrets:
         required: true
       gcp_service_account:
         required: false
@@ -80,9 +91,14 @@ jobs:
           download-file-name: ${{ inputs.input_file }}
 
       - name: Import Data to Auth0 from ${{ inputs.source }}
-        if: ${{ inputs.dry_run == false }}
+        if: ${{ inputs.dry_run == false && inputs.import_data }}
         run: |
-          java -jar ${{ env.jar_path }} auth0-import-data -d ${{ inputs.auth0_import_tenant }} -i ${{ inputs.input_file }} -rs ${{ inputs.auth0_resource_server }} -c '${{ secrets.auth0_secrets }}'
+          java -jar ${{ env.jar_path }} auth0-import-data -d ${{ inputs.auth0_import_tenant }} -i ${{ inputs.input_file }} -rs ${{ inputs.auth0_resource_server }} -c '${{ secrets.doppler_secrets }}'
+      
+      - name: Import User to Auth0 from ${{ inputs.source }}
+        if: ${{ inputs.dry_run == false && inputs.import_user }}
+        run: |
+          java -jar ${{ env.jar_path }} auth0-import-users -d ${{ inputs.auth0_import_tenant }} -i ${{ inputs.input_file }} -r ${{ inputs.delete_old_user }} -c '${{ secrets.doppler_secrets }}'
       
       - name: Dry Run Variables Output
         if: ${{ inputs.dry_run == true }}
@@ -92,7 +108,10 @@ jobs:
           echo "Auth0 Import Tenant: ${{ inputs.auth0_import_tenant }}"
           echo "Input File: ${{ inputs.input_file }}"
           echo "Auth0 Resource Server: ${{ inputs.auth0_resource_server }}"
-          
+          echo "Is Import data: ${{ inputs.import_data }}"
+          echo "Is Import User: ${{ inputs.import_user }}"
+          echo "Delete Old User: ${{ inputs.delete_old_user }}"
+
       - name: Dry run Verify Files
         if: ${{ inputs.dry_run == true }}
         run: |
