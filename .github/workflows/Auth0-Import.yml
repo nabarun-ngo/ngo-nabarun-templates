@@ -11,9 +11,6 @@ on:
       auth0_import_tenant:
         required: true
         type: string
-      auth0_resource_server:
-        required: true
-        type: string
       input_file:
         required: true
         type: string
@@ -39,8 +36,6 @@ on:
         required: false
         type: boolean
         default: false
-      
-      
     secrets:
       doppler_secrets:
         required: true
@@ -93,7 +88,7 @@ jobs:
       - name: Import Data to Auth0 from ${{ inputs.source }}
         if: ${{ inputs.dry_run == false && inputs.import_data }}
         run: |
-          java -jar ${{ env.jar_path }} auth0-import-data -d ${{ inputs.auth0_import_tenant }} -i ${{ inputs.input_file }} -rs ${{ inputs.auth0_resource_server }} -c '${{ secrets.doppler_secrets }}'
+          java -jar ${{ env.jar_path }} auth0-import-data -d ${{ inputs.auth0_import_tenant }} -i ${{ inputs.input_file }} -c '${{ secrets.doppler_secrets }}'
       
       - name: Import User to Auth0 from ${{ inputs.source }}
         if: ${{ inputs.dry_run == false && inputs.import_user }}
