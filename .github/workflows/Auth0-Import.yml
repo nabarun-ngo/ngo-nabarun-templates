@@ -24,6 +24,9 @@ on:
         required: false
         type: boolean
         default: false
+      doppler_project:
+        required: true
+        type: string
       java_version:
         required: false
         type: string
@@ -37,7 +40,7 @@ on:
         type: boolean
         default: false
     secrets:
-      doppler_secrets:
+      doppler_service_token:
         required: true
       gcp_service_account:
         required: false
@@ -88,12 +91,12 @@ jobs:
       - name: Import Data to Auth0 from ${{ inputs.source }}
         if: ${{ inputs.dry_run == false && inputs.import_data }}
         run: |
-          java -jar ${{ env.jar_path }} auth0-import-data -d ${{ inputs.auth0_import_tenant }} -i ${{ inputs.input_file }} -c '${{ secrets.doppler_secrets }}'
+          java -jar ${{ env.jar_path }} auth0-import-data -d ${{ inputs.auth0_import_tenant }} -i ${{ inputs.input_file }} -p ${{ inputs.doppler_project }} --destToken '${{ secrets.doppler_service_token }}'
       
       - name: Import User to Auth0 from ${{ inputs.source }}
         if: ${{ inputs.dry_run == false && inputs.import_user }}
         run: |
-          java -jar ${{ env.jar_path }} auth0-import-users -d ${{ inputs.auth0_import_tenant }} -i ${{ inputs.input_file }} -r ${{ inputs.delete_old_user }} -c '${{ secrets.doppler_secrets }}'
+          java -jar ${{ env.jar_path }} auth0-import-users -d ${{ inputs.auth0_import_tenant }} -i ${{ inputs.input_file }} -r ${{ inputs.delete_old_user }} -p ${{ inputs.doppler_project }} --destToken '${{ secrets.doppler_service_token }}'
       
       - name: Dry Run Variables Output
         if: ${{ inputs.dry_run == true }}
