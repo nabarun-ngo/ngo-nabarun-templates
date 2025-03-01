@@ -1,14 +1,14 @@
-name: Auth0 Sync Data
+name: Firebase Sync Data
 on:
   workflow_call:
     inputs:
       branch_name:
         required: true
         type: string
-      auth0_source_tenant:
+      firebase_source_env:
         required: true
         type: string
-      auth0_dest_tenant:
+      firebase_dest_env:
         required: true
         type: string
       doppler_project:
@@ -34,8 +34,8 @@ on:
         required: true
         
 jobs:
-  sync_data:
-    name: 'Sync Data between Auth0'
+  sync_remote_config:
+    name: 'Sync Data between Firebase Remote Config'
     runs-on: ubuntu-latest
     steps:     
       - name: Checkout repository | Branch ${{ inputs.branch_name }}
@@ -69,10 +69,10 @@ jobs:
           echo "jar_path=${JAR_PATH}" >> $GITHUB_ENV
           echo "JAR file path: ${JAR_PATH}"
 
-      - name: Sync Data from ${{ inputs.auth0_source_tenant }} to ${{ inputs.auth0_dest_tenant }} tenant
+      - name: Sync Data from ${{ inputs.firebase_source_env }} to ${{ inputs.firebase_dest_env }} tenant
         if: ${{ inputs.dry_run == false }}
         run: |
-          java -jar ${{ env.jar_path }} auth0-sync-tenants -s ${{ inputs.auth0_source_tenant }} -d ${{ inputs.auth0_dest_tenant }} -p ${{ inputs.doppler_project }} --sourceToken '${{ secrets.doppler_service_token_source }}' --destToken '${{ secrets.doppler_service_token_dest }}' 
+          java -jar ${{ env.jar_path }} firebase-sync-remoteconfigs -s ${{ inputs.firebase_source_env }} -d ${{ inputs.firebase_source_env }} -p ${{ inputs.doppler_project }} --sourceToken '${{ secrets.doppler_service_token_source }}' --destToken '${{ secrets.doppler_service_token_dest }}' 
       
       - name: Dry Run Variables Output
         if: ${{ inputs.dry_run == true }}
