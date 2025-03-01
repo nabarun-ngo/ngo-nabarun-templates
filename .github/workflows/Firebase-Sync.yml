@@ -72,7 +72,7 @@ jobs:
       - name: Sync Data from ${{ inputs.firebase_source_env }} to ${{ inputs.firebase_dest_env }} tenant
         if: ${{ inputs.dry_run == false }}
         run: |
-          java -jar ${{ env.jar_path }} firebase-sync-remoteconfigs -s ${{ inputs.firebase_source_env }} -d ${{ inputs.firebase_source_env }} -p ${{ inputs.doppler_project }} --sourceToken '${{ secrets.doppler_service_token_source }}' --destToken '${{ secrets.doppler_service_token_dest }}' 
+          java -jar ${{ env.jar_path }} firebase-sync-remoteconfigs -s ${{ inputs.firebase_source_env }} -d ${{ inputs.firebase_dest_env }} -p ${{ inputs.doppler_project }} --sourceToken '${{ secrets.doppler_service_token_source }}' --destToken '${{ secrets.doppler_service_token_dest }}' 
       
       - name: Dry Run Variables Output
         if: ${{ inputs.dry_run == true }}
