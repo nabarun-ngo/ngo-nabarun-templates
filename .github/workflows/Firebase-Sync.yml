@@ -1,0 +1,88 @@
+name: Auth0 Sync Data
+on:
+  workflow_call:
+    inputs:
+      branch_name:
+        required: true
+        type: string
+      auth0_source_tenant:
+        required: true
+        type: string
+      auth0_dest_tenant:
+        required: true
+        type: string
+      doppler_project:
+        required: true
+        type: string
+      java_version:
+        required: false
+        type: string
+        default: '17'
+      target_folder:
+        required: false
+        type: string
+        default: 'target'
+      dry_run:
+        required: false
+        type: boolean
+        default: false
+      
+    secrets:
+      doppler_service_token_source:
+        required: true
+      doppler_service_token_dest:
+        required: true
+        
+jobs:
+  sync_data:
+    name: 'Sync Data between Auth0'
+    runs-on: ubuntu-latest
+    steps:     
+      - name: Checkout repository | Branch ${{ inputs.branch_name }}
+        uses: actions/checkout@v4
+        with:
+          repository: nabarun-ngo/ngo-nabarun-tools
+          ref: ${{ inputs.branch_name }}
+
+      - name: Set up Java
+        uses: actions/setup-java@v2
+        with:
+          java-version: ${{ inputs.java_version }} 
+          distribution: 'adopt'
+
+      - name: Cache Maven dependencies
+        uses: actions/cache@v3
+        with:
+          path: ~/.m2/repository
+          key: maven-${{ hashFiles('**/pom.xml') }}
+          restore-keys: |
+            maven-   
+        
+      - name: Build with Maven
+        run: |
+          mvn clean package
+          
+      - name: Get JAR file path
+        id: get-jar-path
+        run: |
+          JAR_PATH=$(find ${{ inputs.target_folder }} -name "*.jar" | grep -v "sources.jar" | grep -v "javadoc.jar")
+          echo "jar_path=${JAR_PATH}" >> $GITHUB_ENV
+          echo "JAR file path: ${JAR_PATH}"
+
+      - name: Sync Data from ${{ inputs.auth0_source_tenant }} to ${{ inputs.auth0_dest_tenant }} tenant
+        if: ${{ inputs.dry_run == false }}
+        run: |
+          java -jar ${{ env.jar_path }} auth0-sync-tenants -s ${{ inputs.auth0_source_tenant }} -d ${{ inputs.auth0_dest_tenant }} -p ${{ inputs.doppler_project }} --sourceToken '${{ secrets.doppler_service_token_source }}' --destToken '${{ secrets.doppler_service_token_dest }}' 
+      
+      - name: Dry Run Variables Output
+        if: ${{ inputs.dry_run == true }}
+        run: |
+          echo "Dry run mode enabled. Variables:"
+          echo "Source: ${{ inputs.auth0_source_tenant }}"
+          echo "Dest: ${{ inputs.auth0_dest_tenant }}"
+    
+      - name: Dry run Verify Files
+        if: ${{ inputs.dry_run == true }}
+        run: |
+          echo "Files in the current directory and subdirectories:"
+          find . -type f
