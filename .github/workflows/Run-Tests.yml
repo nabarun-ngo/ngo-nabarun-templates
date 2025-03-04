@@ -66,7 +66,6 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       run_id: ${{ steps.runId.outputs.run_id }}
-      test_cycle_summary: ${{ steps.runId.outputs.test_cycle_summary }}
     steps:   
       - name: Checkout repository | Branch ${{ inputs.branch_name }}
         uses: actions/checkout@v4
@@ -92,7 +91,6 @@ jobs:
         id: runId
         run: |
           echo "run_id=$((10000 + RANDOM % 90000))" >> $GITHUB_OUTPUT  
-          echo "test_cycle_summary=Automated Test Cycle - ${{ inputs.test_type }} | Run Id : ${{ steps.runId.outputs.run_id }}" >> $GITHUB_OUTPUT  
 
       - name: Run Cucumber Tests
         run: |
@@ -130,7 +128,12 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: test-results
-        
+      
+      - name: Generate Test Cycle Summary
+        id: testCycle
+        run: |
+          echo "test_cycle_summary=Automated Test Cycle - ${{ inputs.test_type }} | Run Id : ${{ needs.run_test.outputs.run_id }}" >> $GITHUB_OUTPUT  
+
       - name: Generate Upload URL
         id: generate_url
         uses: fjogeleit/http-request-action@v1
@@ -149,7 +152,7 @@ jobs:
               "fields": {
                 "testCycle": {
                   "folderId": ${{ inputs.test_cycle_folder }},
-                  "summary": "${{ needs.run_test.outputs.test_cycle_summary }}"
+                  "summary": "${{ steps.testCycle.outputs.test_cycle_summary }}"
                 },
                 "testCase": {
                   "priority": "High",
