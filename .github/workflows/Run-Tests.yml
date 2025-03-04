@@ -49,6 +49,14 @@ on:
         required: false
         type: string
         default: '1449797'
+      qmetry_project_id:
+        required: false
+        type: string
+        default: '10004'
+      jira_url:
+        required: false
+        type: string
+        default: 'https://ngonabarun.atlassian.net'
       upload_result:
         required: false
         type: boolean
@@ -58,6 +66,8 @@ on:
       test_doppler_service_token:
         required: true
       qmetry_api_key:
+        required: true
+      qmetry_open_api_key:
         required: true
         
 jobs:
@@ -187,4 +197,28 @@ jobs:
             -H "User-Agent: PostmanRuntime/7.43.0" \
             -d @cucumber.json \
             '${{ fromJson(steps.generate_url.outputs.response).url }}'
+    
+      - name: Retrieve Test Cycles 
+        id: retrieve_tc
+        uses: fjogeleit/http-request-action@v1
+        with:
+          url: 'https://qtmcloud.qmetry.com/rest/api/latest/testcycles/search/?fields=key'
+          method: POST
+          customHeaders: '{"Content-Type": "application/json","apiKey":"${{ secrets.qmetry_open_api_key }}"}'
+          data: |
+            {
+              "filter": {
+                "summary": "${{ steps.testCycle.outputs.test_cycle_summary }}",
+                "projectId": "${{ inputs.qmetry_project_id }}",
+                "isAutomated": true
+              }
+            }
+      
+      - name: Generate Execution URL
+        id: gen_exec_url
+        run: |
+          execution_url=${{ inputs.jira_url }}/plugins/servlet/ac/com.infostretch.QmetryTestManager/qtm4j-test-management?project.id=${{ inputs.qmetry_project_id }}#!/executionPage/${{ fromJson(steps.retrieve_tc.outputs.response).data[0].id }}
+          echo "execution_url=$execution_url" >> $GITHUB_OUTPUT  
+          echo "JIRA Qmetry Execution URL : $execution_url"
+      
       
