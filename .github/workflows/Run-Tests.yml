@@ -92,7 +92,7 @@ jobs:
         id: runId
         run: |
           echo "run_id=$((10000 + RANDOM % 90000))" >> $GITHUB_OUTPUT  
-          echo "test_cycle_summary=Automated Test Cycle - ${{ inputs.test_type }} | Run Id : $run_id" >> $GITHUB_OUTPUT  
+          echo "test_cycle_summary=Automated Test Cycle - ${{ inputs.test_type }} | Run Id : ${{ steps.runId.outputs.run_id }}" >> $GITHUB_OUTPUT  
 
       - name: Run Cucumber Tests
         run: |
