@@ -221,7 +221,6 @@ jobs:
       - name: Generate Execution URL
         id: gen_exec_url
         run: |
-          echo "Response :${{steps.retrieve_tc.outputs.response}}"
           execution_id=${{ fromJson(steps.retrieve_tc.outputs.response).data[0].id }}
           execution_url=${{ inputs.jira_url }}/plugins/servlet/ac/com.infostretch.QmetryTestManager/qtm4j-test-management?project.id=${{ inputs.qmetry_project_id }}#!/executionPage/$execution_id
           echo "execution_url=$execution_url" >> $GITHUB_OUTPUT  
