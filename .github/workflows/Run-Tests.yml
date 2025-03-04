@@ -41,6 +41,14 @@ on:
       test_cycle:
         required: false
         type: string
+      test_cycle_folder:
+        required: false
+        type: string
+        default: '1388976'
+      test_case_folder:
+        required: false
+        type: string
+        default: '1449797'
       upload_result:
         required: false
         type: boolean
@@ -58,6 +66,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       run_id: ${{ steps.runId.outputs.run_id }}
+      test_cycle_summary: ${{ steps.runId.outputs.test_cycle_summary }}
     steps:   
       - name: Checkout repository | Branch ${{ inputs.branch_name }}
         uses: actions/checkout@v4
@@ -79,12 +88,15 @@ jobs:
           restore-keys: |
             maven-   
      
-      - name: Generate Run Id
+      - name: Generate Run Id & Test Cycle Summary
         id: runId
-        run: echo "run_id=$((10000 + RANDOM % 90000))" >> $GITHUB_OUTPUT  
-        
+        run: |
+          echo "run_id=$((10000 + RANDOM % 90000))" >> $GITHUB_OUTPUT  
+          echo "test_cycle_summary=Automated Test Cycle - ${{ inputs.test_type }} | Run Id : $run_id" >> $GITHUB_OUTPUT  
+
       - name: Run Cucumber Tests
         run: |
+          echo "Run Id : ${{ steps.runId.outputs.run_id }}"
           echo "Running tests with tags: ${{ inputs.test_cucumber_tags }}"
           mvn clean test -Dcucumber.filter.tags="${{ inputs.test_cucumber_tags }}" -DENVIRONMENT=${{ inputs.test_env }} -DCONFIG_SOURCE=doppler -DDOPPLER_PROJECT_NAME=${{ inputs.test_doppler_project_name }} -DDOPPLER_SERVICE_TOKEN=${{ secrets.test_doppler_service_token }} -Dheadless=Y || TEST_FAILED=true
 
@@ -126,8 +138,45 @@ jobs:
           url: 'https://qtmcloud.qmetry.com/rest/api/automation/importresult'
           method: POST
           customHeaders: '{"Content-Type": "application/json","apiKey":"${{ secrets.qmetry_api_key }}"}'
-          data: '{ "format": "cucumber", "testCycleToReuse": "${{ inputs.test_cycle }}", "attachFile": true, "isZip": false, "environment": "${{ inputs.test_env }}", "matchTestSteps": true, "fields": { "testCaseExecution": { "customFields": [ { "name": "Run Id", "value": "${{ needs.run_test.outputs.run_id }}" },{ "name": "Server Version", "value": "${{ inputs.app_server_version }}" }, { "name": "UI Version", "value": "${{ inputs.app_ui_version }}" } , { "name": "Test Type", "value": "${{ inputs.test_type }}" } ] } } }'
-        
+          data: |
+           {
+              "format": "cucumber",
+              "testCycleToReuse": "${{ inputs.test_cycle }}",
+              "attachFile": true,
+              "isZip": false,
+              "environment": "${{ inputs.test_env }}",
+              "matchTestSteps": true,
+              "fields": {
+                "testCycle": {
+                  "folderId": ${{ inputs.test_cycle_folder }},
+                  "summary": "${{ needs.run_test.outputs.test_cycle_summary }}"
+                },
+                "testCase": {
+                  "priority": "High",
+                  "folderId": ${{ inputs.test_case_folder }}
+                },
+                "testCaseExecution": {
+                  "customFields": [
+                    {
+                      "name": "Run Id",
+                      "value": "${{ needs.run_test.outputs.run_id }}"
+                    },
+                    {
+                      "name": "Server Version",
+                      "value": "${{ inputs.app_server_version }}"
+                    },
+                    {
+                      "name": "UI Version",
+                      "value": "${{ inputs.app_ui_version }}"
+                    },
+                    {
+                      "name": "Test Type",
+                      "value": "${{ inputs.test_type }}"
+                    }
+                  ]
+                }
+              }
+            }
       - name: Upload file using PUT request
         run: |
           curl -X PUT \
