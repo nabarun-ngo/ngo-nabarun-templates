@@ -197,7 +197,11 @@ jobs:
             -H "User-Agent: PostmanRuntime/7.43.0" \
             -d @cucumber.json \
             '${{ fromJson(steps.generate_url.outputs.response).url }}'
-    
+      
+      - name: Sleep for 30 seconds
+        run: sleep 30s
+        shell: bash
+        
       - name: Retrieve Test Cycles 
         id: retrieve_tc
         uses: fjogeleit/http-request-action@v1
