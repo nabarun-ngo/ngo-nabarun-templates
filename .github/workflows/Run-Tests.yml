@@ -198,8 +198,8 @@ jobs:
             -d @cucumber.json \
             '${{ fromJson(steps.generate_url.outputs.response).url }}'
       
-      - name: Sleep for 30 seconds
-        run: sleep 30s
+      - name: Sleep for 60 seconds
+        run: sleep 60s
         shell: bash
         
       - name: Retrieve Test Cycles 
