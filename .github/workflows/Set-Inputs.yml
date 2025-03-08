@@ -17,6 +17,7 @@ on:
 
 jobs:
   set_env:
+    name : 'Set Variables'
     runs-on: ubuntu-latest
     outputs:
       variables: ${{ steps.set_vars.outputs.variables }}
