@@ -39,10 +39,15 @@ on:
         required: false
         type: boolean
         default: false
+      app_base_url:
+        required: true
+        type: string
     secrets:
       doppler_service_token:
         required: true
       gcp_service_account:
+        required: false
+      app_token:
         required: false
 
 jobs:
@@ -97,11 +102,27 @@ jobs:
         if: ${{ inputs.dry_run == false && inputs.import_user }}
         run: |
           java -jar ${{ env.jar_path }} auth0-import-users -d ${{ inputs.auth0_import_tenant }} -i ${{ inputs.input_file }} -r ${{ inputs.delete_old_user }} -p ${{ inputs.doppler_project }} --destToken '${{ secrets.doppler_service_token }}'
+    
+      - name: Sync User between Auth0 and Application DB
+        if: ${{ inputs.dry_run == false && inputs.import_user }}
+        id: sync_users
+        uses: fjogeleit/http-request-action@v1
+        with:
+          url: '${{ inputs.app_base_url }}/api/admin/jobs/trigger'
+          method: POST
+          customHeaders: '{"Content-Type": "application/json","X-Api-Key":"${{ secrets.app_token }}"}'
+          data: |
+           [{
+              "name": "SYNC_USERS",
+              "parameters": {
+                "sync_role": "Y"
+              }
+            }]
       
-      - name: Dry Run Variables Output
-        if: ${{ inputs.dry_run == true }}
+      - name: Variable List
         run: |
-          echo "Dry run mode enabled. Variables:"
+          echo "Inputs: "
+          echo "Dry run mode : ${{ inputs.dry_run }}"
           echo "Source: ${{ inputs.source }}"
           echo "Auth0 Import Tenant: ${{ inputs.auth0_import_tenant }}"
           echo "Input File: ${{ inputs.input_file }}"
@@ -109,6 +130,8 @@ jobs:
           echo "Is Import data: ${{ inputs.import_data }}"
           echo "Is Import User: ${{ inputs.import_user }}"
           echo "Delete Old User: ${{ inputs.delete_old_user }}"
+          echo "Outputs: "
+          echo "Sync Trigger Response : ${{ steps.sync_users.outputs.response }}"
 
       - name: Dry run Verify Files
         if: ${{ inputs.dry_run == true }}
