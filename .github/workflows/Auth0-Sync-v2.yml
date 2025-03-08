@@ -27,6 +27,11 @@ jobs:
       - name: Install Auth0 Deploy CLI
         run: npm install -g auth0-deploy-cli
 
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
       - name: Create JSON files from secret
         run: |
           echo '${{ secrets.source_config }}' > auth0-source.json
@@ -36,15 +41,19 @@ jobs:
         run: |
           a0deploy export -c auth0-source.json -f yaml -o ./exported
 
-      - name: Run Bash Script to Process Auth0 Data
-        run: |
-          chmod +x scripts/process-auth0.sh
-          ./scripts/process-auth0.sh auth0-source.json auth0-target.json ./exported/tenant.yaml
-
-      - name: Results
+      - name: Upload Raw Tenant File
         uses: actions/upload-artifact@v4
         with:
-          name: Results
+          name: Raw Tenant File
+          path: ./exported/tenant.yaml
+          
+      - name: Run Python script to process Auth0 data
+        run: python scripts/process_auth0.py auth0-source.json auth0-target.json ./exported/tenant.yaml
+
+      - name: Upload Processed Tenant File
+        uses: actions/upload-artifact@v4
+        with:
+          name: Processed Tenant File
           path: ./exported/tenant.yaml
 
       # - name: Deploy to Target Tenant
