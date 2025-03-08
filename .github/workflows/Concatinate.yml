@@ -1,31 +1,29 @@
-name: "Concatenate Prefix and Suffix"
+name: "Concatenate Prefix with Environment"
+
 on:
   workflow_call:
     inputs:
-      operations:
-        description: "JSON array of objects with prefix and suffix"
+      environment:
+        description: "Specify environment (dev, stage, prod)"
         required: true
         type: string
+      mapping:
+        description: "JSON string containing key-prefix pairs"
+        required: true
+        type: string
+
     outputs:
       result:
-        description: "JSON object of concatenated results"
-        value: ${{ jobs.concat.outputs.final_result }}
+        description: "Final JSON with concatenated values"
+        value: ${{ steps.process.outputs.result }}
 
 jobs:
-  concat:
+  process:
     runs-on: ubuntu-latest
-    outputs:
-      final_result: ${{ steps.concat_step.outputs.result }}
-
     steps:
-      - name: Process and Concatenate Inputs
-        id: concat_step
+      - name: Convert Mapping and Concatenate
+        id: process
         run: |
-          echo "Processing JSON input..."
-          echo '${{ inputs.operations }}' > operations.json
-
-          # Use jq to process JSON array and create concatenated results
-          RESULT=$(jq -c '[.[] | {(.prefix + "_" + .suffix): (.prefix + "_" + .suffix)}]' operations.json)
-          
-          # Set output
-          echo "result=$RESULT" >> $GITHUB_OUTPUT
+          echo "Processing mapping: ${{ inputs.mapping }}"
+          result=$(echo '${{ inputs.mapping }}' | jq --arg env "${{ inputs.environment }}" 'with_entries(.value |= . + $env)')
+          echo "result=$result" >> "$GITHUB_OUTPUT"
