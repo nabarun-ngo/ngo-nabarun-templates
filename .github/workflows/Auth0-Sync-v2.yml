@@ -34,7 +34,7 @@ jobs:
 
       - name: Export from Source Tenant
         run: |
-          a0deploy export -c auth0-source.json -f yaml --output_path ./exported
+          a0deploy export -c auth0-source.json -f yaml -o ./exported
 
       - name: Run Bash Script to Process Auth0 Data
         run: |
@@ -49,4 +49,4 @@ jobs:
 
       # - name: Deploy to Target Tenant
       #   run: |
-      #     a0deploy import -c auth0-target.json -f yaml --input_file ./exported
+      #     a0deploy import -c auth0-target.json -f yaml -i ./exported
