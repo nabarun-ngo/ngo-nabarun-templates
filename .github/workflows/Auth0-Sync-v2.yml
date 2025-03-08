@@ -1,0 +1,61 @@
+name: Auth0 Sync Data
+on:
+  workflow_call:
+    inputs:
+      branch_name:
+        required: true
+        type: string
+      auth0_source_tenant:
+        required: true
+        type: string
+      auth0_dest_tenant:
+        required: true
+        type: string
+      doppler_project:
+        required: true
+        type: string
+      java_version:
+        required: false
+        type: string
+        default: '17'
+      target_folder:
+        required: false
+        type: string
+        default: 'target'
+      dry_run:
+        required: false
+        type: boolean
+        default: false
+      
+    secrets:
+      doppler_service_token_source:
+        required: true
+      doppler_service_token_dest:
+        required: true
+        
+jobs:
+  sync_data:
+    name: 'Sync Data between Auth0'
+    runs-on: ubuntu-latest
+    steps:     
+      - name: Checkout repository | Branch ${{ inputs.branch_name }}
+        uses: actions/checkout@v4
+        with:
+          repository: nabarun-ngo/ngo-nabarun-templates
+          ref: 'main'
+
+      - name: Install Auth0 Deploy CLI
+        run: npm install -g auth0-deploy-cli
+
+      - name: Export from Source Tenant
+        run: |
+          a0deploy export -c auth0-source.json -f yaml --output_path ./exported
+
+      - name: Run Bash Script to Process Auth0 Data
+        run: |
+          chmod +x scripts/process-auth0.sh
+          ./scripts/process-auth0.sh auth0-source.json auth0-target.json ./exported/clients.yaml
+
+      - name: Deploy to Target Tenant
+        run: |
+          a0deploy import -c auth0-target.json -f yaml --input_file ./exported
