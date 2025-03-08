@@ -23,13 +23,20 @@ jobs:
         with:
           python-version: '3.x'
 
-      - name: Run Python Script to Set Variables
+      # - name: Run Python Script to Set Variables
+      #   id: set_vars
+      #   env:
+      #     GITHUB_CONTEXT: ${{ toJson(github) }}
+      #   run: |
+      #     python .github/scripts/set_env.py >> $GITHUB_ENV
+      #     echo "all_outputs=$(jq -c . < output.json)" >> $GITHUB_OUTPUT
+
+      - name: Set Global Variables
         id: set_vars
-        env:
-          GITHUB_CONTEXT: ${{ toJson(github) }}
         run: |
-          python .github/scripts/set_env.py >> $GITHUB_ENV
-          echo "all_outputs=$(jq -c . < output.json)" >> $GITHUB_OUTPUT
+          python scripts/common/set_env.py
+          echo "all_vars=$(cat $GITHUB_OUTPUT | tr '\n' ',')" >> $GITHUB_OUTPUT
+
 
       - name: Debug Outputs
         run: |
