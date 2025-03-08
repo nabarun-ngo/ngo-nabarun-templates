@@ -1,0 +1,36 @@
+name: "Reusable: Set Up Environment Variables"
+
+on:
+  workflow_call:
+    outputs:
+      all_outputs:
+        description: "All computed environment variables"
+        value: ${{ jobs.set_env.outputs.all_outputs }}
+
+jobs:
+  set_env:
+    runs-on: ubuntu-latest
+    name: "SetUp Environment"
+    outputs:
+      all_outputs: ${{ steps.set_vars.outputs.all_outputs }}
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.x'
+
+      - name: Run Python Script to Set Variables
+        id: set_vars
+        env:
+          GITHUB_CONTEXT: ${{ toJson(github) }}
+        run: |
+          python .github/scripts/set_env.py >> $GITHUB_ENV
+          echo "all_outputs=$(jq -c . < output.json)" >> $GITHUB_OUTPUT
+
+      - name: Debug Outputs
+        run: |
+          echo "Final Variables: ${{ steps.set_vars.outputs.all_outputs }}"
