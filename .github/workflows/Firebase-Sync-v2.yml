@@ -1,0 +1,52 @@
+name: Firebase Sync Data
+on:
+  workflow_call:
+    inputs:
+      branch_name:
+        required: false
+        type: string
+        default: 'main'
+      firebase_source_project:
+        required: true
+        type: string
+      firebase_target_project:
+        required: true
+        type: string
+    secrets:
+      firebase_service_account_source:
+        required: true
+      firebase_service_account_target:
+        required: true
+        
+jobs:
+  sync_remote_config:
+    name: 'Sync Data between Firebase Remote Config'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+
+      - name: Install Firebase CLI
+        run: npm install -g firebase-tools
+
+      - name: Authenticate with Firebase (Source)
+        run: |
+          echo "${{ secrets.firebase_service_account_source }}" > source-service-account.json
+          firebase auth:login --token "$(cat source-service-account.json)"
+
+      - name: Export Remote Config from Source
+        run: firebase remoteconfig:get --project=${{ secrets.SOURCE_PROJECT_ID }} > remote-config.json
+
+      - name: Authenticate with Firebase (Target)
+        run: |
+          echo "${{ secrets.firebase_service_account_target }}" > target-service-account.json
+          firebase auth:login --token "$(cat target-service-account.json)"
+
+      - name: Import Remote Config to Target
+        run: firebase remoteconfig:publish --project=${{ secrets.TARGET_PROJECT_ID }} < remote-config.json
+      
