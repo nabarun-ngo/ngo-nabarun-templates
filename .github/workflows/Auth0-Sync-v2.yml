@@ -1,36 +1,16 @@
-name: Auth0 Sync Data
+name: Auth0 Sync Data v2
 on:
   workflow_call:
     inputs:
       branch_name:
-        required: true
-        type: string
-      auth0_source_tenant:
-        required: true
-        type: string
-      auth0_dest_tenant:
-        required: true
-        type: string
-      doppler_project:
-        required: true
-        type: string
-      java_version:
         required: false
         type: string
-        default: '17'
-      target_folder:
-        required: false
-        type: string
-        default: 'target'
-      dry_run:
-        required: false
-        type: boolean
-        default: false
+        default : 'main'
       
     secrets:
-      doppler_service_token_source:
+      source_config:
         required: true
-      doppler_service_token_dest:
+      dest_config:
         required: true
         
 jobs:
@@ -42,10 +22,15 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: nabarun-ngo/ngo-nabarun-templates
-          ref: 'main'
+          ref: ${{ inputs.branch_name }}
 
       - name: Install Auth0 Deploy CLI
         run: npm install -g auth0-deploy-cli
+
+      - name: Create JSON files from secret
+        run: |
+          echo '${{ secrets.source_config }}' > auth0-source.json
+          echo '${{ secrets.dest_config }}' > auth0-dest.json
 
       - name: Export from Source Tenant
         run: |
@@ -54,8 +39,8 @@ jobs:
       - name: Run Bash Script to Process Auth0 Data
         run: |
           chmod +x scripts/process-auth0.sh
-          ./scripts/process-auth0.sh auth0-source.json auth0-target.json ./exported/clients.yaml
+          ./scripts/process-auth0.sh auth0-source.json auth0-target.json ./exported/tenant.yaml
 
-      - name: Deploy to Target Tenant
-        run: |
-          a0deploy import -c auth0-target.json -f yaml --input_file ./exported
+      # - name: Deploy to Target Tenant
+      #   run: |
+      #     a0deploy import -c auth0-target.json -f yaml --input_file ./exported
