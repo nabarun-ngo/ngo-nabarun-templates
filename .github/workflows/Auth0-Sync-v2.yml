@@ -41,6 +41,12 @@ jobs:
           chmod +x scripts/process-auth0.sh
           ./scripts/process-auth0.sh auth0-source.json auth0-target.json ./exported/tenant.yaml
 
+      - name: Results
+        uses: actions/upload-artifact@v4
+        with:
+          name: Results
+          path: ./exported/tenant.yaml
+
       # - name: Deploy to Target Tenant
       #   run: |
       #     a0deploy import -c auth0-target.json -f yaml --input_file ./exported
