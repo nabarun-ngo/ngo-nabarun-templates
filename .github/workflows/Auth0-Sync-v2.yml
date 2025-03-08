@@ -35,7 +35,7 @@ jobs:
       - name: Create JSON files from secret
         run: |
           echo '${{ secrets.source_config }}' > auth0-source.json
-          echo '${{ secrets.dest_config }}' > auth0-dest.json
+          echo '${{ secrets.dest_config }}' > auth0-target.json
 
       - name: Export from Source Tenant
         run: |
