@@ -1,35 +1,41 @@
-name: "Reusable: Set Up Environment Variables"
-
+name: 'Set Inputs'
 on:
   workflow_call:
+    inputs:
+      inputs:
+        description: "All workflow_dispatch inputs as JSON string"
+        type: string
+        required: false
+      client_payload:
+        description: "repository_dispatch client payload as JSON string"
+        type: string
+        required: false
     outputs:
-      all_outputs:
-        description: "All computed environment variables"
-        value: ${{ jobs.set_env.outputs.all_outputs }}
+      variables:
+        description: "Merged input variables as JSON"
+        value: ${{ jobs.set_env.outputs.variables }}
 
 jobs:
   set_env:
     runs-on: ubuntu-latest
-    name: "SetUp Environment"
+    outputs:
+      variables: ${{ steps.set_vars.outputs.variables }}
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.x'
-
-      # - name: Run Python Script to Set Variables
-      #   id: set_vars
-      #   env:
-      #     GITHUB_CONTEXT: ${{ toJson(github) }}
-      #   run: |
-      #     python .github/scripts/set_env.py >> $GITHUB_ENV
-      #     echo "all_outputs=$(jq -c . < output.json)" >> $GITHUB_OUTPUT
-
-      - name: Set Global Variables
+      - name: Merge Inputs and Payload
         id: set_vars
         run: |
-          python scripts/common/set_env.py
-          echo "all_vars=$(cat $GITHUB_OUTPUT | tr '\n' ',')" >> $GITHUB_OUTPUT
+          # Read inputs
+          inputs_json="${{ inputs.inputs }}"
+          payload_json="${{ inputs.client_payload }}"
+
+          # Determine which input to use
+          if [[ ! -z "$payload_json" && "$payload_json" != "null" ]]; then
+            final_data="$payload_json"
+          else
+            final_data="$inputs_json"
+          fi
+
+          echo "Final Merged Data: $final_data"
+
+          # Set GitHub output
+          echo "variables=$final_data" >> $GITHUB_OUTPUT
