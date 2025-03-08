@@ -25,17 +25,18 @@ jobs:
         id: set_vars
         run: |
           # Read inputs
-          inputs_json="${{ inputs.inputs }}"
-          payload_json="${{ inputs.client_payload }}"
+          inputs_json='${{ inputs.inputs }}'
+          payload_json='${{ inputs.client_payload }}'
 
           # Determine which input to use
-          if [[ ! -z "$payload_json" && "$payload_json" != "null" ]]; then
+          if [[ "$payload_json" != "null" && ! -z "$payload_json" ]]; then
             final_data="$payload_json"
           else
             final_data="$inputs_json"
           fi
 
-          echo "Final Merged Data: $final_data"
+          # Ensure JSON is properly formatted
+          final_data=$(echo "$final_data" | jq -c '.' || echo '{}')
 
-          # Set GitHub output
-          echo "variables=$final_data" >> $GITHUB_OUTPUT
+          echo "Final Merged Data: $final_data"
+          echo "variables=$final_data" >> "$GITHUB_OUTPUT"
