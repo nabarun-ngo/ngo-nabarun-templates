@@ -1,59 +1,33 @@
-name: 'Caller Workflow'
-
+name: "Caller Workflow"
 on:
   workflow_dispatch:
     inputs:
-      auth0_import_permission:
-        description: "Import Permissions to AUTH0"
-        required: true
-        default: false
-        type: boolean
-      auth0_import_users:
-        description: "Import Users to AUTH0"
-        required: true
-        default: false
-        type: boolean
       auth0_target_tenant:
-        description: 'Auth0 Target Tenant'
+        description: "Auth0 Target Tenant"
         required: true
         type: choice
         options:
           - DEV
           - STAGE
       firebase_sync_rc:
-        description: "Sync Firebase Remote Config"
-        required: true
+        description: "Sync Firebase"
+        required: false
         default: false
         type: boolean
-      firebase_source_env:
-        description: 'Firebase Source Environment'
-        required: true
-        type: choice
-        options:
-          - STAGE
-          - PROD
-      firebase_dest_env:
-        description: 'Firebase Destination Environment'
-        required: true
-        type: choice
-        options:
-           - STAGE
-           - PROD
+
+  repository_dispatch:
+    types: [Trigger-Import-Sync-Data]
 
 jobs:
-  setup_environment:
-    name: "Setup Environment"
-    uses: ./.github/workflows/set_env.yml  # Calls the reusable workflow
+  set_inputs:
+    uses: nabarun-ngo/ngo-nabarun-templates/.github/workflows/set_env.yml@main
+    with:
+      inputs: ${{ toJson(inputs) }}
+      client_payload: ${{ toJson(github.event.client_payload) }}
 
-  import_data:
-    name: 'Import Data'
-    needs: setup_environment
+  use_variables:
     runs-on: ubuntu-latest
+    needs: set_inputs
     steps:
-      - name: Print Variables
-        run: |
-          echo "All Variables: ${{ needs.setup_environment.outputs.all_vars }}"
-
-      - name: Run Import Job
-        run: |
-          echo "Running import job with Auth0 Target Tenant: ${{ needs.setup_environment.outputs.auth0_target_tenant }}"
+      - name: Print Merged Variables
+        run: echo '${{ needs.set_inputs.outputs.variables }}'
