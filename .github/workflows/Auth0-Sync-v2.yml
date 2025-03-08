@@ -48,7 +48,7 @@ jobs:
           path: ./exported/tenant.yaml
           
       - name: Run Python script to process Auth0 data
-        run: python scripts/process_auth0.py auth0-source.json auth0-target.json ./exported/tenant.yaml
+        run: python scripts/auth0/process_auth0.py auth0-source.json auth0-target.json ./exported/tenant.yaml
 
       - name: Upload Processed Tenant File
         uses: actions/upload-artifact@v4
