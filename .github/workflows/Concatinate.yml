@@ -1,0 +1,31 @@
+name: "Concatenate Prefix and Suffix"
+on:
+  workflow_call:
+    inputs:
+      operations:
+        description: "JSON array of objects with prefix and suffix"
+        required: true
+        type: string
+    outputs:
+      result:
+        description: "JSON object of concatenated results"
+        value: ${{ jobs.concat.outputs.final_result }}
+
+jobs:
+  concat:
+    runs-on: ubuntu-latest
+    outputs:
+      final_result: ${{ steps.concat_step.outputs.result }}
+
+    steps:
+      - name: Process and Concatenate Inputs
+        id: concat_step
+        run: |
+          echo "Processing JSON input..."
+          echo '${{ inputs.operations }}' > operations.json
+
+          # Use jq to process JSON array and create concatenated results
+          RESULT=$(jq -c '[.[] | {(.prefix + "_" + .suffix): (.prefix + "_" + .suffix)}]' operations.json)
+          
+          # Set output
+          echo "result=$RESULT" >> $GITHUB_OUTPUT
