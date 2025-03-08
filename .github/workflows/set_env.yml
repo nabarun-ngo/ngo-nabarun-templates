@@ -11,9 +11,6 @@ jobs:
   set_env:
     runs-on: ubuntu-latest
     name: "SetUp Environment"
-    outputs:
-      all_outputs: ${{ steps.set_vars.outputs.all_outputs }}
-
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -36,8 +33,3 @@ jobs:
         run: |
           python scripts/common/set_env.py
           echo "all_vars=$(cat $GITHUB_OUTPUT | tr '\n' ',')" >> $GITHUB_OUTPUT
-
-
-      - name: Debug Outputs
-        run: |
-          echo "Final Variables: ${{ steps.set_vars.outputs.all_outputs }}"
