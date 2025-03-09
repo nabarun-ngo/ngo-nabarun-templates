@@ -34,14 +34,12 @@ jobs:
       - name: Install Firebase CLI
         run: npm install -g firebase-tools
 
-      - name: Authenticate with Firebase (Source)
+      - name: Export Remote Config from Source
         run: |
           echo '${{ secrets.firebase_service_account_source }}' > $HOME/source-firebase.json
           export GOOGLE_APPLICATION_CREDENTIALS=$HOME/source-firebase.json
           firebase projects:list --project=${{ inputs.firebase_source_project }}
-
-      - name: Export Remote Config from Source
-        run: firebase remoteconfig:get --project=${{ inputs.firebase_source_project }} > remote-config.json
+          firebase remoteconfig:get --project=${{ inputs.firebase_source_project }} > remote-config.json
 
       - name: Upload Remote Config as Artifact
         uses: actions/upload-artifact@v4
@@ -50,11 +48,10 @@ jobs:
           path: remote-config.json
           retention-days: 7  # Keep the file for 7 days
 
-      - name: Authenticate with Firebase (Target)
+      - name: Import Remote Config to Target
         run: |
           echo '${{ secrets.firebase_service_account_target }}' > $HOME/target-firebase.json
           export GOOGLE_APPLICATION_CREDENTIALS=$HOME/target-firebase.json
           firebase projects:list --project=${{ inputs.firebase_target_project }}
-
-      - name: Import Remote Config to Target
-        run: firebase remoteconfig:publish --project=${{ inputs.firebase_target_project }} < remote-config.json
+          firebase remoteconfig:publish --project=${{ inputs.firebase_target_project }} < remote-config.json
+     
