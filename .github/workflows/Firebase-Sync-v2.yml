@@ -91,9 +91,10 @@ jobs:
 
           echo "TARGET_ETAG=$ETAG" >> $GITHUB_ENV
 
-      - name: Import Remote Config to Target
+      - name: Import Remote Config to Target and Print New ETag
         run: |
-          HTTP_STATUS=$(curl -w "%{http_code}" -o response.json -X PUT \
+          HTTP_RESPONSE=$(mktemp)
+          HTTP_STATUS=$(curl -w "%{http_code}" -o $HTTP_RESPONSE -D headers_response.txt -X PUT \
             -H "Authorization: Bearer $ACCESS_TOKEN" \
             -H "Content-Type: application/json; UTF-8" \
             -H "If-Match: $TARGET_ETAG" \
@@ -102,6 +103,10 @@ jobs:
 
           if [[ $HTTP_STATUS -ge 400 ]]; then
             echo "❌ ERROR: Failed to update Remote Config on target (HTTP $HTTP_STATUS)"
-            cat response.json
+            cat $HTTP_RESPONSE
             exit 1
           fi
+
+          NEW_ETAG=$(grep -Fi "etag:" headers_response.txt | awk '{print $2}' | tr -d '\r')
+          echo "✅ Successfully updated Remote Config!"
+          echo "📌 New ETag: $NEW_ETAG"
