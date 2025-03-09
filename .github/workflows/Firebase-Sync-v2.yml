@@ -36,17 +36,25 @@ jobs:
 
       - name: Authenticate with Firebase (Source)
         run: |
-          echo "${{ secrets.firebase_service_account_source }}" > source-service-account.json
-          firebase auth:login --token "$(cat source-service-account.json)"
+          echo '${{ secrets.FIREBASE_SERVICE_ACCOUNT_SOURCE }}' > $HOME/source-firebase.json
+          export GOOGLE_APPLICATION_CREDENTIALS=$HOME/source-firebase.json
+          firebase projects:list --project=${{ secrets.SOURCE_PROJECT_ID }}
 
       - name: Export Remote Config from Source
         run: firebase remoteconfig:get --project=${{ secrets.SOURCE_PROJECT_ID }} > remote-config.json
 
+      - name: Upload Remote Config as Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: remote-config
+          path: remote-config.json
+          retention-days: 7  # Keep the file for 7 days
+
       - name: Authenticate with Firebase (Target)
         run: |
-          echo "${{ secrets.firebase_service_account_target }}" > target-service-account.json
-          firebase auth:login --token "$(cat target-service-account.json)"
+          echo '${{ secrets.FIREBASE_SERVICE_ACCOUNT_TARGET }}' > $HOME/target-firebase.json
+          export GOOGLE_APPLICATION_CREDENTIALS=$HOME/target-firebase.json
+          firebase projects:list --project=${{ secrets.TARGET_PROJECT_ID }}
 
       - name: Import Remote Config to Target
         run: firebase remoteconfig:publish --project=${{ secrets.TARGET_PROJECT_ID }} < remote-config.json
-      
