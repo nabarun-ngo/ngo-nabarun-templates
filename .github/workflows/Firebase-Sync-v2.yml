@@ -61,17 +61,28 @@ jobs:
           ACCESS_TOKEN=$(gcloud auth print-access-token)
           echo "ACCESS_TOKEN=$ACCESS_TOKEN" >> $GITHUB_ENV
 
-      - name: Import Remote Config to Target
+      - name: Get Target Remote Config ETag
         run: |
-          ETAG=$(curl -X GET \
+          curl -X GET \
             -H "Authorization: Bearer $ACCESS_TOKEN" \
             -H "Accept: application/json" \
-            "https://firebaseremoteconfig.googleapis.com/v1/projects/${{ inputs.firebase_target_project }}/remoteConfig" \
-            | jq -r '.etag')
+            "https://firebaseremoteconfig.googleapis.com/v1/projects/${{ secrets.firebase_target_project }}/remoteConfig" \
+            -o /dev/null -D headers_target.txt
 
+          ETAG=$(grep -Fi "etag:" headers_target.txt | awk '{print $2}' | tr -d '\r')
+
+          if [[ -z "$ETAG" ]]; then
+            echo "Target ETag not found, using wildcard '*'"
+            ETAG="*"
+          fi
+
+          echo "TARGET_ETAG=$ETAG" >> $GITHUB_ENV
+
+      - name: Import Remote Config to Target
+        run: |
           curl -X PUT \
             -H "Authorization: Bearer $ACCESS_TOKEN" \
             -H "Content-Type: application/json; UTF-8" \
-            -H "If-Match: $ETAG" \
+            -H "If-Match: $TARGET_ETAG" \
             -d @remote-config.json \
-            "https://firebaseremoteconfig.googleapis.com/v1/projects/${{ inputs.firebase_target_project }}/remoteConfig"
+            "https://firebaseremoteconfig.googleapis.com/v1/projects/${{ secrets.firebase_target_project }}/remoteConfig"
