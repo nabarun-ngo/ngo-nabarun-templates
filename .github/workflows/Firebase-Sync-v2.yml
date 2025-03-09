@@ -26,20 +26,27 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
+      - name: Install Google Cloud SDK
+        uses: google-github-actions/setup-gcloud@v1
         with:
-          node-version: 18
+          version: 'latest'
 
-      - name: Install Firebase CLI
-        run: npm install -g firebase-tools
+      - name: Install jq (JSON parser)
+        run: sudo apt-get install jq -y
+
+      - name: Authenticate with Firebase (Source)
+        run: |
+          gcloud auth activate-service-account --key-file <(echo '${{ secrets.firebase_service_account_source }}')
+          ACCESS_TOKEN=$(gcloud auth print-access-token)
+          echo "ACCESS_TOKEN=$ACCESS_TOKEN" >> $GITHUB_ENV
 
       - name: Export Remote Config from Source
         run: |
-          echo '${{ secrets.firebase_service_account_source }}' > $HOME/source-firebase.json
-          export GOOGLE_APPLICATION_CREDENTIALS=$HOME/source-firebase.json
-          firebase projects:list --project=${{ inputs.firebase_source_project }}
-          firebase remoteconfig:get --project=${{ inputs.firebase_source_project }} > remote-config.json
+          curl -X GET \
+            -H "Authorization: Bearer $ACCESS_TOKEN" \
+            -H "Accept: application/json" \
+            "https://firebaseremoteconfig.googleapis.com/v1/projects/${{ inputs.firebase_source_project }}/remoteConfig" \
+            -o remote-config.json
 
       - name: Upload Remote Config as Artifact
         uses: actions/upload-artifact@v4
@@ -48,9 +55,23 @@ jobs:
           path: remote-config.json
           retention-days: 7  # Keep the file for 7 days
 
+      - name: Authenticate with Firebase (Target)
+        run: |
+          gcloud auth activate-service-account --key-file <(echo '${{ secrets.firebase_service_account_target }}')
+          ACCESS_TOKEN=$(gcloud auth print-access-token)
+          echo "ACCESS_TOKEN=$ACCESS_TOKEN" >> $GITHUB_ENV
+
       - name: Import Remote Config to Target
         run: |
-          echo '${{ secrets.firebase_service_account_target }}' > $HOME/target-firebase.json
-          export GOOGLE_APPLICATION_CREDENTIALS=$HOME/target-firebase.json
-          firebase projects:list --project=${{ inputs.firebase_target_project }}
-          firebase remoteconfig:deploy --project=${{ inputs.firebase_target_project }} --config=remote-config.json
+          ETAG=$(curl -X GET \
+            -H "Authorization: Bearer $ACCESS_TOKEN" \
+            -H "Accept: application/json" \
+            "https://firebaseremoteconfig.googleapis.com/v1/projects/${{ inputs.firebase_target_project }}/remoteConfig" \
+            | jq -r '.etag')
+
+          curl -X PUT \
+            -H "Authorization: Bearer $ACCESS_TOKEN" \
+            -H "Content-Type: application/json; UTF-8" \
+            -H "If-Match: $ETAG" \
+            -d @remote-config.json \
+            "https://firebaseremoteconfig.googleapis.com/v1/projects/${{ inputs.firebase_target_project }}/remoteConfig"
