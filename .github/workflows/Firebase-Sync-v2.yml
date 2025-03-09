@@ -53,5 +53,4 @@ jobs:
           echo '${{ secrets.firebase_service_account_target }}' > $HOME/target-firebase.json
           export GOOGLE_APPLICATION_CREDENTIALS=$HOME/target-firebase.json
           firebase projects:list --project=${{ inputs.firebase_target_project }}
-          firebase remoteconfig:publish --project=${{ inputs.firebase_target_project }} < remote-config.json
-     
+          firebase remoteconfig:deploy --project=${{ inputs.firebase_target_project }} --config=remote-config.json
