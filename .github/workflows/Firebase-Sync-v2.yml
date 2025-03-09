@@ -36,17 +36,25 @@ jobs:
 
       - name: Authenticate with Firebase (Source)
         run: |
-          gcloud auth activate-service-account --key-file <(echo '${{ secrets.firebase_service_account_source }}')
-          ACCESS_TOKEN=$(gcloud auth print-access-token)
+          echo '${{ secrets.firebase_service_account_source }}' > $HOME/source-firebase.json
+          gcloud auth activate-service-account --key-file=$HOME/source-firebase.json
+          export ACCESS_TOKEN=$(gcloud auth print-access-token)
           echo "ACCESS_TOKEN=$ACCESS_TOKEN" >> $GITHUB_ENV
 
       - name: Export Remote Config from Source
         run: |
-          curl -X GET \
+          HTTP_STATUS=$(curl -w "%{http_code}" -o remote-config.json -D headers_source.txt -X GET \
             -H "Authorization: Bearer $ACCESS_TOKEN" \
             -H "Accept: application/json" \
-            "https://firebaseremoteconfig.googleapis.com/v1/projects/${{ inputs.firebase_source_project }}/remoteConfig" \
-            -o remote-config.json
+            "https://firebaseremoteconfig.googleapis.com/v1/projects/${{ inputs.firebase_source_project }}/remoteConfig")
+
+          if [[ $HTTP_STATUS -ge 400 ]]; then
+            echo "❌ ERROR: Failed to export Remote Config from source (HTTP $HTTP_STATUS)"
+            exit 1
+          fi
+
+          ETAG=$(grep -Fi "etag:" headers_source.txt | awk '{print $2}' | tr -d '\r')
+          echo "SOURCE_ETAG=$ETAG" >> $GITHUB_ENV
 
       - name: Upload Remote Config as Artifact
         uses: actions/upload-artifact@v4
@@ -57,22 +65,27 @@ jobs:
 
       - name: Authenticate with Firebase (Target)
         run: |
-          gcloud auth activate-service-account --key-file <(echo '${{ secrets.firebase_service_account_target }}')
-          ACCESS_TOKEN=$(gcloud auth print-access-token)
+          echo '${{ secrets.firebase_service_account_target }}' > $HOME/target-firebase.json
+          gcloud auth activate-service-account --key-file=$HOME/target-firebase.json
+          export ACCESS_TOKEN=$(gcloud auth print-access-token)
           echo "ACCESS_TOKEN=$ACCESS_TOKEN" >> $GITHUB_ENV
 
       - name: Get Target Remote Config ETag
         run: |
-          curl -X GET \
+          HTTP_STATUS=$(curl -w "%{http_code}" -o /dev/null -D headers_target.txt -X GET \
             -H "Authorization: Bearer $ACCESS_TOKEN" \
             -H "Accept: application/json" \
-            "https://firebaseremoteconfig.googleapis.com/v1/projects/${{ secrets.firebase_target_project }}/remoteConfig" \
-            -o /dev/null -D headers_target.txt
+            "https://firebaseremoteconfig.googleapis.com/v1/projects/${{ inputs.firebase_target_project }}/remoteConfig")
+
+          if [[ $HTTP_STATUS -ge 400 ]]; then
+            echo "❌ ERROR: Failed to retrieve Remote Config from target (HTTP $HTTP_STATUS)"
+            exit 1
+          fi
 
           ETAG=$(grep -Fi "etag:" headers_target.txt | awk '{print $2}' | tr -d '\r')
 
           if [[ -z "$ETAG" ]]; then
-            echo "Target ETag not found, using wildcard '*'"
+            echo "⚠️ Target ETag not found, using wildcard '*'"
             ETAG="*"
           fi
 
@@ -80,9 +93,15 @@ jobs:
 
       - name: Import Remote Config to Target
         run: |
-          curl -X PUT \
+          HTTP_STATUS=$(curl -w "%{http_code}" -o response.json -X PUT \
             -H "Authorization: Bearer $ACCESS_TOKEN" \
             -H "Content-Type: application/json; UTF-8" \
             -H "If-Match: $TARGET_ETAG" \
             -d @remote-config.json \
-            "https://firebaseremoteconfig.googleapis.com/v1/projects/${{ secrets.firebase_target_project }}/remoteConfig"
+            "https://firebaseremoteconfig.googleapis.com/v1/projects/${{ inputs.firebase_target_project }}/remoteConfig")
+
+          if [[ $HTTP_STATUS -ge 400 ]]; then
+            echo "❌ ERROR: Failed to update Remote Config on target (HTTP $HTTP_STATUS)"
+            cat response.json
+            exit 1
+          fi
