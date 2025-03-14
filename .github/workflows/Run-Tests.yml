@@ -25,7 +25,7 @@ on:
       java_version:
         required: false
         type: string
-        default: '17'
+        default: '22'
       target_folder:
         required: false
         type: string
