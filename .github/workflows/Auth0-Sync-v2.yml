@@ -40,6 +40,8 @@ jobs:
       - name: Export from Source Tenant
         run: |
           a0deploy export -c auth0-source.json -f yaml -o ./exported
+          echo "Files in the '.exported' directory and subdirectories:"
+          ls -R .exported
 
       - name: Upload Raw Tenant File
         uses: actions/upload-artifact@v4
