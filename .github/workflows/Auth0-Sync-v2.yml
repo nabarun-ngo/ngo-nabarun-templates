@@ -57,7 +57,9 @@ jobs:
         with:
           name: Processed Tenant File
           path: ./exported/tenant.yaml
-
+ 
       - name: Deploy to Target Tenant
         run: |
+          echo "Files in the './exported' directory and subdirectories:"
+          find ./exported -type f -print
           a0deploy import -c auth0-target.json -f yaml -i ./exported
