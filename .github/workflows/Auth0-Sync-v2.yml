@@ -25,7 +25,9 @@ jobs:
           ref: ${{ inputs.branch_name }}
 
       - name: Install Auth0 Deploy CLI
-        run: npm install -g auth0-deploy-cli
+        run: |
+         npm install -g auth0-deploy-cli
+         a0deploy --version
 
       - name: Set up Python
         uses: actions/setup-python@v4
