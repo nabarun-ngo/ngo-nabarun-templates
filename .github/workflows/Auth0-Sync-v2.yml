@@ -46,8 +46,8 @@ jobs:
       - name: Upload Raw Tenant File
         uses: actions/upload-artifact@v4
         with:
-          name: Raw Tenant File
-          path: ./exported/tenant.yaml
+          name: Raw Tenant Folder
+          path: ./exported
           
       - name: Run Python script to process Auth0 data
         run: python scripts/auth0/process_auth0_v2.py auth0-source.json ./exported/tenant.yaml
