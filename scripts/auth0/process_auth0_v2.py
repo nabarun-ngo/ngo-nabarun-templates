@@ -37,8 +37,8 @@ def replace_values_with_keys(env_file, file_path, dry_run=False):
         changes_made = False
         for value, key in reverse_mappings.items():
             if value in file_content:
-                logging.info(f"Replacing '{value}' → '{key}'")
-                file_content = file_content.replace(value, key)
+                logging.info(f"Replacing '{value}' → '##{key}##'")
+                file_content = file_content.replace(value, f"##{key}##")
                 changes_made = True
 
         # Write updated content back if not in dry-run mode
