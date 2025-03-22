@@ -64,4 +64,4 @@ jobs:
         run: |
           echo "Files in the './exported' directory and subdirectories:"
           find ./exported -type f -print
-          a0deploy import -c auth0-target.json -f yaml -i ./exported
+          a0deploy import -c auth0-target.json -f yaml -i ./exported/tenant.yaml
