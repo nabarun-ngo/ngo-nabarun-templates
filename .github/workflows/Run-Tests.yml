@@ -76,6 +76,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       run_id: ${{ steps.runId.outputs.run_id }}
+      test_cycle: ${{ steps.runId.outputs.test_cycle }}
     steps:   
       - name: Checkout repository | Branch ${{ inputs.branch_name }}
         uses: actions/checkout@v4
@@ -96,11 +97,27 @@ jobs:
           key: maven-${{ hashFiles('**/pom.xml') }}
           restore-keys: |
             maven-   
-     
-      - name: Generate Run Id & Test Cycle Summary
+
+      - name: Download Test Metadata (if exists)
+        uses: actions/download-artifact@v4
+        with:
+          name: test-metadata
+        continue-on-error: true
+
+      - name: Retrieve / Generate Run Id & Test Cycle
         id: runId
         run: |
-          echo "run_id=$((10000 + RANDOM % 90000))" >> $GITHUB_OUTPUT  
+          if [[ -f "run_id.txt" && -f "test_cycle.txt" ]]; then
+            RUN_ID=$(cat run_id.txt)
+            TEST_CYCLE=$(cat test_cycle.txt)
+            echo "run_id=$RUN_ID" >> $GITHUB_OUTPUT
+            echo "test_cycle=$TEST_CYCLE" >> $GITHUB_OUTPUT
+            echo "Reused Run ID: $RUN_ID"
+            echo "Reused Test Cycle: $TEST_CYCLE"
+          else
+            echo "run_id=$((10000 + RANDOM % 90000))" >> $GITHUB_OUTPUT
+          fi
+        shell: bash
 
       - name: Run Cucumber Tests
         run: |
@@ -154,7 +171,7 @@ jobs:
           data: |
            {
               "format": "cucumber",
-              "testCycleToReuse": "${{ inputs.test_cycle }}",
+              "testCycleToReuse": "${{ inputs.test_cycle || needs.run_test.outputs.test_cycle }}",
               "attachFile": true,
               "isZip": false,
               "environment": "${{ inputs.test_env }}",
@@ -221,16 +238,21 @@ jobs:
       - name: Generate Execution URL
         id: gen_exec_url
         run: |
-          echo "${{ fromJson(steps.retrieve_tc.outputs.response).data[0] }}" >> testCycle.json 
+          test_cycle=${{ fromJson(steps.retrieve_tc.outputs.response).data[0].key }}
           execution_id=${{ fromJson(steps.retrieve_tc.outputs.response).data[0].id }}
           execution_url=${{ inputs.jira_url }}/plugins/servlet/ac/com.infostretch.QmetryTestManager/qtm4j-test-management?project.id=${{ inputs.qmetry_project_id }}#!/executionPage/$execution_id
           echo "execution_url=$execution_url" >> $GITHUB_OUTPUT  
+          echo "JIRA Qmetry Test Cycle : $test_cycle"
           echo "JIRA Qmetry Execution URL : $execution_url"
-      
+          echo "${{ needs.run_test.outputs.run_id }}" > run_id.txt
+          echo "${{ test_cycle }}" > test_cycle.txt
+          
       - name: Upload test cycle info
         uses: actions/upload-artifact@v4
         with:
-          name: testCycle.json
-          path: testCycle.json
+          name: test-metadata
+          path: |
+            run_id.txt
+            test_cycle.txt
       
       
