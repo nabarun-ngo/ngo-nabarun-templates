@@ -107,6 +107,7 @@ jobs:
       - name: Retrieve / Generate Run Id & Test Cycle
         id: runId
         run: |
+          echo "Hi ${{github.run_id}}"
           if [[ -f "run_id.txt" && -f "test_cycle.txt" ]]; then
             RUN_ID=$(cat run_id.txt)
             TEST_CYCLE=$(cat test_cycle.txt)
