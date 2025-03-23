@@ -1,0 +1,26 @@
+name: Trigger Workflow
+on:
+  workflow_call:
+    inputs:
+      repository:
+        required: true
+        type: string
+      event_type:
+        required: true
+        type: string
+      input_json:
+        required: true
+        type: string
+
+jobs:
+  trigger_workflow:
+    runs-on: ubuntu-latest
+    name: Trigger ${{ inputs.event_type }}
+    steps:
+      - name: Trigger Repository Dispatch
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ secrets.PAT }}
+          repository: ${{ inputs.repository }}
+          event-type: ${{ inputs.event_type }}
+          client-payload: ${{ inputs.input_json }}
