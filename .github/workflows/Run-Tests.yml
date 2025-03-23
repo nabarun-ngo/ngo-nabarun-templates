@@ -233,7 +233,7 @@ jobs:
         id: gen_exec_url
         run: |
           execution_id=${{ fromJson(steps.retrieve_tc.outputs.response).data[0].id }}
-          test_cycle=${{ fromJson(steps.retrieve_tc.outputs.response).data[0].id }} 
+          test_cycle=${{ fromJson(steps.retrieve_tc.outputs.response).data[0].key }} 
           execution_url=${{ inputs.jira_url }}/plugins/servlet/ac/com.infostretch.QmetryTestManager/qtm4j-test-management?project.id=${{ inputs.qmetry_project_id }}#!/executionPage/$execution_id
           echo "execution_url=$execution_url" >> $GITHUB_OUTPUT  
           echo "execution_id=$execution_id" >> variables.env
