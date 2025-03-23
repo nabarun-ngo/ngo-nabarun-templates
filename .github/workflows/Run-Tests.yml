@@ -74,9 +74,6 @@ jobs:
   run_test:
     name: 'Run Test'
     runs-on: ubuntu-latest
-    outputs:
-      run_id: ${{ steps.runId.outputs.run_id }}
-      test_cycle: ${{ steps.runId.outputs.test_cycle }}
     steps:   
       - name: Checkout repository | Branch ${{ inputs.branch_name }}
         uses: actions/checkout@v4
@@ -98,31 +95,9 @@ jobs:
           restore-keys: |
             maven-   
 
-      - name: Download Test Metadata (if exists)
-        uses: actions/download-artifact@v4
-        with:
-          name: test-metadata
-        continue-on-error: true
-
-      - name: Retrieve / Generate Run Id & Test Cycle
-        id: runId
-        run: |
-          echo "Hi ${{github.run_id}}"
-          if [[ -f "run_id.txt" && -f "test_cycle.txt" ]]; then
-            RUN_ID=$(cat run_id.txt)
-            TEST_CYCLE=$(cat test_cycle.txt)
-            echo "run_id=$RUN_ID" >> $GITHUB_OUTPUT
-            echo "test_cycle=$TEST_CYCLE" >> $GITHUB_OUTPUT
-            echo "Reused Run ID: $RUN_ID"
-            echo "Reused Test Cycle: $TEST_CYCLE"
-          else
-            echo "run_id=$((10000 + RANDOM % 90000))" >> $GITHUB_OUTPUT
-          fi
-        shell: bash
-
       - name: Run Cucumber Tests
         run: |
-          echo "Run Id : ${{ steps.runId.outputs.run_id }}"
+          echo "Run Id : ${{ github.run_id }}"
           echo "Running tests with tags: ${{ inputs.test_cucumber_tags }}"
           mvn clean test -Dcucumber.filter.tags="${{ inputs.test_cucumber_tags }}" -DENVIRONMENT=${{ inputs.test_env }} -DCONFIG_SOURCE=doppler -DDOPPLER_PROJECT_NAME=${{ inputs.test_doppler_project_name }} -DDOPPLER_SERVICE_TOKEN=${{ secrets.test_doppler_service_token }} -Dheadless=Y || TEST_FAILED=true
 
@@ -160,7 +135,25 @@ jobs:
       - name: Generate Test Cycle Summary
         id: testCycle
         run: |
-          echo "test_cycle_summary=Automated Test Cycle - ${{ inputs.test_type }} | Run Id : ${{ needs.run_test.outputs.run_id }}" >> $GITHUB_OUTPUT  
+          echo "test_cycle_summary=Automated Test Cycle - ${{ inputs.test_type }} | Run Id : ${{ github.run_id }}" >> $GITHUB_OUTPUT  
+      
+      - name: Restore Cached Variables
+        uses: actions/cache@v4
+        with:
+          path: variables.env
+          key: cache-variables-${{ github.run_id }}
+          restore-keys: |
+            cache-variables-${{ github.run_id }}
+
+      - name: Load Variables
+        run: |
+          if [ -f variables.env ]; then
+            cat variables.env >> $GITHUB_ENV
+            echo "✅ Variables restored successfully!"
+          else
+            echo "❌ No cache found (first run)."
+          fi
+          echo "test_cycle=${{ env.test_cycle }}"
 
       - name: Generate Upload URL
         id: generate_url
@@ -172,7 +165,7 @@ jobs:
           data: |
            {
               "format": "cucumber",
-              "testCycleToReuse": "${{ inputs.test_cycle || needs.run_test.outputs.test_cycle }}",
+              "testCycleToReuse": "${{ env.test_cycle }}",
               "attachFile": true,
               "isZip": false,
               "environment": "${{ inputs.test_env }}",
@@ -190,7 +183,7 @@ jobs:
                   "customFields": [
                     {
                       "name": "Run Id",
-                      "value": "${{ needs.run_test.outputs.run_id }}"
+                      "value": "${{ github.run_id }}-${{ github.run_attempt }}"
                     },
                     {
                       "name": "Server Version",
@@ -240,20 +233,18 @@ jobs:
         id: gen_exec_url
         run: |
           execution_id=${{ fromJson(steps.retrieve_tc.outputs.response).data[0].id }}
+          test_cycle=${{ fromJson(steps.retrieve_tc.outputs.response).data[0].id }} 
           execution_url=${{ inputs.jira_url }}/plugins/servlet/ac/com.infostretch.QmetryTestManager/qtm4j-test-management?project.id=${{ inputs.qmetry_project_id }}#!/executionPage/$execution_id
-          test_cycle=${{ fromJson(steps.retrieve_tc.outputs.response).data[0].key }}
           echo "execution_url=$execution_url" >> $GITHUB_OUTPUT  
+          echo "execution_id=$execution_id" >> variables.env
+          echo "test_cycle=$test_cycle" >> variables.env
           echo "JIRA Qmetry Test Cycle : $test_cycle"
           echo "JIRA Qmetry Execution URL : $execution_url"
-          echo "${{ needs.run_test.outputs.run_id }}" > run_id.txt
-          echo "${{ fromJson(steps.retrieve_tc.outputs.response).data[0].key }}" > test_cycle.txt
-          
-      - name: Upload test cycle info
-        uses: actions/upload-artifact@v4
+
+      - name: Cache Variables by `run_id` ${{ github.run_id }}
+        uses: actions/cache@v4
         with:
-          name: test-metadata
-          path: |
-            run_id.txt
-            test_cycle.txt
+          path: variables.env
+          key: cache-variables-${{ github.run_id }}
       
       
