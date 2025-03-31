@@ -23,38 +23,7 @@ permissions:
       contents: write    
       
 jobs:
-  # create_tag:
-  #   name: 'Create Tag'
-  #   runs-on: ubuntu-latest
-  #   outputs:
-  #     tag_name: ${{ steps.tag_version.outputs.new_tag }}
-  #     bump_type: ${{ steps.tag_version.outputs.release_type }} 
-  #     changelog: ${{ steps.tag_version.outputs.changelog }}      
-  #   steps:
-  #     - name: Checkout repository
-  #       uses: actions/checkout@v4
-  #       with:
-  #        ref: ${{ inputs.source_branch }}
-         
-  #     - name: Bump version and push tag
-  #       id: tag_version
-  #       uses: mathieudutour/github-tag-action@v6.2
-  #       with:
-  #         github_token: ${{ secrets.GITHUB_TOKEN }}
-  #         pre_release_branches: ${{ inputs.pre_release_branches }}
-          
-  # create_release:
-  #   name: 'Create Release'
-  #   needs: create_tag
-  #   if: contains('main master', inputs.source_branch)  # ✅ Only run on main or master branch
-  #   runs-on: ubuntu-latest
-  #   steps:
-  #     - name: Create a GitHub release
-  #       uses: ncipollo/release-action@v1
-  #       with:
-  #         tag: ${{ needs.create_tag.outputs.tag_name }}
-  #         name: Release ${{ needs.create_tag.outputs.tag_name }}
-  #         body: ${{ needs.create_tag.outputs.changelog }}
+ 
   create_tag:
     name: Create Tag
     runs-on: ubuntu-latest
@@ -114,11 +83,54 @@ jobs:
             echo "stable_tag=$stable_version" >> $GITHUB_OUTPUT
           fi
 
+### ✅ **Generating Accurate Changelog**
+
+  generate_changelog:
+    name: Generate Changelog
+    runs-on: ubuntu-latest
+    needs: [promote_stable, create_tag]
+    outputs:
+      changelog: ${{ steps.changelog.outputs.changelog }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fetch all tags
+        run: |
+          git fetch --tags
+
+      - name: Get Previous Stable and Latest Pre-release
+        id: version_info
+        run: |
+          # Find latest stable and pre-release tags
+          previous_stable=$(git tag --list "v*.*.*" --sort=-version:refname | grep -v 'beta' | head -n 2 | tail -n 1)
+          latest_stable="${{ needs.promote_stable.outputs.stable_tag }}"
+
+          echo "Previous Stable: $previous_stable"
+          echo "Latest Stable: $latest_stable"
+
+          echo "PREVIOUS_STABLE=$previous_stable" >> $GITHUB_ENV
+          echo "LATEST_STABLE=$latest_stable" >> $GITHUB_ENV
+
+      - name: Generate Changelog
+        id: changelog
+        run: |
+          # Generate changelog between previous and latest stable releases
+          changelog=$(git log ${{ env.PREVIOUS_STABLE }}..${{ env.LATEST_STABLE }} --pretty=format:"- %s (%h) by %an" --no-merges)
+
+          if [ -z "$changelog" ]; then
+            echo "No new changes found!"
+            echo "changelog=No new changes" >> $GITHUB_OUTPUT
+          else
+            echo "changelog=$changelog" >> $GITHUB_OUTPUT
+          fi
+
   create_release:
     name: Create GitHub Release
     runs-on: ubuntu-latest
-    needs: [create_tag,promote_stable]
-    if: contains(inputs.release_branches,inputs.source_branch)
+    needs: [generate_changelog, promote_stable]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -131,8 +143,7 @@ jobs:
           name: Release ${{ needs.promote_stable.outputs.stable_tag }}
           body: |
             **Changes:**
-            ${{ needs.create_tag.outputs.changelog }}
+            ${{ needs.generate_changelog.outputs.changelog }}
           draft: false
           prerelease: false
-          
   
