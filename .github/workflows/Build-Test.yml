@@ -39,24 +39,8 @@ on:
         value: ${{ jobs.build.outputs.status }}
 
 jobs:
-  build:
-    name: Build and Test ${{ inputs.platform }}
-    runs-on: ubuntu-latest
-
-    outputs:
-      status: ${{ steps.check.outputs.status }}
-
-    steps:
-      - name: Checkout Target Repository
-        uses: actions/checkout@v4
-        with:
-          repository: ${{ inputs.repo }}
-          ref: ${{ inputs.branch }}
-          path: ${{ inputs.working_directory }}
-
   node:
     name: Node.js Build and Test
-    needs: build
     if: inputs.platform == 'node'
     runs-on: ubuntu-latest
 
@@ -94,7 +78,6 @@ jobs:
 
   java:
     name: Java Build and Test
-    needs: build
     if: inputs.platform == 'java'
     runs-on: ubuntu-latest
 
