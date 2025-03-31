@@ -8,11 +8,11 @@ on:
         type: string
       repo:
         description: "Repository to clone"
-        required: true
+        required: false
         type: string
       branch:
         description: "Branch to checkout (e.g., main, stage)"
-        required: true
+        required: false
         type: string
       command:
         description: "Command to run (e.g., npm run build, mvn clean test)"
