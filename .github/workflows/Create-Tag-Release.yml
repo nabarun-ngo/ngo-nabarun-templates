@@ -23,9 +23,7 @@ jobs:
     outputs:
       tag_name: ${{ steps.tag_version.outputs.new_tag }}
       bump_type: ${{ steps.tag_version.outputs.release_type }} 
-      changelog: ${{ steps.tag_version.outputs.changelog }}
-      is_prerelease: ${{ steps.tag_version.outputs.is_prerelease }}
-      
+      changelog: ${{ steps.tag_version.outputs.changelog }}      
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -39,29 +37,10 @@ jobs:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           pre_release_branches: ${{ inputs.pre_release_branches }}
           
-      - name: Determine if prerelease
-        id: determine_release_type
-        run: |
-          current_branch="${{ inputs.source_branch }}"
-          pre_release_branches="${{ inputs.pre_release_branches }}"
-          
-          # Convert comma-separated branches to an array
-          IFS=',' read -ra branches <<< "$pre_release_branches"
-          
-          is_prerelease="false"
-          for branch in "${branches[@]}"; do
-            if [[ "$current_branch" == "$branch" ]]; then
-              is_prerelease="true"
-              break
-            fi
-          done
-
-          echo "is_prerelease=$is_prerelease" >> $GITHUB_OUTPUT
-    
   create_release:
     name: 'Create Release'
     needs: create_tag
-    if: ${{ needs.create_tag.outputs.is_prerelease == 'false' }}
+    if: contains('main master', inputs.source_branch)  # ✅ Only run on main or master branch
     runs-on: ubuntu-latest
     steps:
       - name: Create a GitHub release
