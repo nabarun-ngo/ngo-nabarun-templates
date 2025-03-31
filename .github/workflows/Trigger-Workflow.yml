@@ -11,6 +11,10 @@ on:
       input_json:
         required: true
         type: string
+    secrets:
+      token:
+        required: true
+        
 
 jobs:
   trigger_workflow:
@@ -20,7 +24,7 @@ jobs:
       - name: Trigger Repository Dispatch
         uses: peter-evans/repository-dispatch@v3
         with:
-          token: ${{ secrets.PAT }}
+          token: ${{ secrets.token }}
           repository: ${{ inputs.repository }}
           event-type: ${{ inputs.event_type }}
           client-payload: ${{ inputs.input_json }}
