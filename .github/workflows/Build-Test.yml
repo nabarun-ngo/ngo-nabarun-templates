@@ -114,7 +114,13 @@ jobs:
           java-version: ${{ inputs.java_version }}
           cache: maven
 
-      - name: Run Build and Test Command
+      - name: Install Maven
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y maven
+          mvn -version
+
+      - name: Run Build and Test Command (using `mvn`)
         working-directory: ${{ inputs.working_directory }}
         run: |
           echo "Running: ${{ inputs.command }}"
