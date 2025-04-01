@@ -1,0 +1,50 @@
+on:
+  workflow_call:
+    inputs:
+      sync_auth0:
+        required: true
+        type: boolean
+      sync_firebaseRC:
+        required: true
+        type: boolean
+      firebase_source_project:
+        required: false
+        type: string
+      firebase_target_project:
+        required: false
+        type: string
+      branch_name:
+        required: false
+        type: string
+        default : 'main'
+      
+    secrets:
+      auth0_source_config:
+        required: false
+      auth0_dest_config:
+        required: false
+      firebase_service_account_source:
+        required: false
+      firebase_service_account_target:
+        required: false
+        
+jobs:
+  sync_data_auth0:
+    name: 'Sync Data between Auth0'
+    uses: ./.github/workflows/auth0/Auth0-Sync-v2.yml
+    if: inputs.sync_auth0
+    secrets:
+      source_config: ${{ secrets.auth0_source_config }}
+      dest_config: ${{ secrets.auth0_dest_config }}
+
+  sync_data_firebaseRC:
+    name: 'Sync Data between Firebase Remote Config'
+    uses: ./.github/workflows/firebase/FirebaseRC-Sync-v2.yml
+    if: inputs.sync_firebaseRC
+    with:
+      firebase_source_project: ${{ inputs.firebase_source_project }}
+      firebase_target_project: ${{ inputs.firebase_target_project }}
+    secrets:
+      firebase_service_account_source: ${{ secrets.firebase_service_account_source }}
+      firebase_service_account_target: ${{ secrets.firebase_service_account_target }}
+    
