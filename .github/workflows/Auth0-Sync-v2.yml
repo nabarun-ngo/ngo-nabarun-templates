@@ -1,4 +1,3 @@
-name: Auth0 Sync Data v2
 on:
   workflow_call:
     inputs:
@@ -15,7 +14,6 @@ on:
         
 jobs:
   sync_data:
-    name: 'Sync Data between Auth0'
     runs-on: ubuntu-latest
     steps:     
       - name: Checkout repository | Branch ${{ inputs.branch_name }}
