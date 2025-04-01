@@ -1,0 +1,112 @@
+name: Firebase Sync Data
+on:
+  workflow_call:
+    inputs:
+      branch_name:
+        required: false
+        type: string
+        default: 'main'
+      firebase_source_project:
+        required: true
+        type: string
+      firebase_target_project:
+        required: true
+        type: string
+    secrets:
+      firebase_service_account_source:
+        required: true
+      firebase_service_account_target:
+        required: true
+        
+jobs:
+  sync_remote_config:
+    name: 'Sync Data between Firebase Remote Config'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Google Cloud SDK
+        uses: google-github-actions/setup-gcloud@v1
+        with:
+          version: 'latest'
+
+      - name: Install jq (JSON parser)
+        run: sudo apt-get install jq -y
+
+      - name: Authenticate with Firebase (Source)
+        run: |
+          echo '${{ secrets.firebase_service_account_source }}' > $HOME/source-firebase.json
+          gcloud auth activate-service-account --key-file=$HOME/source-firebase.json
+          export ACCESS_TOKEN=$(gcloud auth print-access-token)
+          echo "ACCESS_TOKEN=$ACCESS_TOKEN" >> $GITHUB_ENV
+
+      - name: Export Remote Config from Source
+        run: |
+          HTTP_STATUS=$(curl -w "%{http_code}" -o remote-config.json -D headers_source.txt -X GET \
+            -H "Authorization: Bearer $ACCESS_TOKEN" \
+            -H "Accept: application/json" \
+            "https://firebaseremoteconfig.googleapis.com/v1/projects/${{ inputs.firebase_source_project }}/remoteConfig")
+
+          if [[ $HTTP_STATUS -ge 400 ]]; then
+            echo "❌ ERROR: Failed to export Remote Config from source (HTTP $HTTP_STATUS)"
+            exit 1
+          fi
+
+          ETAG=$(grep -Fi "etag:" headers_source.txt | awk '{print $2}' | tr -d '\r')
+          echo "SOURCE_ETAG=$ETAG" >> $GITHUB_ENV
+
+      - name: Upload Remote Config as Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: remote-config
+          path: remote-config.json
+          retention-days: 7  # Keep the file for 7 days
+
+      - name: Authenticate with Firebase (Target)
+        run: |
+          echo '${{ secrets.firebase_service_account_target }}' > $HOME/target-firebase.json
+          gcloud auth activate-service-account --key-file=$HOME/target-firebase.json
+          export ACCESS_TOKEN=$(gcloud auth print-access-token)
+          echo "ACCESS_TOKEN=$ACCESS_TOKEN" >> $GITHUB_ENV
+
+      - name: Get Target Remote Config ETag
+        run: |
+          HTTP_STATUS=$(curl -w "%{http_code}" -o /dev/null -D headers_target.txt -X GET \
+            -H "Authorization: Bearer $ACCESS_TOKEN" \
+            -H "Accept: application/json" \
+            "https://firebaseremoteconfig.googleapis.com/v1/projects/${{ inputs.firebase_target_project }}/remoteConfig")
+
+          if [[ $HTTP_STATUS -ge 400 ]]; then
+            echo "❌ ERROR: Failed to retrieve Remote Config from target (HTTP $HTTP_STATUS)"
+            exit 1
+          fi
+
+          ETAG=$(grep -Fi "etag:" headers_target.txt | awk '{print $2}' | tr -d '\r')
+
+          if [[ -z "$ETAG" ]]; then
+            echo "⚠️ Target ETag not found, using wildcard '*'"
+            ETAG="*"
+          fi
+
+          echo "TARGET_ETAG=$ETAG" >> $GITHUB_ENV
+
+      - name: Import Remote Config to Target and Print New ETag
+        run: |
+          HTTP_RESPONSE=$(mktemp)
+          HTTP_STATUS=$(curl -w "%{http_code}" -o $HTTP_RESPONSE -D headers_response.txt -X PUT \
+            -H "Authorization: Bearer $ACCESS_TOKEN" \
+            -H "Content-Type: application/json; UTF-8" \
+            -H "If-Match: $TARGET_ETAG" \
+            -d @remote-config.json \
+            "https://firebaseremoteconfig.googleapis.com/v1/projects/${{ inputs.firebase_target_project }}/remoteConfig")
+
+          if [[ $HTTP_STATUS -ge 400 ]]; then
+            echo "❌ ERROR: Failed to update Remote Config on target (HTTP $HTTP_STATUS)"
+            cat $HTTP_RESPONSE
+            exit 1
+          fi
+
+          NEW_ETAG=$(grep -Fi "etag:" headers_response.txt | awk '{print $2}' | tr -d '\r')
+          echo "✅ Successfully updated Remote Config!"
+          echo "📌 New ETag: $NEW_ETAG"
