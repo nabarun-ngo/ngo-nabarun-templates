@@ -1,4 +1,3 @@
-name: Firebase Sync Data
 on:
   workflow_call:
     inputs:
