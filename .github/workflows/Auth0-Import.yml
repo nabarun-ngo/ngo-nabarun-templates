@@ -52,7 +52,7 @@ on:
 
 jobs:
   import_data:
-    name: 'Import Data to Auth0'
+    name: 'Import Permissions to Auth0'
     runs-on: ubuntu-latest
     steps:     
       - name: Checkout repository | Branch ${{ inputs.branch_name }}
