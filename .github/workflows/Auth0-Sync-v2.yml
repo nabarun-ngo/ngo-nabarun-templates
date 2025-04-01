@@ -13,8 +13,8 @@ on:
         required: true
         
 jobs:
-  sync_data:
-    name: 'Sync Data between Auth0'
+  sync_tenant_data:
+    name: 'Sync Data between Auth0 Tenants'
     runs-on: ubuntu-latest
     steps:     
       - name: Checkout repository | Branch ${{ inputs.branch_name }}
