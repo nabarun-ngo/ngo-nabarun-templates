@@ -37,9 +37,8 @@ jobs:
       source_config: ${{ secrets.auth0_source_config }}
       dest_config: ${{ secrets.auth0_dest_config }}
 
-  sync_data_firebaseRC:
-    name: 'Sync Data between Firebase Remote Config'
-    uses: ./.github/workflows/FirebaseRC-Sync-v2.yml
+  sync_data_firebase:
+    uses: ./.github/workflows/Firebase-Sync-v2.yml
     if: ${{ inputs.sync_firebaseRC }}
     with:
       firebase_source_project: ${{ inputs.firebase_source_project }}
