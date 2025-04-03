@@ -44,12 +44,10 @@ jobs:
           REPO="${{ inputs.repository }}"
           PR_NUMBER="${{ inputs.pr_number }}"
           COMMIT_MESSAGES=$(gh pr view "$PR_NUMBER" --repo "$REPO" --json commits --jq '.commits[].messageHeadline' | sed 's/^/- /')
-          echo "COMMIT_MESSAGES=${COMMIT_MESSAGES}" > $GITHUB_ENV
-          echo "Commit Message : ${COMMIT_MESSAGES}"
+          echo "${COMMIT_MESSAGES}" > commits.md
 
       - name: Update PR Description
         run: |
           REPO="${{ inputs.repository }}"
           PR_NUMBER="${{ inputs.pr_number }}"
-          echo "Commit Message : ${{ env.COMMIT_MESSAGES }}"
-          gh pr edit "$PR_NUMBER" --repo "$REPO" --body "${{ env.COMMIT_MESSAGES }}"
+          gh pr edit "$PR_NUMBER" --repo "$REPO" --body-file commits.md
