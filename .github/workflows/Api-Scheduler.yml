@@ -29,7 +29,7 @@ jobs:
           echo "Triggering API: ${{ inputs.api_url }}"
           RESPONSE=$(curl -s -o response.txt -w "%{http_code}" \
             -X ${{ inputs.http_method }} \
-            -H "Authorization: Bearer ${{ inputs.api_token }}" \
+            -H "X-Api-Key: ${{ secrets.api_token }}" \
             -H "Content-Type: application/json" \
             -d '${{ inputs.request_body }}' \
             "${{ inputs.api_url }}")
