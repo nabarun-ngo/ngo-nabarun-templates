@@ -1,4 +1,4 @@
-name: Call API
+name: Call API on Schedule
 
 on:
   workflow_call:
@@ -16,7 +16,7 @@ on:
         default: ''
     secrets:
       api_token:
-        required: false
+        required: true
 
 jobs:
   trigger-api:
