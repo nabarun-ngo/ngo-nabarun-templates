@@ -1,0 +1,51 @@
+name: API Scheduler
+
+on:
+  workflow_call:
+    inputs:
+      api_url:
+        required: true
+        type: string
+      http_method:
+        required: false
+        type: string
+        default: 'GET'
+      api_token:
+        required: false
+        type: string
+      request_body:
+        required: false
+        type: string
+        default: ''
+
+jobs:
+  trigger-api:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Trigger API
+        run: |
+          echo "Triggering API: ${{ inputs.api_url }}"
+          RESPONSE=$(curl -s -o response.txt -w "%{http_code}" \
+            -X ${{ inputs.http_method }} \
+            -H "Authorization: Bearer ${{ inputs.api_token }}" \
+            -H "Content-Type: application/json" \
+            -d '${{ inputs.request_body }}' \
+            "${{ inputs.api_url }}")
+
+          echo "HTTP Status: $RESPONSE"
+          cat response.txt
+
+          if [[ "$RESPONSE" -ge 400 ]]; then
+            echo "❌ API call failed with status $RESPONSE"
+            exit 1
+          else
+            echo "✅ API triggered successfully"
+          fi
+        shell: bash
+
+      - name: Log Response
+        if: success()
+        run: cat response.txt
+
