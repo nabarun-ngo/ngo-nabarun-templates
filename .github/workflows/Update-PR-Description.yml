@@ -50,4 +50,4 @@ jobs:
         run: |
           REPO="${{ inputs.repository }}"
           PR_NUMBER="${{ inputs.pr_number }}"
-          gh pr edit "$PR_NUMBER" --repo "$REPO" --body-file commits.md
+          gh pr edit "$PR_NUMBER" --repo "$REPO" -F commits.md
