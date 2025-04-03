@@ -1,4 +1,4 @@
-name: API Scheduler
+name: Call API
 
 on:
   workflow_call:
@@ -24,28 +24,26 @@ jobs:
     timeout-minutes: 5
 
     steps:
-      - name: Trigger API
+      - name: Trigger API Request
+        id: api_request
+        uses: fjogeleit/http-request-action@v1
+        with:
+          url: ${{ inputs.api_url }}
+          method: ${{ inputs.http_method }}
+          headers: '{"X-Api-Key": "${{ secrets.api_token }}", "Content-Type": "application/json"}'
+          body: ${{ inputs.request_body }}
+          responseFile: response.json
+
+      - name: Log Response
+        if: success()
+        run: cat response.json
+
+      - name: Check API Response
         run: |
-          echo "Triggering API: ${{ inputs.api_url }}"
-          RESPONSE=$(curl -s -o response.txt -w "%{http_code}" \
-            -X ${{ inputs.http_method }} \
-            -H "X-Api-Key: ${{ secrets.api_token }}" \
-            -H "Content-Type: application/json" \
-            -d '${{ inputs.request_body }}' \
-            "${{ inputs.api_url }}")
-
-          echo "HTTP Status: $RESPONSE"
-          cat response.txt
-
-          if [[ "$RESPONSE" -ge 400 ]]; then
-            echo "❌ API call failed with status $RESPONSE"
+          STATUS_CODE=$(jq -r '.statusCode' response.json)
+          if [[ "$STATUS_CODE" -ge 400 ]]; then
+            echo "❌ API call failed with status $STATUS_CODE"
             exit 1
           else
             echo "✅ API triggered successfully"
           fi
-        shell: bash
-
-      - name: Log Response
-        if: success()
-        run: cat response.txt
-
