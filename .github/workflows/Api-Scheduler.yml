@@ -31,17 +31,16 @@ jobs:
         with:
           url: ${{ inputs.api_url }}
           method: ${{ inputs.http_method }}
-          headers: '{"X-Api-Key": "${{ secrets.api_token }}", "Content-Type": "application/json"}'
-          body: ${{ inputs.request_body }}
-          responseFile: response.json
+          customHeaders: '{"X-Api-Key": "${{ secrets.api_token }}", "Content-Type": "application/json"}'
+          data: ${{ inputs.request_body }}
 
       - name: Log Response
         if: success()
-        run: cat response.json
+        run: echo "Response = ${{ steps.api_request.output.response }}"
 
       - name: Check API Response
         run: |
-          STATUS_CODE=$(jq -r '.statusCode' response.json)
+          STATUS_CODE=${{ fromJson(steps.api_request.output.response).status }}
           if [[ "$STATUS_CODE" -ge 400 ]]; then
             echo "❌ API call failed with status $STATUS_CODE"
             exit 1
