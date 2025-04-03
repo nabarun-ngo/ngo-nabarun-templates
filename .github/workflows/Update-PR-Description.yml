@@ -39,15 +39,10 @@ jobs:
         run: |
           echo "${{ secrets.token }}" | gh auth login --with-token
 
-      - name: Fetch Commit Messages
+      - name: Fetch Commit Messages and Update PR Description
         run: |
           REPO="${{ inputs.repository }}"
           PR_NUMBER="${{ inputs.pr_number }}"
           COMMIT_MESSAGES=$(gh pr view "$PR_NUMBER" --repo "$REPO" --json commits --jq '.commits[].messageHeadline' | sed 's/^/- /')
           echo "${COMMIT_MESSAGES}" > commits.md
-
-      - name: Update PR Description
-        run: |
-          REPO="${{ inputs.repository }}"
-          PR_NUMBER="${{ inputs.pr_number }}"
           gh pr edit "$PR_NUMBER" --repo "$REPO" -F commits.md
