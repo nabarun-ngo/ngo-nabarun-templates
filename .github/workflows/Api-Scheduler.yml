@@ -37,7 +37,9 @@ jobs:
 
       - name: Log Response
         if: success()
-        run: echo "Response = ${{ steps.api_request.outputs.response }}"
+        run: |
+         echo "TriggerId = ${{ fromJson(steps.api_request.outputs.response).responsePayload.triggerId }}"
+         echo "Response = ${{ steps.api_request.outputs.response }}"
 
       - name: Check API Response
         run: |
