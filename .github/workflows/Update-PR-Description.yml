@@ -52,4 +52,4 @@ jobs:
           PR_NUMBER="${{ inputs.pr_number }}"
           PR_BODY=$(gh pr view "$PR_NUMBER" --repo "$REPO" --json body --jq '.body')
           UPDATED_BODY="$(cat commits.md)"
-          gh pr edit "$PR_NUMBER" --repo "$REPO" --body "$UPDATED_BODY"
+          gh pr edit "$PR_NUMBER" --repo "$REPO" --body-file commits.md
