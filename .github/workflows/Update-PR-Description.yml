@@ -43,7 +43,6 @@ jobs:
         run: |
           REPO="${{ inputs.repository }}"
           PR_NUMBER="${{ inputs.pr_number }}"
-          COMMIT_MESSAGES=$(gh pr view "$PR_NUMBER" --repo "$REPO" --json commits --jq '.commits[].messageHeadline' | sed 's/^/- /')
-          echo -e "## Commit Messages\n${COMMIT_MESSAGES}" > commits.md
-          ls -alR
-          gh pr edit "$PR_NUMBER" --repo "$REPO" -F "commits.md"
+          gh pr view "$PR_NUMBER" --repo "$REPO" --json commits --jq '.commits[].messageHeadline' > cat.md
+          ls -la
+          gh pr edit "$PR_NUMBER" --repo "$REPO" --body-file cat.md
