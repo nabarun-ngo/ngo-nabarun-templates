@@ -37,11 +37,11 @@ jobs:
 
       - name: Log Response
         if: success()
-        run: echo "Response = ${{ steps.api_request.output.response }}"
+        run: echo "Response = ${{ steps.api_request.outputs.response }}"
 
       - name: Check API Response
         run: |
-          STATUS_CODE=${{ fromJson(steps.api_request.output.response).status }}
+          STATUS_CODE=${{ fromJson(steps.api_request.outputs.response).status }}
           if [[ "$STATUS_CODE" -ge 400 ]]; then
             echo "❌ API call failed with status $STATUS_CODE"
             exit 1
