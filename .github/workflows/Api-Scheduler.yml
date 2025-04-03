@@ -33,6 +33,7 @@ jobs:
           method: ${{ inputs.http_method }}
           customHeaders: '{"X-Api-Key": "${{ secrets.api_token }}", "Content-Type": "application/json"}'
           data: ${{ inputs.request_body }}
+          timeout: 300000 
 
       - name: Log Response
         if: success()
