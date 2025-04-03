@@ -1,14 +1,30 @@
-name: Update PR Description with commits
+name: Reusable PR Description Updater
 
 on:
   workflow_call:
     inputs:
       pr_number:
+        description: "Pull Request Number"
         required: true
         type: number
+      repository:
+        description: "Repository (owner/repo)"
+        required: true
+        type: string
     secrets:
       token:
         required: true
+
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: "Pull Request Number"
+        required: true
+        type: number
+      repository:
+        description: "Repository (owner/repo)"
+        required: true
+        type: string
 
 jobs:
   update-pr:
@@ -25,13 +41,15 @@ jobs:
 
       - name: Fetch Commit Messages
         run: |
+          REPO="${{ inputs.repository }}"
           PR_NUMBER="${{ inputs.pr_number }}"
-          COMMIT_MESSAGES=$(gh pr view "$PR_NUMBER" --json commits --jq '.commits[].message' | sed 's/^/- /')
+          COMMIT_MESSAGES=$(gh pr view "$PR_NUMBER" --repo "$REPO" --json commits --jq '.commits[].message' | sed 's/^/- /')
           echo -e "## Commit Messages\n${COMMIT_MESSAGES}" > commits.md
 
       - name: Update PR Description
         run: |
+          REPO="${{ inputs.repository }}"
           PR_NUMBER="${{ inputs.pr_number }}"
-          PR_BODY=$(gh pr view "$PR_NUMBER" --json body --jq '.body')
-          UPDATED_BODY="${PR_BODY}\n\n$(cat commits.md)"
-          gh pr edit "$PR_NUMBER" --body "$UPDATED_BODY"
+          PR_BODY=$(gh pr view "$PR_NUMBER" --repo "$REPO" --json body --jq '.body')
+          UPDATED_BODY="$(cat commits.md)"
+          gh pr edit "$PR_NUMBER" --repo "$REPO" --body "$UPDATED_BODY"
