@@ -1,5 +1,4 @@
-name: Reusable PR Description Updater
-
+name: Update Pull Request
 on:
   workflow_call:
     inputs:
@@ -29,6 +28,7 @@ on:
 jobs:
   update-pr:
     runs-on: ubuntu-latest
+    name: Update PR Description
     steps:
       - name: Install GitHub CLI
         run: |
