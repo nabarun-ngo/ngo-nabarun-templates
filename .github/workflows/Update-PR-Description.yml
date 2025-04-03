@@ -1,0 +1,37 @@
+name: Update PR Description with commits
+
+on:
+  workflow_call:
+    inputs:
+      pr_number:
+        required: true
+        type: number
+    secrets:
+      GITHUB_TOKEN:
+        required: true
+
+jobs:
+  update-pr:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install GitHub CLI
+        run: |
+          sudo apt update
+          sudo apt install gh -y
+
+      - name: Authenticate GitHub CLI
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | gh auth login --with-token
+
+      - name: Fetch Commit Messages
+        run: |
+          PR_NUMBER="${{ inputs.pr_number }}"
+          COMMIT_MESSAGES=$(gh pr view "$PR_NUMBER" --json commits --jq '.commits[].message' | sed 's/^/- /')
+          echo -e "## Commit Messages\n${COMMIT_MESSAGES}" > commits.md
+
+      - name: Update PR Description
+        run: |
+          PR_NUMBER="${{ inputs.pr_number }}"
+          PR_BODY=$(gh pr view "$PR_NUMBER" --json body --jq '.body')
+          UPDATED_BODY="${PR_BODY}\n\n$(cat commits.md)"
+          gh pr edit "$PR_NUMBER" --body "$UPDATED_BODY"
