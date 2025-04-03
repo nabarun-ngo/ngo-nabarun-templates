@@ -10,13 +10,13 @@ on:
         required: false
         type: string
         default: 'GET'
-      api_token:
-        required: false
-        type: string
       request_body:
         required: false
         type: string
         default: ''
+    secrets:
+      api_token:
+        required: false
 
 jobs:
   trigger-api:
