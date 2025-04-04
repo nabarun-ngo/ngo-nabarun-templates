@@ -26,7 +26,7 @@ on:
         type: string
 
 jobs:
-  update-pr:
+  update-pr-:
     runs-on: ubuntu-latest
     name: Update PR Description
     steps:
@@ -49,4 +49,6 @@ jobs:
         run: |
           REPO="${{ inputs.repository }}"
           PR_NUMBER="${{ inputs.pr_number }}"
-          gh pr edit "$PR_NUMBER" --repo "$REPO" --body-file cat.md
+          MESSAGE="cat cat.md"
+          echo "$MESSAGE"
+          gh pr edit "$PR_NUMBER" --repo "$REPO" --title "$MESSAGE"
