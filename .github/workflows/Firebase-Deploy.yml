@@ -5,6 +5,18 @@ on:
       tag_name:
         required: true
         type: string
+      repo_name:
+        required: true
+        type: string
+      repo_owner_name:
+        required: true
+        type: string
+      environment_name:
+        required: true
+        type: string
+      environment_url:
+        required: false
+        type: string
       firebase_project_id:
         required: true
         type: string
@@ -18,15 +30,26 @@ on:
         required: true
      
 jobs:  
-   build-and-deploy-prod:
+   build-and-deploy:
     name: 'Build Artifacts and Deploy to Firebase'
     runs-on: 'ubuntu-latest'
+    environment: ${{ inputs.environment_name }}
     steps:
       - name: Checkout repository | tag ${{ inputs.tag_name }}
         uses: actions/checkout@v4
         with:
           ref: ${{ inputs.tag_name }}
-          repository: 'nabarun-ngo/ngo-nabarun-fe'
+          repository: '${{ inputs.repo_owner_name }}/${{ inputs.repo_name }}'
+
+      - name: Create GitHub Deployment
+        uses: chrnorm/deployment-action@v2
+        id: deployment
+        with:
+          token: ${{ secrets.repo_token }}
+          environment-url: ${{ inputs.environment_url }}
+          environment: ${{ inputs.environment_name }}
+          repo: ${{ inputs.repo_name }}
+          owner: ${{ inputs.repo_owner_name }}
           
       - name: Update package.json version
         uses: restackio/update-json-file-action@2.1
@@ -35,7 +58,7 @@ jobs:
           fields: '{"version": "${{ inputs.tag_name }}"}'
           
       - name: Build NPM
-        run: npm ci --legacy-peer-deps && npm run ${{ inputs.npm_run_command }}
+        run: ${{ inputs.npm_run_command }}
 
       - name: Deploy to Firebase
         uses: FirebaseExtended/action-hosting-deploy@v0
@@ -43,6 +66,28 @@ jobs:
           firebaseServiceAccount: '${{ secrets.firebase_service_account }}'
           channelId: live
           projectId: ${{ inputs.firebase_project_id }}
+
+      - name: Update deployment status (success)
+        if: success()
+        uses: chrnorm/deployment-status@v2
+        with:
+          state: 'success'
+          deployment-id: ${{ steps.deployment.outputs.deployment_id }}
+          token: ${{ secrets.repo_token }}
+          environment-url: ${{ inputs.environment_url }}
+          repo: ${{ inputs.repo_name }}
+          owner: ${{ inputs.repo_owner_name }}
+
+      - name: Update deployment status (failure)
+        if: failure()
+        uses: chrnorm/deployment-status@v2
+        with:
+          state: 'failure'
+          deployment-id: ${{ steps.deployment.outputs.deployment_id }}
+          token: ${{ secrets.repo_token }}
+          environment-url: ${{ inputs.environment_url }}
+          repo: ${{ inputs.repo_name }}
+          owner: ${{ inputs.repo_owner_name }}
  
   
   
