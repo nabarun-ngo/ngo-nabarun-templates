@@ -34,6 +34,8 @@ jobs:
     name: 'Build Artifacts and Deploy to Firebase'
     runs-on: 'ubuntu-latest'
     environment: ${{ inputs.environment_name }}
+    permissions:
+      deployments: write 
     steps:
       - name: Checkout repository | tag ${{ inputs.tag_name }}
         uses: actions/checkout@v4
