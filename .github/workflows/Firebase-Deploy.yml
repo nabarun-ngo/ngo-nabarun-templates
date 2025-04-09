@@ -50,6 +50,7 @@ jobs:
           environment: ${{ inputs.environment_name }}
           repo: ${{ inputs.repo_name }}
           owner: ${{ inputs.repo_owner_name }}
+          ref: ${{ inputs.tag_name }} 
           
       - name: Update package.json version
         uses: restackio/update-json-file-action@2.1
