@@ -5,6 +5,18 @@ on:
       tag_name:
         required: true
         type: string
+      repo_name:
+        required: true
+        type: string
+      repo_owner_name:
+        required: true
+        type: string
+      environment_name:
+        required: true
+        type: string
+      environment_url:
+        required: false
+        type: string
       target_folder:
         required: true
         type: string
@@ -34,6 +46,8 @@ on:
         required: true
       app_doppler_service_token:
         required: true
+      repo_token:
+        required: true
 jobs:  
   build_and_deploy_to_gcp:
     name: 'Build and Deploy to GCP App Engine'
@@ -43,8 +57,19 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ inputs.tag_name }}
-          repository: 'nabarun-ngo/ngo-nabarun-be'
-
+          repository: '${{ inputs.repo_owner_name }}/${{ inputs.repo_name }}'
+     
+      - name: Create GitHub Deployment
+        uses: chrnorm/deployment-action@v2
+        id: deployment
+        with:
+          token: ${{ secrets.repo_token }}
+          environment-url: ${{ inputs.environment_url }}
+          environment: ${{ inputs.environment_name }}
+          repo: ${{ inputs.repo_name }}
+          owner: ${{ inputs.repo_owner_name }}
+          ref: ${{ inputs.tag_name }} 
+    
       - name: Set up Java
         uses: actions/setup-java@v2
         with:
@@ -96,6 +121,28 @@ jobs:
           promote: true
           deliverables: ${{ env.jar_path }}
           flags: '--appyaml=${{ inputs.gae_app_yaml_path }}'
+     
+      - name: Update deployment status (success)
+        if: success()
+        uses: chrnorm/deployment-status@v2
+        with:
+          state: 'success'
+          deployment-id: ${{ steps.deployment.outputs.deployment_id }}
+          token: ${{ secrets.repo_token }}
+          environment-url: ${{ inputs.environment_url }}
+          repo: ${{ inputs.repo_name }}
+          owner: ${{ inputs.repo_owner_name }}
+
+      - name: Update deployment status (failure)
+        if: failure()
+        uses: chrnorm/deployment-status@v2
+        with:
+          state: 'failure'
+          deployment-id: ${{ steps.deployment.outputs.deployment_id }}
+          token: ${{ secrets.repo_token }}
+          environment-url: ${{ inputs.environment_url }}
+          repo: ${{ inputs.repo_name }}
+          owner: ${{ inputs.repo_owner_name }}
   
   clean_gcp_resources:
     runs-on: ubuntu-latest
