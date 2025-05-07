@@ -176,13 +176,14 @@ jobs:
 
       - name: List and delete Artifact Registry repositories
         run: |
-          REPOS=$(gcloud artifacts repositories list --format="value(name)")
+          REGION="asia-south1"  # change this to your region
+          REPOS=$(gcloud artifacts repositories list --location=$REGION --format="value(name)")
 
           if [ -z "$REPOS" ]; then
-            echo "No repositories found."
+            echo "No repositories found in $REGION"
           else
             for REPO in $REPOS; do
               echo "Deleting repository: $REPO"
-              gcloud artifacts repositories delete "$REPO" --quiet
+              gcloud artifacts repositories delete "$REPO" --location="$REGION" --quiet
             done
           fi
