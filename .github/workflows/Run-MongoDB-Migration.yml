@@ -52,9 +52,8 @@ jobs:
           find . -type f
 
       - name: Run MongoDB Migration
-        working-directory: ${{ inputs.working_directory }}
         env:
           MONGO_URI: ${{ secrets.MONGO_URI }}
           SOURCE_DB: ${{ inputs.source_db }}
           DEST_DB: ${{ inputs.dest_db }}
-        run: mongosh "$MONGO_URI" ${{ inputs.script_file }}
+        run: mongosh "$MONGO_URI" ${{ inputs.working_directory }}/${{ inputs.script_file }}
