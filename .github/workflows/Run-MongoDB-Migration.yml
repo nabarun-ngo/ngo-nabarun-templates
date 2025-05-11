@@ -46,6 +46,11 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y mongodb-mongosh
 
+      - name: Verify Files
+        run: |
+          echo "Files in the current directory and subdirectories:"
+          find . -type f
+
       - name: Run MongoDB Migration
         working-directory: ${{ inputs.working_directory }}
         env:
