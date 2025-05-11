@@ -11,6 +11,9 @@ on:
       dest_db:
         required: true
         type: string
+      environment_name:
+        required: true
+        type: string
       working_directory:
         required: false
         type: string
@@ -28,6 +31,7 @@ on:
 jobs:
   run-migration:
     runs-on: ubuntu-latest
+    environment: ${{ inputs.environment_name }}
     steps:
       - name: Checkout repository | Branch ${{ inputs.branch_name }}
         uses: actions/checkout@v4
