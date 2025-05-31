@@ -28,8 +28,8 @@ jobs:
 
       - name: Delete Specific Redis Key
         if: ${{ inputs.key != '' }}
-        run: redis-cli -h ${{ inputs.redis_host }} -p ${{ inputs.redis_port }} -a ${{ inputs.redis_password }} DEL "${{ inputs.key }}"
+        run: redis-cli -h ${{ secrets.redis_host }} -p ${{ secrets.redis_port }} -a ${{ secrets.redis_password }} DEL "${{ inputs.key }}"
 
       - name: Clear Redis Cache (All Keys)
         if: ${{ inputs.key == '' }}
-        run: redis-cli -h ${{ inputs.redis_host }} -p ${{ inputs.redis_port }} -a ${{ inputs.redis_password }} FLUSHALL
+        run: redis-cli -h ${{ secrets.redis_host }} -p ${{ secrets.redis_port }} -a ${{ secrets.redis_password }} FLUSHALL
