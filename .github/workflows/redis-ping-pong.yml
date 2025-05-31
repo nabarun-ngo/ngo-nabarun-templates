@@ -2,16 +2,13 @@ name: 'Redis Ping Pong'
 
 on:
   workflow_call:
-    inputs:
+    secrets:
       redis_host:
         description: 'Redis Host'
         required: true
-        type: string
       redis_port:
         description: 'Redis Port'
         required: true
-        type: string
-    secrets:
       redis_password:
         description: 'Redis Password'
         required: true
@@ -25,7 +22,7 @@ jobs:
 
       - name: Ping Redis Server
         run: |
-          response=$(redis-cli -h ${{ inputs.redis_host }} -p ${{ inputs.redis_port }} -a ${{ secrets.redis_password }} PING)
+          response=$(redis-cli -h ${{ secrets.redis_host }} -p ${{ secrets.redis_port }} -a ${{ secrets.redis_password }} PING)
           echo "Redis response: $response"
           if [ "$response" != "PONG" ]; then
             echo "Redis did not respond with PONG"
