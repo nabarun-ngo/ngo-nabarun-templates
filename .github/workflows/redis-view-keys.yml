@@ -21,4 +21,4 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y redis-tools
 
       - name: List Redis Keys
-        run: redis-cli -h ${{ inputs.redis_host }} -p ${{ inputs.redis_port }} -a ${{ inputs.redis_password }} KEYS "*"
+        run: redis-cli -h ${{ secrets.redis_host }} -p ${{ secrets.redis_port }} -a ${{ secrets.redis_password }} KEYS "*"
