@@ -1,0 +1,24 @@
+name: 'Redis View Keys'
+
+on:
+  workflow_call:
+    secrets:
+      redis_host:
+        description: 'Redis Host'
+        required: true
+      redis_port:
+        description: 'Redis Port'
+        required: true
+      redis_password:
+        description: 'Redis Password'
+        required: true
+
+jobs:
+  view-redis-keys:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install Redis CLI
+        run: sudo apt-get update && sudo apt-get install -y redis-tools
+
+      - name: List Redis Keys
+        run: redis-cli -h ${{ inputs.redis_host }} -p ${{ inputs.redis_port }} -a ${{ inputs.redis_password }} KEYS "*"
