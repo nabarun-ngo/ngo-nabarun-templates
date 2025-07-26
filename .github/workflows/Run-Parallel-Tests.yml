@@ -165,7 +165,7 @@ jobs:
       - name: Upload Test Results
         uses: actions/upload-artifact@v4
         with:
-          name: test-results
+          name: cucumber-json-${{ matrix.index }}
           path: target/cucumber.json
       
       - name: Upload rerun file
@@ -188,10 +188,29 @@ jobs:
     runs-on: ubuntu-latest
     needs: run_test
     steps:
-      - name: Download artifact
+      # - name: Download artifact
+      #   uses: actions/download-artifact@v4
+      #   with:
+      #     name: test-results
+      - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
-          name: test-results
+          path: cucumber-json-files
+      
+      - name: List downloaded files
+        run: ls -R cucumber-json-files
+      
+      - name: Zip all cucumber.json files
+        run: |
+          mkdir -p zipped-jsons
+          find cucumber-json-files -name "cucumber.json" -exec cp {} zipped-jsons/ \;
+          zip -j cucumber-jsons.zip zipped-jsons/*
+      
+      - name: Upload zipped cucumber.json
+        uses: actions/upload-artifact@v4
+        with:
+            name: cucumber-jsons
+            path: cucumber-jsons.zip
       
       - name: Generate Test Cycle Summary
         id: testCycle
@@ -228,7 +247,7 @@ jobs:
               "format": "cucumber",
               "testCycleToReuse": "${{ env.test_cycle }}",
               "attachFile": true,
-              "isZip": false,
+              "isZip": true,
               "environment": "${{ inputs.test_env }}",
               "matchTestSteps": true,
               "fields": {
@@ -267,7 +286,7 @@ jobs:
           curl -X PUT \
             -H "Content-Type: multipart/form-data" \
             -H "User-Agent: PostmanRuntime/7.43.0" \
-            -d @cucumber.json \
+            -d @cucumber-jsons.zip \
             '${{ fromJson(steps.generate_url.outputs.response).url }}'
       
       - name: Sleep for 60 seconds
