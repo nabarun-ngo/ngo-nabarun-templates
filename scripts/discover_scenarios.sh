@@ -10,8 +10,8 @@ echo "Discovering scenarios with tag: ${TAG}..."
 mvn test -Dcucumber.filter.tags="${TAG}" -Dcucumber.execution.dry-run=true \
   -Dcucumber.plugin=json:target/cucumber.json || true
 
-echo "Listing all files in workspace:"
-find . -type f | sort
+# echo "Listing all files in workspace:"
+# find . -type f | sort
 
 # Extract scenario line numbers by tag
 SCENARIOS=$(jq -r \
