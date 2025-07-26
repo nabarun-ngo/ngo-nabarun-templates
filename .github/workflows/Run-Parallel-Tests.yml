@@ -170,7 +170,7 @@ jobs:
           path: target/cucumber.json
       
       - name: Upload rerun file
-        if: failure()
+        if: ${{ env.TEST_STATUS == 'FAILED' }}
         uses: actions/upload-artifact@v4
         with:
           name: rerun-${{ strategy.job-index }}
