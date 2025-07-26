@@ -106,6 +106,7 @@ jobs:
       - name: Run discovery script
         id: set-matrix
         run: |
+          cd ./testing
           bash actions/scripts/discover_scenarios.sh "${{ inputs.test_cucumber_tags }}" "${{ inputs.max_tests_per_matrix }}"
 
   run_test:
