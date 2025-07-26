@@ -8,7 +8,7 @@ echo "Discovering scenarios with tag: ${TAG}..."
 
 # Run Cucumber dry-run with JSON plugin
 mvn test -Dcucumber.filter.tags="${TAG}" -Dcucumber.execution.dry-run=true \
-  -Dcucumber.plugin=json:target/cucumber-dry-run.json || true
+  -Dcucumber.plugin=json:target/cucumber.json || true
 
 echo "Listing all files in workspace:"
 find . -type f | sort
@@ -17,7 +17,7 @@ find . -type f | sort
 SCENARIOS=$(jq -r \
   '[.[] | .elements[] |
     select(.tags[]?.name == "'"$TAG"'") |
-    "\(.uri):\(.line)"]' target/cucumber-dry-run.json)
+    "\(.uri):\(.line)"]' target/cucumber.json)
 
 COUNT=$(echo "$SCENARIOS" | jq 'length')
 
