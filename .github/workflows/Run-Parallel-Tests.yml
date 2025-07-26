@@ -153,8 +153,7 @@ jobs:
             -DENVIRONMENT=${{ inputs.test_env }} \
             -DCONFIG_SOURCE=doppler \
             -DDOPPLER_PROJECT_NAME=${{ inputs.test_doppler_project_name }} \
-            -DDOPPLER_SERVICE_TOKEN=${{ secrets.test_doppler_service_token }} \
-            -Dheadless=Y || TEST_FAILED=true
+            -DDOPPLER_SERVICE_TOKEN=${{ secrets.test_doppler_service_token }} || TEST_FAILED=true
                 
           if [ "$TEST_FAILED" = "true" ]; then
             echo "TEST_STATUS=FAILED" >> $GITHUB_ENV
