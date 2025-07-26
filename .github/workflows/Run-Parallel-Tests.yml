@@ -143,11 +143,9 @@ jobs:
       
           echo "Running the following scenarios:"
           SCENARIOS=$(echo '${{ toJson(matrix.scenarios) }}' | jq -r '.[]')
-          echo "$SCENARIOS"
       
           # Save to batch.txt
           echo "$SCENARIOS" > batch.txt
-          echo "Contents of batch.txt:"
           cat batch.txt
       
           mvn clean test -q \
