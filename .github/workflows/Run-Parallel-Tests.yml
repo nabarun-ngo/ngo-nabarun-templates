@@ -165,6 +165,7 @@ jobs:
       - name: Upload Test Results
         uses: actions/upload-artifact@v4
         with:
+          name: cucumber-json${{ strategy.job-index }}
           path: target/cucumber.json
       
       - name: Upload rerun file
