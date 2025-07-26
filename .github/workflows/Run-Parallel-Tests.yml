@@ -191,22 +191,23 @@ jobs:
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
-          path: cucumber-json-files
+          path: all-results
       
       - name: List downloaded files
-        run: ls -R cucumber-json-files
+        run: ls -R all-results
       
-      - name: Zip all cucumber.json files
+
+      - name: Zip only cucumber-*.json files
         run: |
-          mkdir -p zipped-jsons
-          find cucumber-json-files -name "cucumber.json" -exec cp {} zipped-jsons/ \;
-          zip -j cucumber-jsons.zip zipped-jsons/*
+          mkdir filtered
+          find all-results -type f -name 'cucumber-*.json' -exec cp {} filtered/ \;
+          zip -r cucumber.zip filtered/
       
       - name: Upload zipped cucumber.json
         uses: actions/upload-artifact@v4
         with:
-            name: cucumber-jsons
-            path: cucumber-jsons.zip
+            name: cucumber-zip
+            path: cucumber.zip
       
       - name: Generate Test Cycle Summary
         id: testCycle
@@ -282,7 +283,7 @@ jobs:
           curl -X PUT \
             -H "Content-Type: multipart/form-data" \
             -H "User-Agent: PostmanRuntime/7.43.0" \
-            -d @cucumber-jsons.zip \
+            -d @cucumber.zip \
             '${{ fromJson(steps.generate_url.outputs.response).url }}'
       
       - name: Sleep for 60 seconds
