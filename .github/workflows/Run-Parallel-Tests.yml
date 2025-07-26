@@ -150,7 +150,7 @@ jobs:
           echo "Contents of batch.txt:"
           cat batch.txt
       
-          mvn clean test \
+          mvn clean test -q \
             -Dcucumber.options="@batch.txt" \
             -Dcucumber.plugin="pretty,html:target/cucumber.html,json:target/cucumber.json,rerun:target/rerun.txt" \
             -DENVIRONMENT=${{ inputs.test_env }} \
