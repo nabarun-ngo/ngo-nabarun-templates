@@ -7,7 +7,7 @@ cd test
 echo "Discovering scenarios with tag: ${TAG}..."
 
 # Run Cucumber dry-run with JSON plugin
-mvn test -Dcucumber.filter.tags="${TAG}" -Dcucumber.execution.dry-run=true \
+mvn clean test -q -Dcucumber.filter.tags="${TAG}" -Dcucumber.execution.dry-run=true \
   -Dcucumber.plugin=json:target/cucumber.json || true
 
 # echo "Listing all files in workspace:"
