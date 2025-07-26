@@ -143,13 +143,12 @@ jobs:
       
           echo "Running the following scenarios:"
           SCENARIOS=$(echo '${{ toJson(matrix.scenarios) }}' | jq -r '.[]')
-      
-          # Save to batch.txt
-          echo "$SCENARIOS" > batch.txt
-          cat batch.txt
+          echo $SCENARIOS
+          
+          SCENARIO_STRING=$(echo '${{ toJson(matrix.scenarios) }}' | jq -r -j '. | join(",")')
       
           mvn clean test -q \
-            -Dcucumber.options="@batch.txt" \
+            -Dcucumber.features="$SCENARIO_STRING" \
             -Dcucumber.plugin="pretty,html:target/cucumber.html,json:target/cucumber.json,rerun:target/rerun.txt" \
             -DENVIRONMENT=${{ inputs.test_env }} \
             -DCONFIG_SOURCE=doppler \
