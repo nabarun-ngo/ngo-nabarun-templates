@@ -92,6 +92,7 @@ jobs:
         with:
           repository: ${{ inputs.repository_name }}
           ref: ${{ inputs.branch_name }}
+          path: 'test'
 
       - name: Set up Java
         uses: actions/setup-java@v2
