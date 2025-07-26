@@ -3,7 +3,6 @@
 TAG=$1
 MAX=$2
 
-cd ./testing
 echo "Discovering scenarios with tag: ${TAG}..."
 
 # Run Cucumber dry-run with JSON plugin
