@@ -140,19 +140,24 @@ jobs:
         run: |
           echo "Run Id : ${{ github.run_id }}"
           echo "Test tags: ${{ inputs.test_cucumber_tags }}"
+      
           echo "Running the following scenarios:"
-          echo "${{ toJson(matrix.scenarios) }}" | jq -r '.[]'
-          echo "${{ toJson(matrix.scenarios) }}" | jq -r '.[]' > batch.txt
+          SCENARIOS=$(echo '${{ toJson(matrix.scenarios) }}' | jq -r '.[]')
+          echo "$SCENARIOS"
+      
+          # Save to batch.txt
+          echo "$SCENARIOS" > batch.txt
+          echo "Contents of batch.txt:"
           cat batch.txt
-
+      
           mvn clean test \
-                -Dcucumber.options="@batch.txt" \
-                -Dcucumber.plugin="pretty,html:target/cucumber.html,json:target/cucumber.json,rerun:target/rerun.txt" \
-                -DENVIRONMENT=${{ inputs.test_env }} \
-                -DCONFIG_SOURCE=doppler \
-                -DDOPPLER_PROJECT_NAME=${{ inputs.test_doppler_project_name }} \
-                -DDOPPLER_SERVICE_TOKEN=${{ secrets.test_doppler_service_token }} \
-                -Dheadless=Y || TEST_FAILED=true
+            -Dcucumber.options="@batch.txt" \
+            -Dcucumber.plugin="pretty,html:target/cucumber.html,json:target/cucumber.json,rerun:target/rerun.txt" \
+            -DENVIRONMENT=${{ inputs.test_env }} \
+            -DCONFIG_SOURCE=doppler \
+            -DDOPPLER_PROJECT_NAME=${{ inputs.test_doppler_project_name }} \
+            -DDOPPLER_SERVICE_TOKEN=${{ secrets.test_doppler_service_token }} \
+            -Dheadless=Y || TEST_FAILED=true
                 
           if [ "$TEST_FAILED" = "true" ]; then
             echo "TEST_STATUS=FAILED" >> $GITHUB_ENV
