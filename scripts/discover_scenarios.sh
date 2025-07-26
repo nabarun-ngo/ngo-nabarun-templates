@@ -15,9 +15,12 @@ find . -type f | sort
 
 # Extract scenario line numbers by tag
 SCENARIOS=$(jq -r \
-  '[.[] | .elements[] |
-    select(.tags[]?.name == "'"$TAG"'") |
-    "\(.uri):\(.line)"]' target/cucumber.json)
+  --arg tag "$TAG" '
+  [ .[] as $feature
+    | $feature.elements[]
+    | select(.tags[]?.name == $tag)
+    | "\($feature.uri):\(.line)"
+  ]' target/cucumber.json)
 
 COUNT=$(echo "$SCENARIOS" | jq 'length')
 
