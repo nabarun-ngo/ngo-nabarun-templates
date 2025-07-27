@@ -87,7 +87,7 @@ jobs:
           repository: nabarun-ngo/ngo-nabarun-templates
           path: 'actions'
 
-      - name: Checkout repository | Branch ${{ inputs.branch_name }}
+      - name: Checkout test repository | Branch ${{ inputs.branch_name }}
         uses: actions/checkout@v4
         with:
           repository: ${{ inputs.repository_name }}
@@ -116,7 +116,7 @@ jobs:
       fail-fast: false
       matrix: ${{ fromJson(needs.discover-scenarios.outputs.matrix) }}
     steps:   
-      - name: Checkout repository | Branch ${{ inputs.branch_name }}
+      - name: Checkout test repository | Branch ${{ inputs.branch_name }}
         uses: actions/checkout@v4
         with:
           repository: ${{ inputs.repository_name }}
@@ -188,6 +188,12 @@ jobs:
     runs-on: ubuntu-latest
     needs: run_test
     steps:
+
+      - name: Checkout template repo (with scripts)
+        uses: actions/checkout@v4
+        with:
+          repository: nabarun-ngo/ngo-nabarun-templates
+          
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
@@ -195,19 +201,15 @@ jobs:
       
       - name: List downloaded files
         run: ls -R all-results
-      
 
-      - name: Zip only cucumber-*.json files
-        run: |
-          mkdir filtered
-          find all-results -type f -name 'cucumber-*.json' -exec cp {} filtered/ \;
-          zip -r cucumber.zip filtered/
+      - name: Merge all cucumber-*.json into one
+        run: bash ./scripts/merge-cucumber-jsons.sh all-results merged
       
-      - name: Upload zipped cucumber.json
+      - name: Upload merged cucumber.json
         uses: actions/upload-artifact@v4
         with:
-            name: cucumber-zip
-            path: cucumber.zip
+          name: merged-cucumber-json
+          path: merged/cucumber.json
       
       - name: Generate Test Cycle Summary
         id: testCycle
@@ -244,7 +246,7 @@ jobs:
               "format": "cucumber",
               "testCycleToReuse": "${{ env.test_cycle }}",
               "attachFile": true,
-              "isZip": true,
+              "isZip": false,
               "environment": "${{ inputs.test_env }}",
               "matchTestSteps": true,
               "fields": {
@@ -283,7 +285,7 @@ jobs:
           curl -X PUT \
             -H "Content-Type: multipart/form-data" \
             -H "User-Agent: PostmanRuntime/7.43.0" \
-            -d @cucumber.zip \
+            -d @merged/cucumber.json \
             '${{ fromJson(steps.generate_url.outputs.response).url }}'
       
       - name: Sleep for 60 seconds
