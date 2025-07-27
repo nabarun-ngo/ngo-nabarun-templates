@@ -153,18 +153,19 @@ jobs:
             maven-   
       
       - name: View Test Parameters
+        id : test_params
         run: |
           SCENARIOS=$(echo '${{ toJson(matrix.scenarios) }}' | jq -r '.[]' | paste -sd, -)
           echo "Run Id : ${{ github.run_id }}"
           echo "Test tags: ${{ inputs.test_cucumber_tags }}"
-          echo "SCENARIOS=$SCENARIOS" >> $GITHUB_ENV
           echo "Scenarios: $SCENARIOS"
+          echo "scenarios=$SCENARIOS" >> $GITHUB_OUTPUT
 
       - name: Run Cucumber Tests
         uses: coactions/setup-xvfb@v1
         with:
           run: |
-           bash ./actions/scripts/run_cucumber_tests.sh $SCENARIOS "${{ strategy.job-index }}" "${{ inputs.test_env }}" "${{ inputs.test_doppler_project_name }}" "${{ secrets.test_doppler_service_token }}" "${{ inputs.max_rerun_attempt }}"
+           bash ./actions/scripts/run_cucumber_tests.sh ${{ steps.test_params.outputs.scenarios }} "${{ strategy.job-index }}" "${{ inputs.test_env }}" "${{ inputs.test_doppler_project_name }}" "${{ secrets.test_doppler_service_token }}" "${{ inputs.max_rerun_attempt }}"
         continue-on-error: true
           
       - name: Upload Test Results
