@@ -147,7 +147,14 @@ jobs:
         run: |
           Xvfb :99 -screen 0 1920x1080x24 &
           echo "DISPLAY=:99" >> $GITHUB_ENV
-          sleep 3
+          for i in {1..10}; do
+            if xdpyinfo -display :99 >/dev/null 2>&1; then
+              echo "Xvfb started successfully"
+              break
+            fi
+            echo "Waiting for Xvfb to start..."
+            sleep 1
+          done
           
       - name: Set up Java
         uses: actions/setup-java@v2
