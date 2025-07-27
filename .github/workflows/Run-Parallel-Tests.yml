@@ -137,7 +137,18 @@ jobs:
           repository: ${{ inputs.repository_name }}
           ref: ${{ inputs.branch_name }}
           path: 'test'
+      
+      - name: Install dependencies (Xvfb, fonts)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb fonts-liberation libappindicator3-1 xdg-utils
 
+      - name: Start virtual display with large screen
+        run: |
+          Xvfb :99 -screen 0 1920x1080x24 &
+          echo "DISPLAY=:99" >> $GITHUB_ENV
+          sleep 3
+          
       - name: Set up Java
         uses: actions/setup-java@v2
         with:
@@ -168,7 +179,9 @@ jobs:
             "${{ secrets.test_doppler_service_token }}" \
             "${{ inputs.max_rerun_attempt }}"
         continue-on-error: true
-        
+        env:
+          DISPLAY: :99
+          
       - name: Upload Test Results
         uses: actions/upload-artifact@v4
         with:
