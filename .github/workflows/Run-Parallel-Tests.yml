@@ -18,7 +18,7 @@ on:
         required: false
         type: number
         default: 5
-      rerun_attempt:
+      max_rerun_attempt:
         required: false
         type: number
         default: 0
@@ -150,34 +150,34 @@ jobs:
         run: |
           echo "Run Id : ${{ github.run_id }}"
           echo "Test tags: ${{ inputs.test_cucumber_tags }}"
-      
           echo "Running the following scenarios:"
           SCENARIOS=$(echo '${{ toJson(matrix.scenarios) }}' | jq -r '.[]')
           echo $SCENARIOS
           SCENARIO_STRING=$(echo '${{ toJson(matrix.scenarios) }}' | jq -r -j '. | join(",")')
-          bash ./actions/scripts/run_cucumber_with_reruns.sh \
+          bash ./actions/scripts/run_cucumber_tests.sh \
             "$SCENARIO_STRING" \
             "${{ strategy.job-index }}" \
             "${{ inputs.test_env }}" \
             "${{ inputs.test_doppler_project_name }}" \
             "${{ secrets.test_doppler_service_token }}" \
-            "${{ inputs.rerun_attempt }}"
+            "${{ inputs.max_rerun_attempt }}"
         continue-on-error: true
         
       - name: Upload Test Results
         uses: actions/upload-artifact@v4
         with:
           name: cucumber-json-${{ strategy.job-index }}
-          path: target/
+          path: target/cucumber-${{ strategy.job-index }}.json
       
-      - name: Upload rerun file
-        if: ${{ env.TEST_STATUS == 'FAILED' }}
-        uses: actions/upload-artifact@v4
+      - name: Publish Test Results
+        uses: dorny/test-reporter@v1
         with:
-          name: rerun-${{ strategy.job-index }}
-          path: target/rerun-${{ strategy.job-index }}.txt
+          name: Cucumber Tests
+          path: target/cucumber-${{ strategy.job-index }}.xml
+          reporter: java-junit
+          fail-on-error: false
           
-      - name: Tests Result
+      - name: Show Tests Result
         run: |
           echo "Test Status: $TEST_STATUS"
           if [ "$TEST_STATUS" = "FAILED" ]; then
