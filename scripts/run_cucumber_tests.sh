@@ -19,7 +19,7 @@ echo "🔢 Max Rerun Attempts: $MAX_RETRIES"
 echo "🔢 Scenario: $SCENARIO_STRING"
 
 mvn -Dsurefire.rerunFailingTestsCount=$MAX_RETRIES clean test -q \
-      -Dcucumber.features="$SCENARIO_STRING" \
+      -Dcucumber.features=$SCENARIO_STRING \
       -Dcucumber.plugin="pretty,html:target/cucumber-${JOB_INDEX}.html,json:target/cucumber-${JOB_INDEX}.json,junit:target/cucumber-${JOB_INDEX}.xml" \
       -DENVIRONMENT=$TEST_ENV \
       -DCONFIG_SOURCE=doppler \
