@@ -178,7 +178,7 @@ jobs:
       - name: Publish Test Results
         uses: dorny/test-reporter@v1
         with:
-          name: Cucumber Tests
+          name: Report
           path: test/target/cucumber-${{ strategy.job-index }}.xml
           reporter: java-junit
           fail-on-error: false
