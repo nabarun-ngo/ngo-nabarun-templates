@@ -119,7 +119,12 @@ jobs:
       fail-fast: false
       matrix: ${{ fromJson(needs.discover-scenarios.outputs.matrix) }}
     steps:   
-      - name: Checkout template repo (with scripts)
+      - name: Checkout current repository
+        uses: actions/checkout@v4
+        with:
+          path: .
+          
+      - name: Checkout template repository (with scripts)
         uses: actions/checkout@v4
         with:
           repository: nabarun-ngo/ngo-nabarun-templates
