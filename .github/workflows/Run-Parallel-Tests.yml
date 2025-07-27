@@ -267,6 +267,7 @@ jobs:
         echo "Test Status: $TEST_STATUS"
         if [ "$TEST_STATUS" = "FAILED" ]; then
           exit 1
+        fi
           
   upload_test_result:
     name: 'Upload Test Results'
