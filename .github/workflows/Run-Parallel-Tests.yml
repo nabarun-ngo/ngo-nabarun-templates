@@ -80,6 +80,7 @@ on:
         
 jobs:
   discover-scenarios:
+    name: 'Discover Test'
     runs-on: ubuntu-latest
     outputs:
       matrix: ${{ steps.set-matrix.outputs.matrix }}
