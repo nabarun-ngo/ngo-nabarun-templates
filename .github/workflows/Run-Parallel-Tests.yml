@@ -17,7 +17,11 @@ on:
       max_tests_per_matrix:
         required: false
         type: number
-        default: 2
+        default: 5
+      rerun_attempt:
+        required: false
+        type: number
+        default: 1
       app_ui_version:
         required: false
         type: string
@@ -115,11 +119,18 @@ jobs:
       fail-fast: false
       matrix: ${{ fromJson(needs.discover-scenarios.outputs.matrix) }}
     steps:   
+      - name: Checkout template repo (with scripts)
+        uses: actions/checkout@v4
+        with:
+          repository: nabarun-ngo/ngo-nabarun-templates
+          path: 'actions'
+
       - name: Checkout test repository | Branch ${{ inputs.branch_name }}
         uses: actions/checkout@v4
         with:
           repository: ${{ inputs.repository_name }}
           ref: ${{ inputs.branch_name }}
+          path: 'test'
 
       - name: Set up Java
         uses: actions/setup-java@v2
@@ -143,29 +154,21 @@ jobs:
           echo "Running the following scenarios:"
           SCENARIOS=$(echo '${{ toJson(matrix.scenarios) }}' | jq -r '.[]')
           echo $SCENARIOS
-          
           SCENARIO_STRING=$(echo '${{ toJson(matrix.scenarios) }}' | jq -r -j '. | join(",")')
-      
-          mvn clean test -q \
-            -Dcucumber.features="$SCENARIO_STRING" \
-            -Dcucumber.plugin="pretty,html:target/cucumber-${{ strategy.job-index }}.html,json:target/cucumber-${{ strategy.job-index }}.json,rerun:target/rerun-${{ strategy.job-index }}.txt" \
-            -DENVIRONMENT=${{ inputs.test_env }} \
-            -DCONFIG_SOURCE=doppler \
-            -DDOPPLER_PROJECT_NAME=${{ inputs.test_doppler_project_name }} \
-            -DDOPPLER_SERVICE_TOKEN=${{ secrets.test_doppler_service_token }} || TEST_FAILED=true
-                
-          if [ "$TEST_FAILED" = "true" ]; then
-            echo "TEST_STATUS=FAILED" >> $GITHUB_ENV
-          else
-            echo "TEST_STATUS=SUCCESS" >> $GITHUB_ENV
-          fi
+          bash ./actions/scripts/run_cucumber_with_reruns.sh \
+            "$SCENARIO_STRING" \
+            "${{ strategy.job-index }}" \
+            "${{ inputs.test_env }}" \
+            "${{ inputs.test_doppler_project_name }}" \
+            "${{ secrets.test_doppler_service_token }}" \
+            "${{ inputs.rerun_attempt }}"
         continue-on-error: true
         
       - name: Upload Test Results
         uses: actions/upload-artifact@v4
         with:
           name: cucumber-json-${{ strategy.job-index }}
-          path: target/cucumber-${{ strategy.job-index }}.json
+          path: target/
       
       - name: Upload rerun file
         if: ${{ env.TEST_STATUS == 'FAILED' }}
