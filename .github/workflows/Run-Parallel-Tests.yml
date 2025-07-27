@@ -166,6 +166,7 @@ jobs:
         with:
           run: |
            bash ./actions/scripts/run_cucumber_tests.sh ${{ steps.test_params.outputs.scenarios }} "${{ strategy.job-index }}" "${{ inputs.test_env }}" "${{ inputs.test_doppler_project_name }}" "${{ secrets.test_doppler_service_token }}" "${{ inputs.max_rerun_attempt }}"
+          options: -screen 0 1920x1080x24
         continue-on-error: true
           
       - name: Upload Test Results
