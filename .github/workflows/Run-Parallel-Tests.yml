@@ -174,19 +174,15 @@ jobs:
         uses: coactions/setup-xvfb@v1
         with:
           run: |
-            echo "Run Id : ${{ github.run_id }}"
-            echo "Test tags: ${{ inputs.test_cucumber_tags }}"
-            echo "Running the following scenarios:"
-            SCENARIOS=$(echo '${{ toJson(matrix.scenarios) }}' | jq -r '.[]')
-            echo $SCENARIOS
-            SCENARIO_STRING=$(echo '${{ toJson(matrix.scenarios) }}' | jq -r -j '. | join(",")')
-            bash ./actions/scripts/run_cucumber_tests.sh \
-              "$SCENARIO_STRING" \
-              "${{ strategy.job-index }}" \
-              "${{ inputs.test_env }}" \
-              "${{ inputs.test_doppler_project_name }}" \
-              "${{ secrets.test_doppler_service_token }}" \
-              "${{ inputs.max_rerun_attempt }}"
+              echo "Run Id : ${{ github.run_id }}"
+              echo "Test tags: ${{ inputs.test_cucumber_tags }}"
+              bash ./actions/scripts/run_cucumber_tests.sh \
+                '${{ toJson(matrix.scenarios) }}' \
+                "${{ strategy.job-index }}" \
+                "${{ inputs.test_env }}" \
+                "${{ inputs.test_doppler_project_name }}" \
+                "${{ secrets.test_doppler_service_token }}" \
+                "${{ inputs.max_rerun_attempt }}"
           continue-on-error: true
           
       - name: Upload Test Results
