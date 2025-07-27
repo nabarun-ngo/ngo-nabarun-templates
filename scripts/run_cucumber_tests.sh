@@ -25,7 +25,7 @@ mvn -Dsurefire.rerunFailingTestsCount=$MAX_RETRIES clean test -q \
       -DCONFIG_SOURCE=doppler \
       -DDOPPLER_PROJECT_NAME=$DOPPLER_PROJECT_NAME \
       -DDOPPLER_SERVICE_TOKEN=$DOPPLER_SERVICE_TOKEN \
-      -Dheadless=Y || TEST_FAILED=1
+      -Dheadless=N || TEST_FAILED=1
 
 if [ $TEST_FAILED -eq 1 ]; then
   echo "TEST_STATUS=FAILED" >> $GITHUB_ENV
