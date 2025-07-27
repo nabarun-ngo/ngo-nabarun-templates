@@ -184,9 +184,9 @@ jobs:
           
   upload_test_result:
     name: 'Upload Test Results'
-    if: ${{ inputs.upload_result == true &&  needs.run_test.result != 'cancelled' && fromJson(needs.discover-scenarios.outputs.matrix).length > 0 && always() }}
+    if: ${{ inputs.upload_result == true &&  needs.run_test.result != 'cancelled' && always() }}
     runs-on: ubuntu-latest
-    needs: [discover-scenarios,run_test]
+    needs: run_test
     steps:
 
       - name: Checkout template repo (with scripts)
