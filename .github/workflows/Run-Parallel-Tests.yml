@@ -21,7 +21,7 @@ on:
       rerun_attempt:
         required: false
         type: number
-        default: 1
+        default: 0
       app_ui_version:
         required: false
         type: string
