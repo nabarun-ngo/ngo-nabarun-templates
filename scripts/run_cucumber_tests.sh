@@ -5,19 +5,24 @@
 
 set -e
 
-SCENARIO_STRING="$1"
+RAW_SCENARIOS_JSON=$1
 JOB_INDEX="$2"
 TEST_ENV="$3"
 DOPPLER_PROJECT_NAME="$4"
 DOPPLER_SERVICE_TOKEN="$5"
 MAX_RETRIES="$6"
 
+# Parse scenario list
+SCENARIOS=$(echo "$RAW_SCENARIOS_JSON" | jq -r '.[]')
+SCENARIO_STRING=$(echo "$RAW_SCENARIOS_JSON" | jq -r -j '. | join(",")')
+
 ATTEMPT=0
 TEST_FAILED=0
 cd test
 echo "🏁 Starting test run for job index: $JOB_INDEX"
 echo "🔢 Max Rerun Attempts: $MAX_RETRIES"
-echo "📋 Scenarios: $SCENARIO_STRING"
+echo "Running the following scenarios:"
+echo "$SCENARIOS"
 
 mvn -Dsurefire.rerunFailingTestsCount=$MAX_RETRIES clean test -q \
       -Dcucumber.features="$SCENARIO_STRING" \
