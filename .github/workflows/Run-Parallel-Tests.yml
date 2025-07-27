@@ -115,6 +115,10 @@ jobs:
     needs: discover-scenarios
     name: 'Run Test'
     runs-on: ubuntu-latest
+    permissions: 
+      contents: read
+      actions: read
+      checks: write
     strategy:
       fail-fast: false
       matrix: ${{ fromJson(needs.discover-scenarios.outputs.matrix) }}
