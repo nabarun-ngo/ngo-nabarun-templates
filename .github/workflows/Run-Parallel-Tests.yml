@@ -154,7 +154,7 @@ jobs:
       
       - name: Test Parameters
         run: |
-          SCENARIOS=$(echo '${{ toJson(matrix.scenarios) }}' | jq -r '.[][]' | paste -sd, -)
+          SCENARIOS=$(echo '${{ toJson(matrix.scenarios) }}' | jq -r '.[]' | paste -sd, -)
           echo "Run Id : ${{ github.run_id }}"
           echo "Test tags: ${{ inputs.test_cucumber_tags }}"
           echo "SCENARIOS=$SCENARIOS" >> $GITHUB_ENV
