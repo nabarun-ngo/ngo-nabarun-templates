@@ -1,4 +1,3 @@
-
 name: Run Automated Test [Parallel]
 on:
   workflow_call:
@@ -290,7 +289,7 @@ jobs:
       
       
       - name: Wait for QMetry Import to Complete
-        run: bash ./scripts/wait-for-qmetry-import.sh ${{ fromJson(steps.generate_url.outputs.response).trackingId }} ${{ secrets.qmetry_api_key }}
+        run: bash ./scripts/wait-for-qmetry-report-import.sh ${{ fromJson(steps.generate_url.outputs.response).trackingId }} ${{ secrets.qmetry_api_key }}
         
       - name: Retrieve Test Cycles 
         id: retrieve_tc
