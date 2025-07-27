@@ -16,6 +16,7 @@ TEST_FAILED=0
 cd test
 echo "🏁 Starting test run for job index: $JOB_INDEX"
 echo "🔢 Max Rerun Attempts: $MAX_RETRIES"
+echo "🔢 Scenario: $SCENARIO_STRING"
 
 mvn -Dsurefire.rerunFailingTestsCount=$MAX_RETRIES clean test -q \
       -Dcucumber.features="$SCENARIO_STRING" \
