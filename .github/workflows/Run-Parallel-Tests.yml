@@ -288,9 +288,9 @@ jobs:
             -d @merged/cucumber.json \
             '${{ fromJson(steps.generate_url.outputs.response).url }}'
       
-      - name: Sleep for 60 seconds
-        run: sleep 60s
-        shell: bash
+      
+      - name: Wait for QMetry Import to Complete
+        run: bash ./scripts/wait-for-qmetry-import.sh ${{ fromJson(steps.generate_url.outputs.response).trackingId }} ${{ secrets.qmetry_api_key }}
         
       - name: Retrieve Test Cycles 
         id: retrieve_tc
