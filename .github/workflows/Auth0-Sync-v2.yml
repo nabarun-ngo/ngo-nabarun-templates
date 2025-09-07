@@ -25,7 +25,8 @@ jobs:
 
       - name: Install Auth0 Deploy CLI
         run: |
-         npm install -g auth0-deploy-cli@8.6.2
+         #npm install -g auth0-deploy-cli@8.6.2
+         npm install -g auth0-deploy-cli@latest
          a0deploy --version
 
       - name: Set up Python
