@@ -1,0 +1,49 @@
+name: Resolve Inputs
+description: Merge inputs from workflow_dispatch and repository_dispatch into a single JSON output
+
+inputs:
+  inputs:
+    description: JSON string of workflow_dispatch inputs (optional). If empty, auto-detect via github.event.inputs
+    required: false
+    default: ''
+  client_payload:
+    description: JSON string of repository_dispatch client_payload (optional). If empty, auto-detect via github.event.client_payload
+    required: false
+    default: ''
+
+outputs:
+  variables:
+    description: Merged inputs as a JSON string (payload overrides on conflicts)
+    value: ${{ steps.resolve.outputs.variables }}
+
+runs:
+  using: composite
+  steps:
+    - id: resolve
+      name: Resolve and merge inputs
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        # Prefer provided inputs; otherwise, auto-detect from event contexts
+        inputs_json='${{ inputs.inputs != '' && inputs.inputs || toJson(github.event.inputs) }}'
+        payload_json='${{ inputs.client_payload != '' && inputs.client_payload || toJson(github.event.client_payload) }}'
+
+        sanitize() {
+          local raw="$1"
+          if [ -z "$raw" ] || [ "$raw" = "null" ]; then
+            echo '{}'
+            return
+          fi
+          # Ensure valid JSON object; otherwise fallback to {}
+          echo "$raw" | jq -c 'try (if type=="object" then . else {} end) catch {}' 2>/dev/null || echo '{}'
+        }
+
+        a=$(sanitize "$inputs_json")
+        b=$(sanitize "$payload_json")
+
+        # Shallow merge; repository_dispatch (b) overrides workflow_dispatch (a) on conflicts
+        merged=$(jq -c -n --argjson a "$a" --argjson b "$b" '$a + $b')
+
+        echo "Merged Variables: $merged"
+        echo "variables=$merged" >> "$GITHUB_OUTPUT"
