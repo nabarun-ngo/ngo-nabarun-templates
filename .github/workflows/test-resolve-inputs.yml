@@ -17,6 +17,8 @@ on:
 
 jobs:
   test:
+
+ 
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -48,3 +50,27 @@ jobs:
         run: |
           echo "Merged (explicit): ${{ steps.resolve_explicit.outputs.variables }}"
           echo '${{ steps.resolve_explicit.outputs.variables }}' | jq .
+
+  test-update-run-name:
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+
+      - name: Compute dynamic name
+        id: namegen
+        run: |
+          echo "name=Deploy-${{ github.ref_name }}-$(date +%Y%m%d-%H%M%S)" >> $GITHUB_OUTPUT
+
+      - name: Update run name using gh CLI
+        run: |
+          gh api \
+            --method PATCH \
+            repos/${{ github.repository }}/actions/runs/${{ github.run_id }} \
+            -f name='${{ steps.namegen.outputs.name }}'
+        env:
+          GH_TOKEN: ${{ github.token }}
