@@ -84,7 +84,7 @@ jobs:
   create_release:
     name: Create GitHub Release
     runs-on: ubuntu-latest
-    needs: [promote_stable]
+    needs: [create_tag,promote_stable]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4

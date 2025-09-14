@@ -1,0 +1,37 @@
+name: 'Node.js Build and Test'
+description: 'Build and test a Node.js project.'
+inputs:
+  node_version:
+    description: 'Node.js version'
+    required: false
+    default: '20'
+  working_directory:
+    description: 'Directory where the code resides'
+    required: false
+    default: '.'
+  command:
+    description: 'Command to run (e.g., npm run build, npm test)'
+    required: true
+runs:
+  using: 'composite'
+  steps:
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ inputs.node_version }}
+    - name: Run Build and Test Command
+      working-directory: ${{ inputs.working_directory }}
+      run: |
+        echo "Running: ${{ inputs.command }}"
+        ${{ inputs.command }}
+    - name: Upload Node Test Results
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: node-test-results
+        path: ${{ inputs.working_directory }}/coverage
+    - name: Check Node Build Status
+      id: check
+      run: |
+        echo "✅ Node Build and Tests Successful"
+        echo "status=success" >> "$GITHUB_OUTPUT"

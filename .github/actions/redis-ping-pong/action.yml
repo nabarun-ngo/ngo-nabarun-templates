@@ -1,0 +1,27 @@
+name: 'Redis Ping Pong'
+description: 'Ping a Redis server and verify response.'
+runs:
+  using: "composite"
+  steps:
+    - name: Install Redis CLI
+      run: sudo apt-get update && sudo apt-get install -y redis-tools
+    - name: Ping Redis Server
+      run: |
+        response=$(redis-cli -h ${{ inputs.redis_host }} -p ${{ inputs.redis_port }} -a ${{ inputs.redis_password }} PING)
+        echo "Redis response: $response"
+        if [ "$response" != "PONG" ]; then
+          echo "Redis did not respond with PONG"
+          exit 1
+        fi
+inputs:
+  redis_host:
+    description: 'Redis Host'
+    required: true
+  redis_port:
+    description: 'Redis Port'
+    required: true
+
+secrets:
+  redis_password:
+    description: 'Redis Password'
+    required: true

@@ -1,0 +1,28 @@
+name: 'Redis Delete Keys'
+description: 'Delete a specific Redis key or clear all keys.'
+runs:
+  using: "composite"
+  steps:
+    - name: Install Redis CLI
+      run: sudo apt-get update && sudo apt-get install -y redis-tools
+    - name: Delete Specific Redis Key
+      if: ${{ inputs.key != '' }}
+      run: redis-cli -h ${{ inputs.redis_host }} -p ${{ inputs.redis_port }} -a ${{ inputs.redis_password }} DEL "${{ inputs.key }}"
+    - name: Clear Redis Cache (All Keys)
+      if: ${{ inputs.key == '' }}
+      run: redis-cli -h ${{ inputs.redis_host }} -p ${{ inputs.redis_port }} -a ${{ inputs.redis_password }} FLUSHALL
+inputs:
+  key:
+    description: "Specify a Redis key to delete (leave empty to delete all)"
+    required: false
+    default: ''
+  redis_host:
+    description: 'Redis Host'
+    required: true
+  redis_port:
+    description: 'Redis Port'
+    required: true
+
+secrets:
+  redis_password:
+    required: true

@@ -1,0 +1,48 @@
+name: 'Set Inputs'
+on:
+  workflow_call:
+    inputs:
+      inputs:
+        description: "All workflow_dispatch inputs as JSON string"
+        type: string
+        required: false
+      client_payload:
+        description: "repository_dispatch client payload as JSON string"
+        type: string
+        required: false
+      script_path:
+        description: "Path to shell script to execute (optional)"
+        type: string
+        required: false
+    outputs:
+      variables:
+        description: "Merged input variables as JSON"
+        value: ${{ jobs.set_env.outputs.variables }}
+
+jobs:
+  set_env:
+    name : 'Set Variables'
+    runs-on: ubuntu-latest
+    outputs:
+      variables: ${{ steps.set_vars.outputs.variables }}
+    steps:
+      - name: Resolve and Export Inputs
+        id: set_vars
+        uses: ./.github/actions/resolve-inputs
+        with:
+          inputs: ${{ inputs.inputs }}
+          client_payload: ${{ inputs.client_payload }}
+     
+      - name: Print all GitHub environment variables
+        shell: bash
+        run: |
+            echo "All GitHub environment variables (key=value):"
+            while IFS='=' read -r key value; do
+              echo "$key=$value"
+            done < "$GITHUB_ENV"
+
+      - name: Execute Custom Shell Script
+        if: ${{ inputs.script_path != '' }}
+        run: |
+          chmod +x ${{ inputs.script_path }}
+          ${{ inputs.script_path }}

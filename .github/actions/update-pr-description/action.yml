@@ -1,0 +1,32 @@
+name: 'Update PR Description'
+description: 'Fetch commit messages and update a pull request description using GitHub CLI.'
+runs:
+  using: "composite"
+  steps:
+    - name: Install GitHub CLI
+      run: |
+        sudo apt update
+        sudo apt install gh -y
+    - name: Authenticate GitHub CLI
+      run: |
+        echo "${{ inputs.token }}" | gh auth login --with-token
+    - name: Fetch Commit Messages
+      run: |
+        REPO="${{ inputs.repository }}"
+        PR_NUMBER="${{ inputs.pr_number }}"
+        gh pr view "$PR_NUMBER" --repo "$REPO" --json commits --jq '.commits[].messageHeadline' > cat.md
+    - name: Update PR Description
+      run: |
+        REPO="${{ inputs.repository }}"
+        PR_NUMBER="${{ inputs.pr_number }}"
+        gh pr edit "$PR_NUMBER" --repo "$REPO" --body-file cat.md
+inputs:
+  pr_number:
+    description: "Pull Request Number"
+    required: true
+  repository:
+    description: "Repository (owner/repo)"
+    required: true
+  token:
+    description: "GitHub Token"
+    required: true

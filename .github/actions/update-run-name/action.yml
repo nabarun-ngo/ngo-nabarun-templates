@@ -9,6 +9,9 @@ inputs:
     description: If 'true', do not call the API; only print what would be updated
     required: false
     default: 'false'
+  token:
+    description: GitHub Token
+    required: true
 
 outputs:
   name:
@@ -18,60 +21,15 @@ outputs:
 runs:
   using: composite
   steps:
-    - name: Install GitHub CLI (Linux)
-      if: runner.os == 'Linux'
-      shell: bash
-      run: |
-        set -euo pipefail
-        if command -v gh >/dev/null 2>&1; then
-          echo "gh already installed: $(gh --version | head -n1)"
-          exit 0
-        fi
-        echo "Installing gh via apt..."
-        if sudo apt-get update -y && sudo apt-get install -y gh; then
-          echo "gh installed via apt repo."
-        else
-          echo "Falling back to official GitHub CLI apt repository..."
-          type -p curl >/dev/null || sudo apt-get install -y curl
-          curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
-          sudo chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg
-          echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null
-          sudo apt-get update -y
-          sudo apt-get install -y gh
-        fi
-        gh --version
-
-    - name: Install GitHub CLI (macOS)
-      if: runner.os == 'macOS'
-      shell: bash
-      run: |
-        set -euo pipefail
-        if command -v gh >/dev/null 2>&1; then
-          gh --version
-          exit 0
-        fi
-        brew install gh || brew upgrade gh
-        gh --version
-
-    - name: Install GitHub CLI (Windows)
-      if: runner.os == 'Windows'
-      shell: pwsh
-      run: |
-        if (Get-Command gh -ErrorAction SilentlyContinue) { gh --version; exit 0 }
-        choco install gh -y
-        gh --version
-
     - id: update
       name: Update run name
       shell: bash
-      env:
-        GITHUB_TOKEN: ${{ github.token }}
-        GH_TOKEN: ${{ github.token }}
       run: |
         set -euo pipefail
 
         name='${{ inputs.name }}'
         dry='${{ inputs.dry_run }}'
+          token='${{ inputs.token }}'
 
         if [ -z "$name" ]; then
           echo "Error: input 'name' is required." >&2
@@ -87,26 +45,18 @@ runs:
         if [ "${dry,,}" = "true" ]; then
           echo "Dry-run enabled; skipping API call."
         else
-          if ! command -v gh >/dev/null 2>&1; then
-            echo "gh CLI is required but not installed on this runner." >&2
-            exit 127
-          fi
-
-          # Use gh CLI to patch the run name
-          set +e
-          out=$(gh api \
-            --method PATCH "repos/${repo}/actions/runs/${run_id}" \
-            -H "Accept: application/vnd.github+json" \
-            -H "X-GitHub-Api-Version: 2022-11-28" \
-            -f name="$name" 2>&1)
-          code=$?
-          set -e
-          if [ $code -ne 0 ]; then
-            echo "Failed to update run name via gh (exit $code)" >&2
-            echo "$out" >&2
-            exit $code
-          fi
-          echo "Run name updated successfully."
+            # Use curl to patch the run name
+            api_url="https://api.github.com/repos/${repo}/actions/runs/${run_id}"
+            response=$(curl -s -o /dev/null -w "%{http_code}" -X PATCH "$api_url" \
+              -H "Authorization: Bearer $token" \
+              -H "Accept: application/vnd.github+json" \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              -d "{\"name\": \"$name\"}")
+            if [ "$response" != "200" ]; then
+              echo "Failed to update run name via HTTP (status $response)" >&2
+              exit 1
+            fi
+            echo "Run name updated successfully."
         fi
 
         echo "name=$name" >> "$GITHUB_OUTPUT"
