@@ -10,6 +10,10 @@ inputs:
     description: JSON string of repository_dispatch client_payload (optional). If empty, auto-detect via github.event.client_payload
     required: false
     default: ''
+  update_from_env:
+    description: If set as true, this will try to override the merged json fron $GITHUB_ENV
+    required: false
+    default: false
 
 outputs:
   variables:
@@ -44,6 +48,19 @@ runs:
 
         # Shallow merge; repository_dispatch (b) overrides workflow_dispatch (a) on conflicts
         merged=$(jq -c -n --argjson a "$a" --argjson b "$b" '$a + $b')
+
+        # Check input flag
+        update_from_env='${{ inputs.update_from_env }}'
+        if [[ "$update_from_env" == "true" ]]; then
+          echo "⚡ Updating merged JSON from GITHUB_ENV..."
+
+          # Convert GITHUB_ENV to JSON
+          env_json=$(awk -F= '{printf "\"%s\":\"%s\",", $1, $2}' "$GITHUB_ENV" | sed 's/,$//')
+          env_json="{${env_json}}"
+
+          # Merge env_json into merged (env values override merged JSON)
+          merged=$(jq -c -n --argjson m "$merged" --argjson e "$env_json" '$m + $e')
+        fi
 
         echo "Merged Variables: $merged"
         echo "variables=$merged" >> "$GITHUB_OUTPUT"
