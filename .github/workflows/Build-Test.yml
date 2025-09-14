@@ -50,7 +50,7 @@ jobs:
 
       - name: Node.js Build and Test
         if: inputs.platform == 'node'
-        uses: ./.github/actions/build-node
+        uses: nabarun-ngo/ngo-nabarun-templates/.github/actions/build-node
         with:
           node_version: ${{ inputs.node_version }}
           working_directory: ${{ inputs.working_directory }}
@@ -58,7 +58,7 @@ jobs:
 
       - name: Java Build and Test
         if: inputs.platform == 'java'
-        uses: ./.github/actions/build-java
+        uses: nabarun-ngo/ngo-nabarun-templates/.github/actions/build-java
         with:
           java_version: ${{ inputs.java_version }}
           working_directory: ${{ inputs.working_directory }}

@@ -33,7 +33,7 @@ jobs:
 
       - name: Resolve and Export Inputs
         id: set_vars
-        uses: ./.github/actions/resolve-inputs
+        uses: nabarun-ngo/ngo-nabarun-templates/.github/actions/resolve-inputs
         with:
           inputs: ${{ inputs.inputs }}
           client_payload: ${{ inputs.client_payload }}
@@ -55,7 +55,7 @@ jobs:
 
       - name: Update Workflow Run Name
         if: ${{ inputs.script_path != '' }}
-        uses: ./.github/actions/update-run-name
+        uses: nabarun-ngo/ngo-nabarun-templates/.github/actions/update-run-name
         with:
           name: ${{ steps.execute_script.outputs.run_name }}
           token: ${{ secrets.GITHUB_TOKEN }}

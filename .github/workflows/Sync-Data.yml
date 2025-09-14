@@ -37,7 +37,7 @@ jobs:
     steps:
       - name: Sync Auth0 Tenants
         if: ${{ inputs.sync_auth0 }}
-        uses: ./.github/actions/sync-auth0-v2
+        uses: nabarun-ngo/ngo-nabarun-templates/.github/actions/sync-auth0-v2
         with:
           branch_name: ${{ inputs.branch_name }}
           source_config: ${{ secrets.auth0_source_config }}
@@ -45,7 +45,7 @@ jobs:
 
       - name: Sync Firebase Remote Config
         if: ${{ inputs.sync_firebaseRC }}
-        uses: ./.github/actions/sync-firebase-v2
+        uses: nabarun-ngo/ngo-nabarun-templates/.github/actions/sync-firebase-v2
         with:
           branch_name: ${{ inputs.branch_name }}
           firebase_source_project: ${{ inputs.firebase_source_project }}
