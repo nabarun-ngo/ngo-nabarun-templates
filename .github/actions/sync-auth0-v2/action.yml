@@ -5,8 +5,6 @@ inputs:
     description: 'Branch to checkout'
     required: false
     default: 'main'
-
-secrets:
   source_config:
     required: true
   dest_config:
@@ -30,8 +28,8 @@ runs:
         python-version: '3.10'
     - name: Create JSON files from secret
       run: |
-        echo '${{ secrets.source_config }}' > auth0-source.json
-        echo '${{ secrets.dest_config }}' > auth0-target.json
+        echo '${{ inputs.source_config }}' > auth0-source.json
+        echo '${{ inputs.dest_config }}' > auth0-target.json
     - name: Export from Source Tenant
       run: |
         a0deploy export -c auth0-source.json -f yaml -o ./exported

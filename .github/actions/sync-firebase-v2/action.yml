@@ -11,8 +11,6 @@ inputs:
   firebase_target_project:
     description: 'Target Firebase project ID'
     required: true
-
-secrets:
   firebase_service_account_source:
     required: true
   firebase_service_account_target:
@@ -30,7 +28,7 @@ runs:
       run: sudo apt-get install jq -y
     - name: Authenticate with Firebase (Source)
       run: |
-        echo '${{ secrets.firebase_service_account_source }}' > $HOME/source-firebase.json
+        echo '${{ inputs.firebase_service_account_source }}' > $HOME/source-firebase.json
         gcloud auth activate-service-account --key-file=$HOME/source-firebase.json
         export ACCESS_TOKEN=$(gcloud auth print-access-token)
         echo "ACCESS_TOKEN=$ACCESS_TOKEN" >> $GITHUB_ENV
@@ -54,7 +52,7 @@ runs:
         retention-days: 7
     - name: Authenticate with Firebase (Target)
       run: |
-        echo '${{ secrets.firebase_service_account_target }}' > $HOME/target-firebase.json
+        echo '${{ inputs.firebase_service_account_target }}' > $HOME/target-firebase.json
         gcloud auth activate-service-account --key-file=$HOME/target-firebase.json
         export ACCESS_TOKEN=$(gcloud auth print-access-token)
         echo "ACCESS_TOKEN=$ACCESS_TOKEN" >> $GITHUB_ENV

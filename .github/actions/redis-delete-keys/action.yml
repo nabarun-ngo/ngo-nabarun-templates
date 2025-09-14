@@ -22,7 +22,5 @@ inputs:
   redis_port:
     description: 'Redis Port'
     required: true
-
-secrets:
   redis_password:
     required: true
