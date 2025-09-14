@@ -1,0 +1,30 @@
+
+name: 'Jira Webhook Notification'
+description: 'Send a notification to a Jira webhook.'
+runs:
+  using: "composite"
+  steps:
+    - name: Send notification to Jira webhook
+      shell: bash
+      run: |
+        set -euo pipefail
+        webhook_url='${{ inputs.webhook_url }}'
+        message='${{ inputs.message }}'
+        if [ -z "$webhook_url" ]; then
+          echo "Error: webhook_url is required." >&2
+          exit 1
+        fi
+        if [ -z "$message" ]; then
+          echo "Error: message is required." >&2
+          exit 1
+        fi
+        curl -X POST "$webhook_url" \
+          -H "Content-Type: application/json" \
+          -d "$message"
+inputs:
+  webhook_url:
+    description: 'Jira webhook URL'
+    required: true
+  message:
+    description: 'Notification message (JSON string)'
+    required: true

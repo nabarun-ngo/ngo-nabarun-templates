@@ -47,3 +47,19 @@ runs:
 
         echo "Merged Variables: $merged"
         echo "variables=$merged" >> "$GITHUB_OUTPUT"
+
+    - name: Export merged variables to environment
+      shell: bash
+      run: |
+          set -euo pipefail
+          merged_json='${{ steps.resolve.outputs.variables }}'
+          echo "Exporting merged variables to $GITHUB_ENV..."
+          echo "$merged_json" | jq -r 'to_entries|map("\(.key)=\(.value)")|.[]' >> "$GITHUB_ENV"
+
+    - name: Print all GitHub environment variables
+      shell: bash
+      run: |
+          echo "All GitHub environment variables (key=value):"
+          while IFS='=' read -r key value; do
+            echo "$key=$value"
+          done < "$GITHUB_ENV"

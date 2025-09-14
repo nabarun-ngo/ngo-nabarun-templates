@@ -1,0 +1,21 @@
+name: 'Redis View Keys'
+description: 'List all keys in a Redis server.'
+runs:
+  using: "composite"
+  steps:
+    - name: Install Redis CLI
+      run: sudo apt-get update && sudo apt-get install -y redis-tools
+    - name: List Redis Keys
+      run: redis-cli -h ${{ inputs.redis_host }} -p ${{ inputs.redis_port }} -a ${{ inputs.redis_password }} KEYS "*"
+inputs:
+  redis_host:
+    description: 'Redis Host'
+    required: true
+  redis_port:
+    description: 'Redis Port'
+    required: true
+
+secrets:
+  redis_password:
+    description: 'Redis Password'
+    required: true

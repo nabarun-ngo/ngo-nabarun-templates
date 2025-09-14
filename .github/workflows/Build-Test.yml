@@ -33,17 +33,12 @@ on:
         type: string
         default: "."
 
-    outputs:
-      build_status:
-        description: "Build and Test Status"
-        value: ${{ jobs.build.outputs.status }}
 
 jobs:
-  node:
-    name: Node.js Build and Test
-    if: inputs.platform == 'node'
-    runs-on: ubuntu-latest
 
+  build:
+    name: Build and Test
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -52,71 +47,18 @@ jobs:
           ref: ${{ inputs.branch }}
           path: ${{ inputs.working_directory }}
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
+      - name: Node.js Build and Test
+        if: inputs.platform == 'node'
+        uses: ./.github/actions/build-node
         with:
-          node-version: ${{ inputs.node_version }}
+          node_version: ${{ inputs.node_version }}
+          working_directory: ${{ inputs.working_directory }}
+          command: ${{ inputs.command }}
 
-      - name: Run Build and Test Command
-        working-directory: ${{ inputs.working_directory }}
-        run: |
-          echo "Running: ${{ inputs.command }}"
-          ${{ inputs.command }}
-
-      - name: Upload Node Test Results
-        if: always()
-        uses: actions/upload-artifact@v4
+      - name: Java Build and Test
+        if: inputs.platform == 'java'
+        uses: ./.github/actions/build-java
         with:
-          name: node-test-results
-          path: ${{ inputs.working_directory }}/coverage
-
-      - name: Check Node Build Status
-        id: check
-        run: |
-          echo "✅ Node Build and Tests Successful"
-          echo "status=success" >> "$GITHUB_OUTPUT"
-
-  java:
-    name: Java Build and Test
-    if: inputs.platform == 'java'
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-        with:
-          repository: ${{ inputs.repo }}
-          ref: ${{ inputs.branch }}
-          path: ${{ inputs.working_directory }}
-
-      - name: Set up Java
-        uses: actions/setup-java@v4
-        with:
-          distribution: 'temurin'
-          java-version: ${{ inputs.java_version }}
-          cache: maven
-
-      - name: Install Maven
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y maven
-          mvn -version
-
-      - name: Run Build and Test Command (using `mvn`)
-        working-directory: ${{ inputs.working_directory }}
-        run: |
-          echo "Running: ${{ inputs.command }}"
-          ${{ inputs.command }}
-
-      - name: Upload Java Test Results
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: java-test-results
-          path: ${{ inputs.working_directory }}/target/surefire-reports
-
-      - name: Check Java Build Status
-        id: check
-        run: |
-          echo "✅ Java Build and Tests Successful"
-          echo "status=success" >> "$GITHUB_OUTPUT"
+          java_version: ${{ inputs.java_version }}
+          working_directory: ${{ inputs.working_directory }}
+          command: ${{ inputs.command }}
