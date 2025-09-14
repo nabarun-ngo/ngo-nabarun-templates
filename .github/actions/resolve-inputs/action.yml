@@ -43,44 +43,44 @@ runs:
         # Ensure JSON is properly formatted
         final_data=$(echo "$final_data" | jq -c '.' || echo '{}')
 
-        echo "Final Merged Data: $final_data"
+        echo "Merged Data: $final_data"
         echo "variables=$final_data" >> "$GITHUB_OUTPUT"
 
-    - id: override_env
-      name: Override merged JSON from GITHUB_ENV
-      if: ${{ inputs.update_from_env }}
-      shell: bash
-      run: |
-        set -euo pipefail
+    # - id: override_env
+    #   name: Override merged JSON from GITHUB_ENV
+    #   if: ${{ inputs.update_from_env }}
+    #   shell: bash
+    #   run: |
+    #     set -euo pipefail
 
-        merged='${{ steps.resolve.outputs.variables }}'
+    #     merged='${{ steps.resolve.outputs.variables }}'
 
-        if [[ -f "${GITHUB_ENV:-}" ]]; then
-          echo "⚡ Overriding merged JSON from GITHUB_ENV (only existing keys, preserving types)..."
+    #     if [[ -f "${GITHUB_ENV:-}" ]]; then
+    #       echo "⚡ Overriding merged JSON from GITHUB_ENV (only existing keys, preserving types)..."
 
-          while IFS= read -r line || [[ -n "$line" ]]; do
-            [[ -z "$line" ]] && continue
-            key="${line%%=*}"
-            value="${line#*=}"
-            key="$(echo -n "$key" | xargs)"
-            value="$(echo -n "$value" | xargs)"
+    #       while IFS= read -r line || [[ -n "$line" ]]; do
+    #         [[ -z "$line" ]] && continue
+    #         key="${line%%=*}"
+    #         value="${line#*=}"
+    #         key="$(echo -n "$key" | xargs)"
+    #         value="$(echo -n "$value" | xargs)"
 
-            if echo "$merged" | jq -e --arg k "$key" 'has($k)' >/dev/null 2>&1; then
-              if [[ "$value" =~ ^(true|TRUE)$ ]]; then
-                merged=$(echo "$merged" | jq --arg k "$key" '.[$k]=true')
-              elif [[ "$value" =~ ^(false|FALSE)$ ]]; then
-                merged=$(echo "$merged" | jq --arg k "$key" '.[$k]=false')
-              elif [[ "$value" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
-                merged=$(echo "$merged" | jq --arg k "$key" --argjson v "$value" '.[$k]=$v')
-              else
-                merged=$(echo "$merged" | jq --arg k "$key" --arg v "$value" '.[$k]=$v')
-              fi
-            fi
-          done < "$GITHUB_ENV"
-        fi
+    #         if echo "$merged" | jq -e --arg k "$key" 'has($k)' >/dev/null 2>&1; then
+    #           if [[ "$value" =~ ^(true|TRUE)$ ]]; then
+    #             merged=$(echo "$merged" | jq --arg k "$key" '.[$k]=true')
+    #           elif [[ "$value" =~ ^(false|FALSE)$ ]]; then
+    #             merged=$(echo "$merged" | jq --arg k "$key" '.[$k]=false')
+    #           elif [[ "$value" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
+    #             merged=$(echo "$merged" | jq --arg k "$key" --argjson v "$value" '.[$k]=$v')
+    #           else
+    #             merged=$(echo "$merged" | jq --arg k "$key" --arg v "$value" '.[$k]=$v')
+    #           fi
+    #         fi
+    #       done < "$GITHUB_ENV"
+    #     fi
 
-        echo "Final Merged Variables After Override: $merged"
-        echo "variables=$merged" >> "$GITHUB_OUTPUT"
+    #     echo "Final Merged Variables After Override: $merged"
+    #     echo "variables=$merged" >> "$GITHUB_OUTPUT"
 
     - name: Export final merged variables to GitHub environment
       shell: bash
