@@ -37,7 +37,14 @@ jobs:
         with:
           inputs: ${{ inputs.inputs }}
           client_payload: ${{ inputs.client_payload }}
-     
+
+      - name: Print all environment variables
+        shell: bash
+        run: |
+          echo "===== All Env Vars ====="
+          env
+          echo "========================"
+          
       # This script will compute the workflow run-name and set it as output variable 'run_name'
       - name: Execute Shell Script
         if: ${{ inputs.script_path != '' }}
@@ -46,10 +53,12 @@ jobs:
           chmod +x ${{ inputs.script_path }}
           ${{ inputs.script_path }}
 
-      - name: Update Workflow Run Name
-        if: ${{ inputs.script_path != '' }}
-        uses: nabarun-ngo/ngo-nabarun-templates/.github/actions/update-run-name@main
-        with:
-          name: ${{ steps.execute_script.outputs.run_name }}
-          token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Print all environment variables
+        shell: bash
+        run: |
+          echo "===== All Env Vars ====="
+          env
+          echo "========================"
+
+      
 
