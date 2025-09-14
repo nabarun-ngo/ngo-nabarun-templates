@@ -14,18 +14,16 @@ on:
       sync_firebaseRC:
         required: true
         type: boolean
-      firebase_source_project:
-        required: false
-        type: string
-      firebase_target_project:
-        required: false
-        type: string
       branch_name:
         required: false
         type: string
         default : 'main'
       
     secrets:
+      firebase_source_project:
+        required: false
+      firebase_target_project:
+        required: false
       auth0_source_config:
         required: false
       auth0_dest_config:
