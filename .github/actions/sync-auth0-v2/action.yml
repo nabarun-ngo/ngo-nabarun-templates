@@ -50,7 +50,9 @@ runs:
         path: ./exported
         
     - name: Run Python script to process Auth0 data
+      shell: bash
       run: python scripts/auth0/process_auth0_v2.py auth0-source.json ./exported/tenant.yaml
+    
     - name: Upload Processed Tenant File
       uses: actions/upload-artifact@v4
       with:
