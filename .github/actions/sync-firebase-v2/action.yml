@@ -37,16 +37,16 @@ runs:
         gcloud auth activate-service-account --key-file=$HOME/source-firebase.json
         export ACCESS_TOKEN=$(gcloud auth print-access-token)
         echo "ACCESS_TOKEN=$ACCESS_TOKEN" >> $GITHUB_ENV
-        
+        echo "SOURCE_PROJECT=${{ inputs.firebase_source_project }}" >> $GITHUB_ENV
+        echo "DEST_PROJECT=${{ inputs.firebase_target_project }}" >> $GITHUB_ENV
+          
     - name: Export Remote Config from Source
       shell: bash
-      env:
-          SOURCE_PROJECT: ${{ inputs.firebase_source_project }}
       run: |
         RESPONSE=$(curl -s -w "HTTPSTATUS:%{http_code}" -o remote-config.json -D headers_source.txt -X GET \
           -H "Authorization: Bearer $ACCESS_TOKEN" \
           -H "Accept: application/json" \
-          "https://firebaseremoteconfig.googleapis.com/v1/projects/$SOURCE_PROJECT/remoteConfig")
+          "https://firebaseremoteconfig.googleapis.com/v1/projects/${{env.SOURCE_PROJECT}}/remoteConfig")
       
         # Split response into body and status
         HTTP_BODY=$(echo "$RESPONSE" | sed -e 's/HTTPSTATUS\:.*//g')
