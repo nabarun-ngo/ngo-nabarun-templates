@@ -105,8 +105,8 @@ jobs:
           JAR_PATH=$(find ${{ inputs.target_folder }} -name "*.jar" | grep -v "sources.jar" | grep -v "javadoc.jar")
           echo "jar_path=${JAR_PATH}" >> $GITHUB_ENV
           echo "JAR file path: ${JAR_PATH}"
-          echo "::set-output name=jar_path::${JAR_PATH}"
-          
+          echo "jar_path=${JAR_PATH}" >> $GITHUB_OUTPUT  
+                  
       - name: Setup Google Cloud CLI
         uses: google-github-actions/auth@v2
         with:
