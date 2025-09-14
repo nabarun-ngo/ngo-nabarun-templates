@@ -32,7 +32,6 @@ jobs:
           fetch-depth: 0
 
       - name: Resolve and Export Inputs
-        id: set_vars
         uses: nabarun-ngo/ngo-nabarun-templates/.github/actions/resolve-inputs@main
         with:
           inputs: ${{ inputs.inputs }}
@@ -59,6 +58,12 @@ jobs:
           echo "===== All Env Vars ====="
           env
           echo "========================"
+
+      - name: Resolve and Export Inputs (Final)
+        id: set_vars
+        uses: nabarun-ngo/ngo-nabarun-templates/.github/actions/resolve-inputs@main
+        with:
+          update_from_env: true
 
       
 
