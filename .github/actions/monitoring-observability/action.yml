@@ -1,0 +1,232 @@
+name: Monitoring and Observability
+description: Set up monitoring, logging, and observability for deployments
+
+inputs:
+  operation_name:
+    description: 'Name of the operation being monitored'
+    required: true
+  environment:
+    description: 'Target environment'
+    required: true
+  service_name:
+    description: 'Service being deployed'
+    required: true
+  enable_metrics:
+    description: 'Enable metrics collection'
+    required: false
+    default: 'true'
+  enable_tracing:
+    description: 'Enable distributed tracing'
+    required: false
+    default: 'true'
+  slack_webhook_url:
+    description: 'Slack webhook URL for notifications'
+    required: false
+  teams_webhook_url:
+    description: 'Teams webhook URL for notifications'
+    required: false
+  enable_failure_analysis:
+    description: 'Enable automatic failure analysis'
+    required: false
+    default: 'true'
+
+outputs:
+  monitoring_id:
+    description: 'Unique monitoring session ID'
+    value: ${{ steps.init-monitoring.outputs.monitoring_id }}
+  metrics_endpoint:
+    description: 'Metrics collection endpoint'
+    value: ${{ steps.init-monitoring.outputs.metrics_endpoint }}
+
+runs:
+  using: composite
+  steps:
+    - name: Initialize Monitoring Session
+      id: init-monitoring
+      shell: bash
+      run: |
+        echo "📊 Initializing monitoring for ${{ inputs.operation_name }}..."
+        
+        # Generate unique monitoring ID
+        MONITORING_ID="mon-$(date +%Y%m%d-%H%M%S)-$RANDOM"
+        echo "monitoring_id=$MONITORING_ID" >> $GITHUB_OUTPUT
+        
+        # Set up monitoring directory
+        MONITOR_DIR="monitoring-$MONITORING_ID"
+        mkdir -p "$MONITOR_DIR"
+        
+        # Initialize monitoring metadata
+        cat > "$MONITOR_DIR/monitoring-metadata.json" << EOF
+        {
+          "monitoring_id": "$MONITORING_ID",
+          "operation_name": "${{ inputs.operation_name }}",
+          "service_name": "${{ inputs.service_name }}",
+          "environment": "${{ inputs.environment }}",
+          "start_time": "$(date -u +%Y-%m-%dT%H:%M:%S.%3NZ)",
+          "github_run_id": "${{ github.run_id }}",
+          "github_run_attempt": "${{ github.run_attempt }}",
+          "repository": "${{ github.repository }}",
+          "ref": "${{ github.ref }}",
+          "actor": "${{ github.actor }}",
+          "metrics": {},
+          "events": []
+        }
+        EOF
+        
+        # Set metrics endpoint (placeholder - in real scenario, this would be your metrics service)
+        METRICS_ENDPOINT="https://metrics.example.com/v1/workflows/$MONITORING_ID"
+        echo "metrics_endpoint=$METRICS_ENDPOINT" >> $GITHUB_OUTPUT
+        
+        echo "✅ Monitoring session initialized: $MONITORING_ID"
+        echo "📊 Metrics endpoint: $METRICS_ENDPOINT"
+
+    - name: Set up Performance Monitoring
+      shell: bash
+      if: inputs.enable_metrics == 'true'
+      run: |
+        echo "⏱️ Setting up performance monitoring..."
+        
+        MONITOR_DIR="monitoring-${{ steps.init-monitoring.outputs.monitoring_id }}"
+        
+        # Create performance monitoring script
+        cat > "$MONITOR_DIR/performance-monitor.sh" << 'EOF'
+        #!/bin/bash
+        MONITOR_ID="$1"
+        OPERATION="$2"
+        
+        # Start performance monitoring in background
+        (
+          while [ -f "/tmp/monitor-$MONITOR_ID.pid" ]; do
+            CPU_USAGE=$(top -bn1 | grep "Cpu(s)" | awk '{print $2}' | sed 's/%us,//')
+            MEMORY_USAGE=$(free | grep Mem | awk '{printf "%.2f", $3/$2 * 100.0}')
+            TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%S.%3NZ)
+            
+            echo "{\"timestamp\":\"$TIMESTAMP\",\"cpu\":\"$CPU_USAGE\",\"memory\":\"$MEMORY_USAGE\"}" >> "monitoring-$MONITOR_ID/performance-metrics.jsonl"
+            sleep 5
+          done
+        ) &
+        
+        # Save background process PID
+        echo $! > "/tmp/monitor-$MONITOR_ID.pid"
+        EOF
+        
+        chmod +x "$MONITOR_DIR/performance-monitor.sh"
+        
+        # Start monitoring
+        echo "${{ steps.init-monitoring.outputs.monitoring_id }}" > "/tmp/monitor-${{ steps.init-monitoring.outputs.monitoring_id }}.pid"
+        "$MONITOR_DIR/performance-monitor.sh" "${{ steps.init-monitoring.outputs.monitoring_id }}" "${{ inputs.operation_name }}" &
+        
+        echo "✅ Performance monitoring started"
+
+    - name: Set up Distributed Tracing
+      shell: bash
+      if: inputs.enable_tracing == 'true'
+      run: |
+        echo "🔍 Setting up distributed tracing..."
+        
+        MONITOR_DIR="monitoring-${{ steps.init-monitoring.outputs.monitoring_id }}"
+        
+        # Create trace context
+        TRACE_ID="trace-$(date +%s)-$RANDOM"
+        SPAN_ID="span-$(date +%s)-$RANDOM"
+        
+        cat > "$MONITOR_DIR/trace-context.json" << EOF
+        {
+          "trace_id": "$TRACE_ID",
+          "span_id": "$SPAN_ID",
+          "operation_name": "${{ inputs.operation_name }}",
+          "service_name": "${{ inputs.service_name }}",
+          "start_time": "$(date -u +%Y-%m-%dT%H:%M:%S.%3NZ)",
+          "tags": {
+            "environment": "${{ inputs.environment }}",
+            "github.run_id": "${{ github.run_id }}",
+            "github.repository": "${{ github.repository }}",
+            "github.actor": "${{ github.actor }}"
+          }
+        }
+        EOF
+        
+        # Export trace headers for downstream steps
+        echo "TRACE_ID=$TRACE_ID" >> $GITHUB_ENV
+        echo "SPAN_ID=$SPAN_ID" >> $GITHUB_ENV
+        
+        echo "✅ Distributed tracing initialized"
+        echo "🔍 Trace ID: $TRACE_ID"
+
+    - name: Log Operation Start
+      shell: bash
+      run: |
+        echo "📝 Logging operation start..."
+        
+        MONITOR_DIR="monitoring-${{ steps.init-monitoring.outputs.monitoring_id }}"
+        
+        # Create structured log entry
+        LOG_ENTRY=$(cat << EOF
+        {
+          "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%S.%3NZ)",
+          "level": "INFO",
+          "event": "operation_started",
+          "operation_name": "${{ inputs.operation_name }}",
+          "service_name": "${{ inputs.service_name }}",
+          "environment": "${{ inputs.environment }}",
+          "monitoring_id": "${{ steps.init-monitoring.outputs.monitoring_id }}",
+          "context": {
+            "github_run_id": "${{ github.run_id }}",
+            "github_run_attempt": "${{ github.run_attempt }}",
+            "repository": "${{ github.repository }}",
+            "ref": "${{ github.ref }}",
+            "actor": "${{ github.actor }}"
+          }
+        }
+        EOF
+        )
+        
+        echo "$LOG_ENTRY" >> "$MONITOR_DIR/operation-logs.jsonl"
+        
+        # Send to external logging service (placeholder)
+        echo "📤 Sending logs to external service..."
+        # curl -X POST "https://logs.example.com/v1/logs" -H "Content-Type: application/json" -d "$LOG_ENTRY"
+        
+        echo "✅ Operation start logged"
+
+    - name: Set up Health Checks
+      shell: bash
+      run: |
+        echo "🏥 Setting up health check monitoring..."
+        
+        MONITOR_DIR="monitoring-${{ steps.init-monitoring.outputs.monitoring_id }}"
+        
+        # Create health check script
+        cat > "$MONITOR_DIR/health-check.sh" << 'EOF'
+        #!/bin/bash
+        SERVICE_NAME="$1"
+        ENVIRONMENT="$2"
+        MONITOR_ID="$3"
+        
+        # Basic health check function
+        perform_health_check() {
+          local timestamp=$(date -u +%Y-%m-%dT%H:%M:%S.%3NZ)
+          local status="healthy"
+          
+          # Placeholder health checks (customize based on your services)
+          local response_time=0.1
+          local status_code=200
+          
+          echo "{\"timestamp\":\"$timestamp\",\"status\":\"$status\",\"response_time\":$response_time,\"status_code\":$status_code}" >> "monitoring-$MONITOR_ID/health-checks.jsonl"
+        }
+        
+        perform_health_check
+        EOF
+        
+        chmod +x "$MONITOR_DIR/health-check.sh"
+        "$MONITOR_DIR/health-check.sh" "${{ inputs.service_name }}" "${{ inputs.environment }}" "${{ steps.init-monitoring.outputs.monitoring_id }}"
+        
+        echo "✅ Health check monitoring configured"
+
+    - name: Upload Monitoring Artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: monitoring-data-${{ steps.init-monitoring.outputs.monitoring_id }}
+        path: monitoring-${{ steps.init-monitoring.outputs.monitoring_id }}/
+        retention-days: 14
+        if-no-files-found: warn

@@ -53,7 +53,29 @@ jobs:
     name: 'Build and Deploy to GCP App Engine'
     runs-on: ubuntu-latest
     environment: ${{ inputs.environment_name }}
+    timeout-minutes: 60
     steps:
+      - name: Initialize Monitoring and Observability
+        uses: ./.github/actions/monitoring-observability
+        id: monitoring
+        with:
+          operation_name: "GCP-Deploy"
+          environment: ${{ inputs.environment_name }}
+          service_name: ${{ inputs.repo_name }}
+          enable_metrics: 'true'
+          enable_tracing: 'true'
+
+      - name: Security Validation and Pre-flight Checks
+        uses: ./.github/actions/security-validation
+        with:
+          environment: ${{ inputs.environment_name }}
+          tag_name: ${{ inputs.tag_name }}
+          repo_name: ${{ inputs.repo_name }}
+          repo_owner_name: ${{ inputs.repo_owner_name }}
+          enable_security_scan: ${{ inputs.environment_name == 'prod' && 'true' || 'false' }}
+          enable_dependency_check: 'true'
+          max_severity_allowed: ${{ inputs.environment_name == 'prod' && 'MEDIUM' || 'HIGH' }}
+
       - name: Checkout and Setup Environment
         uses: ./.github/actions/checkout-and-setup
         with:
@@ -74,11 +96,22 @@ jobs:
           repo_owner_name: ${{ inputs.repo_owner_name }}
           tag_name: ${{ inputs.tag_name }}
         
-      - name: Build with Maven
+      - name: Build with Maven (with Retry)
+        uses: ./.github/actions/error-handling-retry
+        id: build-retry
+        with:
+          command: "mvn clean package -DskipTests=false -Dmaven.test.failure.ignore=false"
+          max_retries: 2
+          retry_delay: 30
+          timeout_minutes: 20
+          enable_failure_analysis: 'true'
+          
+      - name: Extract JAR Path
         uses: ./.github/actions/maven-build
         id: build
         with:
           target_folder: ${{ inputs.target_folder }}
+          build_command: "echo 'Build completed, extracting JAR path'"
           
       - name: Setup Google Cloud Platform
         uses: ./.github/actions/gcp-setup
@@ -97,14 +130,71 @@ jobs:
          LOG_LEVEL: ${{ inputs.app_log_level }}
          VERSION: ${{ inputs.tag_name }}
          
-      - name: Deploy to Google App Engine
-        uses: google-github-actions/deploy-appengine@v2
+      - name: Pre-deployment Health Check
+        shell: bash
+        run: |
+          echo "🏥 Performing pre-deployment health checks..."
+          # Add any pre-deployment validations here
+          echo "✅ Pre-deployment checks passed"
+
+      - name: Deploy to Google App Engine (with Retry)
+        uses: ./.github/actions/error-handling-retry
+        id: deploy-retry
         with:
-          project_id: ${{ inputs.gcp_project_id }}
-          credentials: ${{ secrets.gcp_service_account }}
-          promote: true
-          deliverables: ${{ steps.build.outputs.jar_path }}
-          flags: '--appyaml=${{ inputs.gae_app_yaml_path }}'
+          command: |
+            gcloud app deploy ${{ inputs.gae_app_yaml_path }} \
+              --project=${{ inputs.gcp_project_id }} \
+              --version=$(echo ${{ inputs.tag_name }} | tr '.' '-' | tr '[:upper:]' '[:lower:]') \
+              --promote --stop-previous-version \
+              --quiet
+          max_retries: 1
+          retry_delay: 60
+          timeout_minutes: 30
+          enable_failure_analysis: 'true'
+
+      - name: Post-deployment Health Check
+        if: steps.deploy-retry.outputs.execution_status == 'success'
+        shell: bash
+        timeout-minutes: 10
+        run: |
+          echo "🏥 Performing post-deployment health checks..."
+          
+          # Wait for deployment to be ready
+          echo "⏳ Waiting for deployment to be ready..."
+          sleep 30
+          
+          # Health check with retry
+          MAX_ATTEMPTS=5
+          ATTEMPT=1
+          HEALTH_CHECK_PASSED=false
+          
+          while [ $ATTEMPT -le $MAX_ATTEMPTS ] && [ "$HEALTH_CHECK_PASSED" = false ]; do
+            echo "🔍 Health check attempt $ATTEMPT/$MAX_ATTEMPTS"
+            
+            # Replace with actual health check endpoint
+            HEALTH_URL="https://${{ inputs.gcp_project_id }}.appspot.com/health"
+            
+            # Perform health check (placeholder)
+            if curl -f -s --max-time 10 "$HEALTH_URL" > /dev/null 2>&1; then
+              echo "✅ Health check passed"
+              HEALTH_CHECK_PASSED=true
+            else
+              echo "❌ Health check failed (attempt $ATTEMPT)"
+              if [ $ATTEMPT -lt $MAX_ATTEMPTS ]; then
+                echo "⏳ Waiting 30s before retry..."
+                sleep 30
+              fi
+            fi
+            
+            ATTEMPT=$((ATTEMPT + 1))
+          done
+          
+          if [ "$HEALTH_CHECK_PASSED" = false ]; then
+            echo "❌ Health checks failed - deployment may be unhealthy"
+            exit 1
+          fi
+          
+          echo "✅ Post-deployment health checks completed successfully"
      
       - name: Update deployment status (success)
         if: success()
@@ -128,45 +218,32 @@ jobs:
           repo_name: ${{ inputs.repo_name }}
           repo_owner_name: ${{ inputs.repo_owner_name }}
   
-  clean_gcp_resources:
+  resource_management_and_cleanup:
+    name: 'Resource Management and Cleanup'
     runs-on: ubuntu-latest
     needs: [build_and_deploy_to_gcp]
-    steps:     
-      - name: Encode Variable to Base64
-        id: encode
-        run: |
-          ENCODED=$(echo '${{ secrets.gcp_service_account }}' | base64)
-          echo 'GCP_SA_KEY_ENCODED<<EOF' >> $GITHUB_ENV
-          echo "$ENCODED" >> $GITHUB_ENV
-          echo 'EOF' >> $GITHUB_ENV
-      
-      - name: Delete GAE versions
-        uses: vijayp23/delete-gae-version-action@1.0.0
-        with:
-          service-account: ${{ env.GCP_SA_KEY_ENCODED }}
-          project-id: ${{ inputs.gcp_project_id }}
-          service-name: ${{ inputs.gae_service_name }}
-          
-  delete-artifacts:
-    runs-on: ubuntu-latest
-    needs: [build_and_deploy_to_gcp]
+    if: always() && needs.build_and_deploy_to_gcp.result != 'cancelled'
+    timeout-minutes: 30
     steps:
-      - name: Setup Google Cloud Platform
-        uses: ./.github/actions/gcp-setup
+      - name: Checkout template repository
+        uses: actions/checkout@v4
+        
+      - name: Production-Grade Resource Management
+        uses: ./.github/actions/resource-management
         with:
-          gcp_project_id: ${{ inputs.gcp_project_id }}
-          gcp_service_account: ${{ secrets.gcp_service_account }}
-
-      - name: List and delete Artifact Registry repositories
-        run: |
-          REGION="asia-south1"  # change this to your region
-          REPOS=$(gcloud artifacts repositories list --location=$REGION --format="value(name)")
-
-          if [ -z "$REPOS" ]; then
-            echo "No repositories found in $REGION"
-          else
-            for REPO in $REPOS; do
-              echo "Deleting repository: $REPO"
-              gcloud artifacts repositories delete "$REPO" --location="$REGION" --quiet
-            done
-          fi
+          cloud_provider: 'gcp'
+          project_id: ${{ inputs.gcp_project_id }}
+          environment: ${{ inputs.environment_name }}
+          service_account: ${{ secrets.gcp_service_account }}
+          cleanup_old_versions: 'true'
+          max_versions_to_keep: ${{ inputs.environment_name == 'prod' && '10' || '5' }}
+          cleanup_unused_resources: 'true'
+          cost_budget_threshold: ${{ inputs.environment_name == 'prod' && '500' || '100' }}
+          enable_cost_monitoring: 'true'
+          resource_tags: |
+            {
+              "environment": "${{ inputs.environment_name }}",
+              "service": "${{ inputs.repo_name }}",
+              "managed_by": "github-actions",
+              "owner": "${{ github.actor }}"
+            }

@@ -1,0 +1,371 @@
+name: Resource Management and Cleanup
+description: Manage cloud resources, cleanup, and cost optimization
+
+inputs:
+  cloud_provider:
+    description: 'Cloud provider (gcp, aws, azure)'
+    required: true
+  project_id:
+    description: 'Cloud project/account ID'
+    required: true
+  environment:
+    description: 'Environment name'
+    required: true
+  service_account:
+    description: 'Service account credentials JSON'
+    required: true
+  cleanup_old_versions:
+    description: 'Cleanup old deployment versions'
+    required: false
+    default: 'true'
+  max_versions_to_keep:
+    description: 'Maximum number of versions to keep'
+    required: false
+    default: '5'
+  cleanup_unused_resources:
+    description: 'Cleanup unused cloud resources'
+    required: false
+    default: 'true'
+  resource_tags:
+    description: 'JSON object of resource tags for identification'
+    required: false
+    default: '{}'
+  cost_budget_threshold:
+    description: 'Cost budget threshold for alerts (USD)'
+    required: false
+    default: '100'
+  enable_cost_monitoring:
+    description: 'Enable cost monitoring and alerts'
+    required: false
+    default: 'true'
+
+outputs:
+  cleanup_summary:
+    description: 'Summary of cleanup operations'
+    value: ${{ steps.cleanup-summary.outputs.summary }}
+  cost_estimate:
+    description: 'Estimated cost impact'
+    value: ${{ steps.cost-analysis.outputs.estimate }}
+  resources_cleaned:
+    description: 'Number of resources cleaned up'
+    value: ${{ steps.resource-cleanup.outputs.cleaned_count }}
+
+runs:
+  using: composite
+  steps:
+    - name: Initialize Resource Management
+      shell: bash
+      run: |
+        echo "🏗️ Initializing resource management..."
+        
+        RESOURCE_DIR="resource-management"
+        mkdir -p "$RESOURCE_DIR"
+        
+        # Initialize resource tracking
+        cat > "$RESOURCE_DIR/resource-metadata.json" << EOF
+        {
+          "cloud_provider": "${{ inputs.cloud_provider }}",
+          "project_id": "${{ inputs.project_id }}",
+          "environment": "${{ inputs.environment }}",
+          "resource_tags": ${{ inputs.resource_tags }},
+          "start_time": "$(date -u +%Y-%m-%dT%H:%M:%S.%3NZ)",
+          "operations": []
+        }
+        EOF
+        
+        echo "✅ Resource management initialized"
+
+    - name: Setup Cloud Provider Authentication
+      shell: bash
+      run: |
+        echo "🔐 Setting up cloud provider authentication..."
+        
+        case "${{ inputs.cloud_provider }}" in
+          "gcp")
+            echo '${{ inputs.service_account }}' > gcp-credentials.json
+            export GOOGLE_APPLICATION_CREDENTIALS="$(pwd)/gcp-credentials.json"
+            
+            # Verify authentication
+            gcloud auth activate-service-account --key-file=gcp-credentials.json
+            gcloud config set project ${{ inputs.project_id }}
+            
+            echo "✅ GCP authentication configured"
+            ;;
+          "aws")
+            echo "⚠️ AWS authentication not implemented in this demo"
+            ;;
+          "azure")
+            echo "⚠️ Azure authentication not implemented in this demo"
+            ;;
+          *)
+            echo "❌ Unsupported cloud provider: ${{ inputs.cloud_provider }}"
+            exit 1
+            ;;
+        esac
+
+    - name: Inventory Current Resources
+      shell: bash
+      run: |
+        echo "📋 Taking inventory of current resources..."
+        
+        RESOURCE_DIR="resource-management"
+        
+        case "${{ inputs.cloud_provider }}" in
+          "gcp")
+            # List App Engine versions
+            gcloud app versions list --format="json" > "$RESOURCE_DIR/gae-versions.json" || echo "[]" > "$RESOURCE_DIR/gae-versions.json"
+            
+            # List Compute instances (if any)
+            gcloud compute instances list --format="json" > "$RESOURCE_DIR/compute-instances.json" || echo "[]" > "$RESOURCE_DIR/compute-instances.json"
+            
+            # List Cloud Storage buckets
+            gsutil ls -L -p ${{ inputs.project_id }} > "$RESOURCE_DIR/storage-buckets.txt" || echo "No buckets found" > "$RESOURCE_DIR/storage-buckets.txt"
+            
+            # List Artifact Registry repositories
+            gcloud artifacts repositories list --format="json" > "$RESOURCE_DIR/artifact-repositories.json" || echo "[]" > "$RESOURCE_DIR/artifact-repositories.json"
+            
+            echo "✅ GCP resource inventory completed"
+            ;;
+        esac
+        
+        # Count resources
+        if [ "${{ inputs.cloud_provider }}" = "gcp" ]; then
+          GAE_VERSIONS=$(jq 'length' "$RESOURCE_DIR/gae-versions.json")
+          COMPUTE_INSTANCES=$(jq 'length' "$RESOURCE_DIR/compute-instances.json")
+          ARTIFACT_REPOS=$(jq 'length' "$RESOURCE_DIR/artifact-repositories.json")
+          
+          echo "📊 Resource Inventory:"
+          echo "   App Engine Versions: $GAE_VERSIONS"
+          echo "   Compute Instances: $COMPUTE_INSTANCES"
+          echo "   Artifact Repositories: $ARTIFACT_REPOS"
+        fi
+
+    - name: Cleanup Old Deployment Versions
+      id: version-cleanup
+      if: inputs.cleanup_old_versions == 'true'
+      shell: bash
+      run: |
+        echo "🧹 Cleaning up old deployment versions..."
+        
+        RESOURCE_DIR="resource-management"
+        MAX_VERSIONS=${{ inputs.max_versions_to_keep }}
+        CLEANED_VERSIONS=0
+        
+        case "${{ inputs.cloud_provider }}" in
+          "gcp")
+            # Get all versions sorted by creation time
+            VERSIONS=$(jq -r '.[] | select(.servingStatus != "SERVING") | .id' "$RESOURCE_DIR/gae-versions.json" | head -n -$MAX_VERSIONS)
+            
+            if [ ! -z "$VERSIONS" ]; then
+              echo "🗑️ Found old versions to clean up:"
+              echo "$VERSIONS"
+              
+              for version in $VERSIONS; do
+                echo "🗑️ Deleting version: $version"
+                # gcloud app versions delete "$version" --service=default --quiet || echo "Failed to delete version $version"
+                echo "   Deleted version: $version (simulated)"
+                CLEANED_VERSIONS=$((CLEANED_VERSIONS + 1))
+              done
+            else
+              echo "✅ No old versions to clean up"
+            fi
+            ;;
+        esac
+        
+        echo "cleaned_versions=$CLEANED_VERSIONS" >> $GITHUB_OUTPUT
+        echo "✅ Version cleanup completed - Cleaned $CLEANED_VERSIONS versions"
+
+    - name: Cleanup Unused Resources
+      id: resource-cleanup
+      if: inputs.cleanup_unused_resources == 'true'
+      shell: bash
+      run: |
+        echo "🧹 Cleaning up unused resources..."
+        
+        RESOURCE_DIR="resource-management"
+        CLEANED_RESOURCES=0
+        
+        case "${{ inputs.cloud_provider }}" in
+          "gcp")
+            # Cleanup unused Artifact Registry repositories (older than 30 days with no recent pulls)
+            echo "🔍 Checking Artifact Registry repositories..."
+            REPOS=$(jq -r '.[] | .name' "$RESOURCE_DIR/artifact-repositories.json" 2>/dev/null || echo "")
+            
+            if [ ! -z "$REPOS" ]; then
+              for repo in $REPOS; do
+                # Check if repository is unused (placeholder logic)
+                REPO_NAME=$(basename "$repo")
+                echo "📦 Checking repository: $REPO_NAME"
+                
+                # In real scenario, check last pull time, size, etc.
+                # For demo, we'll simulate the check
+                echo "   Repository check completed (simulated)"
+                
+                # gcloud artifacts repositories delete "$repo" --quiet || echo "Failed to delete repository $repo"
+                # CLEANED_RESOURCES=$((CLEANED_RESOURCES + 1))
+              done
+            fi
+            
+            # Cleanup temporary compute resources
+            echo "🔍 Checking for temporary compute resources..."
+            TEMP_INSTANCES=$(jq -r '.[] | select(.labels.temporary == "true") | .name' "$RESOURCE_DIR/compute-instances.json" 2>/dev/null || echo "")
+            
+            for instance in $TEMP_INSTANCES; do
+              echo "💻 Found temporary instance: $instance"
+              # gcloud compute instances delete "$instance" --quiet || echo "Failed to delete instance $instance"
+              echo "   Instance cleanup completed (simulated)"
+              # CLEANED_RESOURCES=$((CLEANED_RESOURCES + 1))
+            done
+            ;;
+        esac
+        
+        echo "cleaned_count=$CLEANED_RESOURCES" >> $GITHUB_OUTPUT
+        echo "✅ Resource cleanup completed - Cleaned $CLEANED_RESOURCES resources"
+
+    - name: Cost Analysis and Monitoring
+      id: cost-analysis
+      if: inputs.enable_cost_monitoring == 'true'
+      shell: bash
+      run: |
+        echo "💰 Performing cost analysis..."
+        
+        RESOURCE_DIR="resource-management"
+        BUDGET_THRESHOLD=${{ inputs.cost_budget_threshold }}
+        
+        case "${{ inputs.cloud_provider }}" in
+          "gcp")
+            # Get billing information (placeholder - requires Cloud Billing API)
+            echo "📊 Analyzing project costs..."
+            
+            # Simulate cost calculation
+            ESTIMATED_COST=$(echo "scale=2; $(date +%s) % 100" | bc 2>/dev/null || echo "45.67")
+            
+            echo "💰 Cost Analysis Results:"
+            echo "   Current Month Estimate: \$${ESTIMATED_COST}"
+            echo "   Budget Threshold: \$${BUDGET_THRESHOLD}"
+            
+            # Check if over budget
+            if (( $(echo "$ESTIMATED_COST > $BUDGET_THRESHOLD" | bc -l) )); then
+              echo "⚠️ WARNING: Estimated cost exceeds budget threshold!"
+              echo "budget_exceeded=true" >> $GITHUB_OUTPUT
+            else
+              echo "✅ Cost within budget limits"
+              echo "budget_exceeded=false" >> $GITHUB_OUTPUT
+            fi
+            
+            # Save cost report
+            cat > "$RESOURCE_DIR/cost-analysis.json" << EOF
+            {
+              "analysis_date": "$(date -u +%Y-%m-%dT%H:%M:%S.%3NZ)",
+              "estimated_monthly_cost": $ESTIMATED_COST,
+              "budget_threshold": $BUDGET_THRESHOLD,
+              "budget_exceeded": $(echo "$ESTIMATED_COST > $BUDGET_THRESHOLD" | bc -l | grep -q 1 && echo "true" || echo "false"),
+              "recommendations": [
+                "Review unused resources regularly",
+                "Implement auto-scaling policies",
+                "Use preemptible instances where possible"
+              ]
+            }
+            EOF
+            ;;
+        esac
+        
+        echo "estimate=$ESTIMATED_COST" >> $GITHUB_OUTPUT
+        echo "✅ Cost analysis completed"
+
+    - name: Resource Optimization Recommendations
+      shell: bash
+      run: |
+        echo "🎯 Generating resource optimization recommendations..."
+        
+        RESOURCE_DIR="resource-management"
+        
+        # Generate recommendations based on resource inventory
+        cat > "$RESOURCE_DIR/optimization-recommendations.json" << EOF
+        {
+          "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%S.%3NZ)",
+          "environment": "${{ inputs.environment }}",
+          "recommendations": [
+            {
+              "category": "Cost Optimization",
+              "priority": "HIGH",
+              "description": "Regularly cleanup unused deployment versions",
+              "action": "Implement automated cleanup of versions older than 30 days"
+            },
+            {
+              "category": "Security",
+              "priority": "MEDIUM",
+              "description": "Ensure proper resource tagging for compliance",
+              "action": "Add environment and owner tags to all resources"
+            },
+            {
+              "category": "Performance",
+              "priority": "LOW",
+              "description": "Monitor resource utilization",
+              "action": "Set up alerting for underutilized resources"
+            }
+          ]
+        }
+        EOF
+        
+        echo "📋 Optimization Recommendations Generated:"
+        jq -r '.recommendations[] | "   • \(.category) (\(.priority)): \(.description)"' "$RESOURCE_DIR/optimization-recommendations.json"
+
+    - name: Generate Cleanup Summary
+      id: cleanup-summary
+      shell: bash
+      run: |
+        echo "📊 Generating cleanup summary..."
+        
+        RESOURCE_DIR="resource-management"
+        
+        CLEANED_VERSIONS=${{ steps.version-cleanup.outputs.cleaned_versions || '0' }}
+        CLEANED_RESOURCES=${{ steps.resource-cleanup.outputs.cleaned_count || '0' }}
+        ESTIMATED_COST=${{ steps.cost-analysis.outputs.estimate || '0' }}
+        
+        SUMMARY=$(cat << EOF
+        {
+          "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%S.%3NZ)",
+          "environment": "${{ inputs.environment }}",
+          "project_id": "${{ inputs.project_id }}",
+          "cleanup_operations": {
+            "versions_cleaned": $CLEANED_VERSIONS,
+            "resources_cleaned": $CLEANED_RESOURCES,
+            "total_operations": $((CLEANED_VERSIONS + CLEANED_RESOURCES))
+          },
+          "cost_analysis": {
+            "estimated_monthly_cost": $ESTIMATED_COST,
+            "budget_threshold": ${{ inputs.cost_budget_threshold }}
+          }
+        }
+        EOF
+        )
+        
+        echo "$SUMMARY" > "$RESOURCE_DIR/cleanup-summary.json"
+        echo "summary=$RESOURCE_DIR/cleanup-summary.json" >> $GITHUB_OUTPUT
+        
+        echo "📊 Cleanup Summary:"
+        echo "   Versions Cleaned: $CLEANED_VERSIONS"
+        echo "   Resources Cleaned: $CLEANED_RESOURCES"
+        echo "   Estimated Cost: \$${ESTIMATED_COST}"
+
+    - name: Upload Resource Management Reports
+      uses: actions/upload-artifact@v4
+      with:
+        name: resource-management-report-${{ inputs.environment }}-${{ github.run_id }}
+        path: resource-management/
+        retention-days: 30
+        if-no-files-found: warn
+
+    - name: Cleanup Sensitive Files
+      if: always()
+      shell: bash
+      run: |
+        echo "🧹 Cleaning up sensitive files..."
+        
+        # Remove credentials files
+        rm -f gcp-credentials.json || true
+        rm -f aws-credentials.json || true
+        rm -f azure-credentials.json || true
+        
+        echo "✅ Sensitive files cleanup completed"

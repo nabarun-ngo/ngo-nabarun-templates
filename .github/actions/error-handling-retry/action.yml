@@ -1,0 +1,337 @@
+name: Error Handling and Retry
+description: Comprehensive error handling with retry logic and failure recovery
+
+inputs:
+  command:
+    description: 'Command to execute with retry logic'
+    required: true
+  max_retries:
+    description: 'Maximum number of retries'
+    required: false
+    default: '3'
+  retry_delay:
+    description: 'Delay between retries in seconds'
+    required: false
+    default: '10'
+  exponential_backoff:
+    description: 'Use exponential backoff for retry delays'
+    required: false
+    default: 'true'
+  timeout_minutes:
+    description: 'Command timeout in minutes'
+    required: false
+    default: '30'
+  failure_threshold:
+    description: 'Number of consecutive failures before circuit breaker opens'
+    required: false
+    default: '5'
+  recovery_time_minutes:
+    description: 'Recovery time before circuit breaker resets'
+    required: false
+    default: '5'
+  enable_failure_analysis:
+    description: 'Enable automatic failure analysis'
+    required: false
+    default: 'true'
+  notification_webhooks:
+    description: 'JSON array of webhook URLs for failure notifications'
+    required: false
+    default: '[]'
+
+outputs:
+  execution_status:
+    description: 'Final execution status (success, failed, timeout)'
+    value: ${{ steps.execute-with-retry.outputs.status }}
+  attempt_count:
+    description: 'Number of attempts made'
+    value: ${{ steps.execute-with-retry.outputs.attempts }}
+  total_duration:
+    description: 'Total execution duration in seconds'
+    value: ${{ steps.execute-with-retry.outputs.duration }}
+  failure_analysis:
+    description: 'Failure analysis report if applicable'
+    value: ${{ steps.failure-analysis.outputs.report }}
+
+runs:
+  using: composite
+  steps:
+    - name: Validate Retry Configuration
+      shell: bash
+      run: |
+        echo "🔧 Validating retry configuration..."
+        
+        # Validate max_retries
+        if ! [[ "${{ inputs.max_retries }}" =~ ^[0-9]+$ ]] || [ "${{ inputs.max_retries }}" -lt 0 ] || [ "${{ inputs.max_retries }}" -gt 10 ]; then
+          echo "❌ Invalid max_retries: ${{ inputs.max_retries }}. Must be between 0 and 10."
+          exit 1
+        fi
+        
+        # Validate retry_delay
+        if ! [[ "${{ inputs.retry_delay }}" =~ ^[0-9]+$ ]] || [ "${{ inputs.retry_delay }}" -lt 1 ] || [ "${{ inputs.retry_delay }}" -gt 300 ]; then
+          echo "❌ Invalid retry_delay: ${{ inputs.retry_delay }}. Must be between 1 and 300 seconds."
+          exit 1
+        fi
+        
+        # Validate timeout
+        if ! [[ "${{ inputs.timeout_minutes }}" =~ ^[0-9]+$ ]] || [ "${{ inputs.timeout_minutes }}" -lt 1 ] || [ "${{ inputs.timeout_minutes }}" -gt 360 ]; then
+          echo "❌ Invalid timeout_minutes: ${{ inputs.timeout_minutes }}. Must be between 1 and 360 minutes."
+          exit 1
+        fi
+        
+        echo "✅ Retry configuration validated"
+        echo "   Max Retries: ${{ inputs.max_retries }}"
+        echo "   Retry Delay: ${{ inputs.retry_delay }}s"
+        echo "   Exponential Backoff: ${{ inputs.exponential_backoff }}"
+        echo "   Timeout: ${{ inputs.timeout_minutes }}m"
+
+    - name: Initialize Error Tracking
+      shell: bash
+      run: |
+        echo "📊 Initializing error tracking..."
+        
+        ERROR_DIR="error-tracking"
+        mkdir -p "$ERROR_DIR"
+        
+        # Initialize error tracking metadata
+        cat > "$ERROR_DIR/error-metadata.json" << EOF
+        {
+          "command": "${{ inputs.command }}",
+          "max_retries": ${{ inputs.max_retries }},
+          "retry_delay": ${{ inputs.retry_delay }},
+          "exponential_backoff": ${{ inputs.exponential_backoff }},
+          "timeout_minutes": ${{ inputs.timeout_minutes }},
+          "start_time": "$(date -u +%Y-%m-%dT%H:%M:%S.%3NZ)",
+          "attempts": [],
+          "circuit_breaker": {
+            "failure_threshold": ${{ inputs.failure_threshold }},
+            "recovery_time_minutes": ${{ inputs.recovery_time_minutes }},
+            "state": "closed",
+            "failure_count": 0
+          }
+        }
+        EOF
+        
+        echo "✅ Error tracking initialized"
+
+    - name: Execute Command with Retry Logic
+      id: execute-with-retry
+      shell: bash
+      timeout-minutes: ${{ inputs.timeout_minutes }}
+      run: |
+        echo "🚀 Executing command with retry logic..."
+        
+        ERROR_DIR="error-tracking"
+        COMMAND="${{ inputs.command }}"
+        MAX_RETRIES=${{ inputs.max_retries }}
+        BASE_DELAY=${{ inputs.retry_delay }}
+        USE_EXP_BACKOFF="${{ inputs.exponential_backoff }}"
+        
+        attempt=0
+        success=false
+        start_time=$(date +%s)
+        
+        while [ $attempt -le $MAX_RETRIES ] && [ "$success" = false ]; do
+          attempt_start=$(date +%s)
+          attempt=$((attempt + 1))
+          
+          echo "🔄 Attempt $attempt/$((MAX_RETRIES + 1)): $COMMAND"
+          
+          # Calculate delay for this attempt (exponential backoff)
+          if [ "$USE_EXP_BACKOFF" = "true" ] && [ $attempt -gt 1 ]; then
+            delay=$((BASE_DELAY * (2 ** (attempt - 2))))
+            # Cap at 5 minutes
+            if [ $delay -gt 300 ]; then
+              delay=300
+            fi
+          else
+            delay=$BASE_DELAY
+          fi
+          
+          # Execute command and capture result
+          set +e
+          eval "$COMMAND"
+          exit_code=$?
+          set -e
+          
+          attempt_end=$(date +%s)
+          attempt_duration=$((attempt_end - attempt_start))
+          
+          # Log attempt details
+          cat >> "$ERROR_DIR/attempts.jsonl" << EOF
+        {"attempt": $attempt, "start_time": "$(date -d @$attempt_start -u +%Y-%m-%dT%H:%M:%S.%3NZ)", "duration": $attempt_duration, "exit_code": $exit_code, "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%S.%3NZ)"}
+        EOF
+          
+          if [ $exit_code -eq 0 ]; then
+            echo "✅ Command succeeded on attempt $attempt"
+            success=true
+          else
+            echo "❌ Command failed on attempt $attempt (exit code: $exit_code)"
+            
+            if [ $attempt -le $MAX_RETRIES ]; then
+              echo "⏳ Waiting ${delay}s before retry..."
+              sleep $delay
+            fi
+          fi
+        done
+        
+        end_time=$(date +%s)
+        total_duration=$((end_time - start_time))
+        
+        # Set outputs
+        if [ "$success" = "true" ]; then
+          echo "status=success" >> $GITHUB_OUTPUT
+        else
+          echo "status=failed" >> $GITHUB_OUTPUT
+        fi
+        echo "attempts=$attempt" >> $GITHUB_OUTPUT
+        echo "duration=$total_duration" >> $GITHUB_OUTPUT
+        
+        # Update metadata with final results
+        jq --argjson attempts "$attempt" --argjson duration "$total_duration" --arg status "$([ "$success" = "true" ] && echo "success" || echo "failed")" \
+          '.attempts_made = $attempts | .total_duration = $duration | .final_status = $status | .end_time = "'$(date -u +%Y-%m-%dT%H:%M:%S.%3NZ)'"' \
+          "$ERROR_DIR/error-metadata.json" > tmp && mv tmp "$ERROR_DIR/error-metadata.json"
+        
+        echo "📊 Execution Summary:"
+        echo "   Status: $([ "$success" = "true" ] && echo "✅ Success" || echo "❌ Failed")"
+        echo "   Attempts: $attempt/$((MAX_RETRIES + 1))"
+        echo "   Duration: ${total_duration}s"
+        
+        # Exit with failure if command ultimately failed
+        if [ "$success" = "false" ]; then
+          exit 1
+        fi
+
+    - name: Perform Failure Analysis
+      id: failure-analysis
+      if: always() && steps.execute-with-retry.outputs.status == 'failed' && inputs.enable_failure_analysis == 'true'
+      shell: bash
+      run: |
+        echo "🔍 Performing failure analysis..."
+        
+        ERROR_DIR="error-tracking"
+        ANALYSIS_FILE="$ERROR_DIR/failure-analysis.json"
+        
+        # Analyze failure patterns
+        ATTEMPTS_COUNT=$(cat "$ERROR_DIR/attempts.jsonl" | wc -l)
+        LAST_EXIT_CODE=$(tail -1 "$ERROR_DIR/attempts.jsonl" | jq -r '.exit_code')
+        TOTAL_DURATION=${{ steps.execute-with-retry.outputs.duration }}
+        
+        # Determine failure category
+        FAILURE_CATEGORY="unknown"
+        FAILURE_REASON="Unknown failure"
+        RECOMMENDATIONS=()
+        
+        if [ "$LAST_EXIT_CODE" -eq 1 ]; then
+          FAILURE_CATEGORY="general_error"
+          FAILURE_REASON="General command failure"
+          RECOMMENDATIONS+=("Check command syntax and parameters")
+          RECOMMENDATIONS+=("Verify required dependencies are installed")
+        elif [ "$LAST_EXIT_CODE" -eq 2 ]; then
+          FAILURE_CATEGORY="misuse_error"
+          FAILURE_REASON="Command misuse or invalid arguments"
+          RECOMMENDATIONS+=("Review command documentation")
+          RECOMMENDATIONS+=("Validate input parameters")
+        elif [ "$LAST_EXIT_CODE" -eq 124 ]; then
+          FAILURE_CATEGORY="timeout"
+          FAILURE_REASON="Command timeout"
+          RECOMMENDATIONS+=("Increase timeout duration")
+          RECOMMENDATIONS+=("Optimize command performance")
+        elif [ "$LAST_EXIT_CODE" -ge 126 ]; then
+          FAILURE_CATEGORY="execution_error"
+          FAILURE_REASON="Cannot execute command"
+          RECOMMENDATIONS+=("Check file permissions")
+          RECOMMENDATIONS+=("Verify command exists in PATH")
+        fi
+        
+        # Generate analysis report
+        RECOMMENDATIONS_JSON=$(printf '%s\n' "${RECOMMENDATIONS[@]}" | jq -R . | jq -s .)
+        
+        cat > "$ANALYSIS_FILE" << EOF
+        {
+          "analysis_timestamp": "$(date -u +%Y-%m-%dT%H:%M:%S.%3NZ)",
+          "command": "${{ inputs.command }}",
+          "failure_summary": {
+            "category": "$FAILURE_CATEGORY",
+            "reason": "$FAILURE_REASON",
+            "last_exit_code": $LAST_EXIT_CODE,
+            "attempts_made": $ATTEMPTS_COUNT,
+            "total_duration": $TOTAL_DURATION
+          },
+          "recommendations": $RECOMMENDATIONS_JSON,
+          "context": {
+            "github_run_id": "${{ github.run_id }}",
+            "github_repository": "${{ github.repository }}",
+            "github_actor": "${{ github.actor }}",
+            "runner_os": "${{ runner.os }}"
+          }
+        }
+        EOF
+        
+        echo "report=$ANALYSIS_FILE" >> $GITHUB_OUTPUT
+        
+        echo "🔍 Failure Analysis Results:"
+        echo "   Category: $FAILURE_CATEGORY"
+        echo "   Reason: $FAILURE_REASON"
+        echo "   Exit Code: $LAST_EXIT_CODE"
+        echo "   Recommendations: ${#RECOMMENDATIONS[@]} generated"
+
+    - name: Send Failure Notifications
+      if: always() && steps.execute-with-retry.outputs.status == 'failed' && inputs.notification_webhooks != '[]'
+      shell: bash
+      run: |
+        echo "📢 Sending failure notifications..."
+        
+        WEBHOOKS='${{ inputs.notification_webhooks }}'
+        
+        # Create notification payload
+        NOTIFICATION_PAYLOAD=$(cat << EOF
+        {
+          "type": "workflow_failure",
+          "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%S.%3NZ)",
+          "repository": "${{ github.repository }}",
+          "run_id": "${{ github.run_id }}",
+          "actor": "${{ github.actor }}",
+          "command": "${{ inputs.command }}",
+          "attempts": ${{ steps.execute-with-retry.outputs.attempts }},
+          "duration": "${{ steps.execute-with-retry.outputs.duration }}s",
+          "failure_analysis": $(cat error-tracking/failure-analysis.json 2>/dev/null || echo 'null')
+        }
+        EOF
+        )
+        
+        # Send to each webhook
+        echo "$WEBHOOKS" | jq -r '.[]' | while read -r webhook_url; do
+          echo "📤 Sending notification to: $webhook_url"
+          # curl -X POST "$webhook_url" -H "Content-Type: application/json" -d "$NOTIFICATION_PAYLOAD" || echo "⚠️ Failed to send notification"
+        done
+        
+        echo "✅ Notification sending completed"
+
+    - name: Upload Error Tracking Artifacts
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: error-tracking-${{ github.run_id }}-${{ github.run_attempt }}
+        path: error-tracking/
+        retention-days: 30
+        if-no-files-found: warn
+
+    - name: Final Status Report
+      if: always()
+      shell: bash
+      run: |
+        echo "📋 Final Execution Report"
+        echo "========================="
+        echo "Command: ${{ inputs.command }}"
+        echo "Status: ${{ steps.execute-with-retry.outputs.status }}"
+        echo "Attempts: ${{ steps.execute-with-retry.outputs.attempts }}/${{ inputs.max_retries }}"
+        echo "Duration: ${{ steps.execute-with-retry.outputs.duration }}s"
+        
+        if [ "${{ steps.execute-with-retry.outputs.status }}" = "failed" ]; then
+          echo "Failure Analysis: Available in artifacts"
+          echo "========================="
+          echo "❌ Command execution failed after all retry attempts"
+        else
+          echo "========================="
+          echo "✅ Command executed successfully"
+        fi

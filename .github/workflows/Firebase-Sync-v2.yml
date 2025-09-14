@@ -1,0 +1,34 @@
+on:
+  workflow_call:
+    inputs:
+      branch_name:
+        required: false
+        type: string
+        default: 'main'
+      firebase_source_project:
+        required: true
+        type: string
+      firebase_target_project:
+        required: true
+        type: string
+    secrets:
+      firebase_service_account_source:
+        required: true
+      firebase_service_account_target:
+        required: true
+        
+jobs:
+  sync_remote_config:
+    name: 'Sync Data between Firebase Remote Config'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Sync Firebase Remote Config
+        uses: ./.github/actions/firebase-remote-config-sync
+        with:
+          firebase_source_project: ${{ inputs.firebase_source_project }}
+          firebase_target_project: ${{ inputs.firebase_target_project }}
+          firebase_service_account_source: ${{ secrets.firebase_service_account_source }}
+          firebase_service_account_target: ${{ secrets.firebase_service_account_target }}

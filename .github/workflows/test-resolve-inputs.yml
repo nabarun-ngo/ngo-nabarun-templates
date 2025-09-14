@@ -17,6 +17,8 @@ on:
 
 jobs:
   test:
+
+ 
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -48,3 +50,19 @@ jobs:
         run: |
           echo "Merged (explicit): ${{ steps.resolve_explicit.outputs.variables }}"
           echo '${{ steps.resolve_explicit.outputs.variables }}' | jq .
+
+  test-update-run-name:
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+
+      - name: Compute dynamic name
+        id: namegen
+        uses: ./.github/actions/update-run-name
+        with:
+          name: "Test Run - ${{ github.event_name }}"
