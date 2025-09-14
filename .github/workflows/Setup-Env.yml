@@ -1,4 +1,4 @@
-name: 'Set Inputs'
+name: 'Setup'
 on:
   workflow_call:
     inputs:
