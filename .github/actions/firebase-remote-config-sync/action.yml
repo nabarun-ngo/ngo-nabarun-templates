@@ -1,0 +1,115 @@
+name: Firebase Remote Config Sync
+description: Sync Firebase Remote Config between source and target projects
+
+inputs:
+  firebase_source_project:
+    description: 'Source Firebase project ID'
+    required: true
+  firebase_target_project:
+    description: 'Target Firebase project ID'
+    required: true
+  firebase_service_account_source:
+    description: 'Source Firebase service account key (JSON)'
+    required: true
+  firebase_service_account_target:
+    description: 'Target Firebase service account key (JSON)'
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Install Google Cloud SDK and tools
+      shell: bash
+      run: |
+        # Install Google Cloud SDK
+        if ! command -v gcloud &> /dev/null; then
+          curl https://sdk.cloud.google.com | bash
+          source $HOME/google-cloud-sdk/path.bash.inc
+        fi
+        
+        # Install jq if not present
+        sudo apt-get update && sudo apt-get install -y jq
+
+    - name: Authenticate with Firebase (Source)
+      shell: bash
+      run: |
+        echo '${{ inputs.firebase_service_account_source }}' > $HOME/source-firebase.json
+        gcloud auth activate-service-account --key-file=$HOME/source-firebase.json
+        export ACCESS_TOKEN=$(gcloud auth print-access-token)
+        echo "ACCESS_TOKEN=$ACCESS_TOKEN" >> $GITHUB_ENV
+
+    - name: Export Remote Config from Source
+      shell: bash
+      run: |
+        HTTP_STATUS=$(curl -w "%{http_code}" -o remote-config.json -D headers_source.txt -X GET \
+          -H "Authorization: Bearer $ACCESS_TOKEN" \
+          -H "Accept: application/json" \
+          "https://firebaseremoteconfig.googleapis.com/v1/projects/${{ inputs.firebase_source_project }}/remoteConfig")
+
+        if [[ $HTTP_STATUS -ge 400 ]]; then
+          echo "❌ ERROR: Failed to export Remote Config from source (HTTP $HTTP_STATUS)"
+          exit 1
+        fi
+
+        ETAG=$(grep -Fi "etag:" headers_source.txt | awk '{print $2}' | tr -d '\r')
+        echo "SOURCE_ETAG=$ETAG" >> $GITHUB_ENV
+        echo "✅ Successfully exported Remote Config from source"
+
+    - name: Upload Remote Config as Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: remote-config-${{ inputs.firebase_source_project }}-to-${{ inputs.firebase_target_project }}
+        path: remote-config.json
+        retention-days: 7
+
+    - name: Authenticate with Firebase (Target)
+      shell: bash
+      run: |
+        echo '${{ inputs.firebase_service_account_target }}' > $HOME/target-firebase.json
+        gcloud auth activate-service-account --key-file=$HOME/target-firebase.json
+        export ACCESS_TOKEN=$(gcloud auth print-access-token)
+        echo "ACCESS_TOKEN=$ACCESS_TOKEN" >> $GITHUB_ENV
+
+    - name: Get Target Remote Config ETag
+      shell: bash
+      run: |
+        HTTP_STATUS=$(curl -w "%{http_code}" -o /dev/null -D headers_target.txt -X GET \
+          -H "Authorization: Bearer $ACCESS_TOKEN" \
+          -H "Accept: application/json" \
+          "https://firebaseremoteconfig.googleapis.com/v1/projects/${{ inputs.firebase_target_project }}/remoteConfig")
+
+        if [[ $HTTP_STATUS -ge 400 ]]; then
+          echo "❌ ERROR: Failed to retrieve Remote Config from target (HTTP $HTTP_STATUS)"
+          exit 1
+        fi
+
+        ETAG=$(grep -Fi "etag:" headers_target.txt | awk '{print $2}' | tr -d '\r')
+
+        if [[ -z "$ETAG" ]]; then
+          echo "⚠️ Target ETag not found, using wildcard '*'"
+          ETAG="*"
+        fi
+
+        echo "TARGET_ETAG=$ETAG" >> $GITHUB_ENV
+
+    - name: Import Remote Config to Target
+      shell: bash
+      run: |
+        HTTP_RESPONSE=$(mktemp)
+        HTTP_STATUS=$(curl -w "%{http_code}" -o $HTTP_RESPONSE -D headers_response.txt -X PUT \
+          -H "Authorization: Bearer $ACCESS_TOKEN" \
+          -H "Content-Type: application/json; UTF-8" \
+          -H "If-Match: $TARGET_ETAG" \
+          -d @remote-config.json \
+          "https://firebaseremoteconfig.googleapis.com/v1/projects/${{ inputs.firebase_target_project }}/remoteConfig")
+
+        if [[ $HTTP_STATUS -ge 400 ]]; then
+          echo "❌ ERROR: Failed to update Remote Config on target (HTTP $HTTP_STATUS)"
+          cat $HTTP_RESPONSE
+          exit 1
+        fi
+
+        NEW_ETAG=$(grep -Fi "etag:" headers_response.txt | awk '{print $2}' | tr -d '\r')
+        echo "✅ Successfully updated Remote Config!"
+        echo "📌 New ETag: $NEW_ETAG"
+        echo "🔄 Sync completed: ${{ inputs.firebase_source_project }} → ${{ inputs.firebase_target_project }}"

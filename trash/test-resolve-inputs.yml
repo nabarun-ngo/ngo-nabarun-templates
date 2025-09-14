@@ -1,0 +1,68 @@
+name: Test Resolve Inputs
+on:
+  workflow_dispatch:
+    inputs:
+      foo:
+        description: Example workflow_dispatch input 'foo'
+        required: false
+        type: string
+        default: from-wf
+      shared:
+        description: Key to test precedence/override
+        required: false
+        type: string
+        default: shared-from-wf
+  repository_dispatch:
+    types: [resolve-inputs-test]
+
+jobs:
+  test:
+
+ 
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve inputs (auto-detect)
+        id: resolve
+        uses: ./.github/actions/resolve-inputs
+
+      - name: Show merged JSON (auto-detect)
+        run: |
+          echo "Merged (auto): ${{ steps.resolve.outputs.variables }}"
+          echo '${{ steps.resolve.outputs.variables }}' | jq .
+
+      - name: Basic validation (auto-detect)
+        run: |
+          set -e
+          jq -e 'type=="object"' <<< '${{ steps.resolve.outputs.variables }}' >/dev/null
+          echo OK
+
+      - name: Resolve with explicit overrides (demonstration)
+        id: resolve_explicit
+        uses: ./.github/actions/resolve-inputs
+        with:
+          inputs: '{"shared":"from-inputs","x":1}'
+          client_payload: '{"shared":"from-payload","y":2}'
+
+      - name: Show merged JSON (explicit)
+        run: |
+          echo "Merged (explicit): ${{ steps.resolve_explicit.outputs.variables }}"
+          echo '${{ steps.resolve_explicit.outputs.variables }}' | jq .
+
+  test-update-run-name:
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+
+      - name: Compute dynamic name
+        id: namegen
+        uses: ./.github/actions/update-run-name
+        with:
+          name: "Test Run - ${{ github.event_name }}"

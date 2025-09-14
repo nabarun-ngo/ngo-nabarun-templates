@@ -1,0 +1,37 @@
+name: Maven Build
+description: Build Java project with Maven and extract JAR file
+
+inputs:
+  build_command:
+    description: 'Maven build command'
+    required: false
+    default: 'mvn clean package'
+  target_folder:
+    description: 'Target folder containing build artifacts'
+    required: false
+    default: 'target'
+
+outputs:
+  jar_path:
+    description: 'Path to the generated JAR file'
+    value: ${{ steps.get-jar.outputs.jar_path }}
+
+runs:
+  using: composite
+  steps:
+    - name: Build with Maven
+      shell: bash
+      run: ${{ inputs.build_command }}
+
+    - name: Get JAR file path
+      id: get-jar
+      shell: bash
+      run: |
+        JAR_PATH=$(find ${{ inputs.target_folder }} -name "*.jar" | grep -v "sources.jar" | grep -v "javadoc.jar" | head -1)
+        echo "jar_path=${JAR_PATH}" >> $GITHUB_OUTPUT
+        echo "JAR file path: ${JAR_PATH}"
+        
+        if [ -z "$JAR_PATH" ]; then
+          echo "Error: No JAR file found in ${{ inputs.target_folder }}"
+          exit 1
+        fi

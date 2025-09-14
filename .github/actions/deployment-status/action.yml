@@ -1,0 +1,35 @@
+name: Deployment Status
+description: Update GitHub deployment status (success or failure)
+
+inputs:
+  state:
+    description: 'Deployment state (success or failure)'
+    required: true
+  deployment_id:
+    description: 'Deployment ID from GitHub deployment'
+    required: true
+  token:
+    description: 'GitHub token'
+    required: true
+  environment_url:
+    description: 'Environment URL'
+    required: false
+  repo_name:
+    description: 'Repository name'
+    required: true
+  repo_owner_name:
+    description: 'Repository owner name'
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Update deployment status
+      uses: chrnorm/deployment-status@v2
+      with:
+        state: ${{ inputs.state }}
+        deployment-id: ${{ inputs.deployment_id }}
+        token: ${{ inputs.token }}
+        environment-url: ${{ inputs.environment_url }}
+        repo: ${{ inputs.repo_name }}
+        owner: ${{ inputs.repo_owner_name }}

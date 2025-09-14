@@ -1,0 +1,30 @@
+name: GCP Setup
+description: Setup Google Cloud Platform authentication and tools
+
+inputs:
+  gcp_project_id:
+    description: 'GCP project ID'
+    required: true
+  gcp_service_account:
+    description: 'GCP service account key (JSON)'
+    required: true
+  setup_gcloud:
+    description: 'Setup gcloud CLI'
+    required: false
+    default: 'true'
+
+runs:
+  using: composite
+  steps:
+    - name: Authenticate with Google Cloud
+      uses: google-github-actions/auth@v2
+      with:
+        project_id: ${{ inputs.gcp_project_id }}
+        credentials_json: ${{ inputs.gcp_service_account }}
+        export_default_credentials: true
+
+    - name: Set up Cloud SDK
+      if: inputs.setup_gcloud == 'true'
+      uses: google-github-actions/setup-gcloud@v2
+      with:
+        version: 'latest'

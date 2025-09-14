@@ -1,0 +1,61 @@
+name: Checkout and Setup
+description: Checkout repository with specified tag/branch and setup basic environment
+
+inputs:
+  tag_name:
+    description: 'Tag or branch to checkout'
+    required: true
+  repo_name:
+    description: 'Repository name'
+    required: true
+  repo_owner_name:
+    description: 'Repository owner name'
+    required: true
+  setup_java:
+    description: 'Setup Java environment'
+    required: false
+    default: 'false'
+  java_version:
+    description: 'Java version to setup'
+    required: false
+    default: '17'
+  setup_node:
+    description: 'Setup Node.js environment'
+    required: false
+    default: 'false'
+  node_version:
+    description: 'Node.js version to setup'
+    required: false
+    default: '20'
+
+runs:
+  using: composite
+  steps:
+    - name: Checkout repository | Tag ${{ inputs.tag_name }}
+      uses: actions/checkout@v4
+      with:
+        ref: ${{ inputs.tag_name }}
+        repository: '${{ inputs.repo_owner_name }}/${{ inputs.repo_name }}'
+
+    - name: Set up Java
+      if: inputs.setup_java == 'true'
+      uses: actions/setup-java@v4
+      with:
+        java-version: ${{ inputs.java_version }}
+        distribution: 'temurin'
+
+    - name: Cache Maven dependencies
+      if: inputs.setup_java == 'true'
+      uses: actions/cache@v4
+      with:
+        path: ~/.m2/repository
+        key: maven-${{ hashFiles('**/pom.xml') }}
+        restore-keys: |
+          maven-
+
+    - name: Set up Node.js
+      if: inputs.setup_node == 'true'
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ inputs.node_version }}
+        cache: 'npm'

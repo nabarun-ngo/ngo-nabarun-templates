@@ -35,22 +35,25 @@ jobs:
     runs-on: 'ubuntu-latest'
     environment: ${{ inputs.environment_name }}
     steps:
-      - name: Checkout repository | tag ${{ inputs.tag_name }}
-        uses: actions/checkout@v4
+      - name: Checkout and Setup Environment
+        uses: ./.github/actions/checkout-and-setup
         with:
-          ref: ${{ inputs.tag_name }}
-          repository: '${{ inputs.repo_owner_name }}/${{ inputs.repo_name }}'
+          tag_name: ${{ inputs.tag_name }}
+          repo_name: ${{ inputs.repo_name }}
+          repo_owner_name: ${{ inputs.repo_owner_name }}
+          setup_node: 'true'
+          node_version: '20'
 
       - name: Create GitHub Deployment
-        uses: chrnorm/deployment-action@v2
+        uses: ./.github/actions/github-deployment
         id: deployment
         with:
           token: ${{ secrets.repo_token }}
-          environment-url: ${{ inputs.environment_url }}
-          environment: ${{ inputs.environment_name }}
-          repo: ${{ inputs.repo_name }}
-          owner: ${{ inputs.repo_owner_name }}
-          ref: ${{ inputs.tag_name }} 
+          environment_name: ${{ inputs.environment_name }}
+          environment_url: ${{ inputs.environment_url }}
+          repo_name: ${{ inputs.repo_name }}
+          repo_owner_name: ${{ inputs.repo_owner_name }}
+          tag_name: ${{ inputs.tag_name }}
           
       - name: Update package.json version
         uses: restackio/update-json-file-action@2.1
@@ -70,25 +73,25 @@ jobs:
 
       - name: Update deployment status (success)
         if: success()
-        uses: chrnorm/deployment-status@v2
+        uses: ./.github/actions/deployment-status
         with:
           state: 'success'
-          deployment-id: ${{ steps.deployment.outputs.deployment_id }}
+          deployment_id: ${{ steps.deployment.outputs.deployment_id }}
           token: ${{ secrets.repo_token }}
-          environment-url: ${{ inputs.environment_url }}
-          repo: ${{ inputs.repo_name }}
-          owner: ${{ inputs.repo_owner_name }}
+          environment_url: ${{ inputs.environment_url }}
+          repo_name: ${{ inputs.repo_name }}
+          repo_owner_name: ${{ inputs.repo_owner_name }}
 
       - name: Update deployment status (failure)
         if: failure()
-        uses: chrnorm/deployment-status@v2
+        uses: ./.github/actions/deployment-status
         with:
           state: 'failure'
-          deployment-id: ${{ steps.deployment.outputs.deployment_id }}
+          deployment_id: ${{ steps.deployment.outputs.deployment_id }}
           token: ${{ secrets.repo_token }}
-          environment-url: ${{ inputs.environment_url }}
-          repo: ${{ inputs.repo_name }}
-          owner: ${{ inputs.repo_owner_name }}
+          environment_url: ${{ inputs.environment_url }}
+          repo_name: ${{ inputs.repo_name }}
+          repo_owner_name: ${{ inputs.repo_owner_name }}
  
   
   

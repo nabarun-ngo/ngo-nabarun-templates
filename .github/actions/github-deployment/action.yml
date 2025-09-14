@@ -1,0 +1,41 @@
+name: GitHub Deployment
+description: Create and manage GitHub deployments
+
+inputs:
+  token:
+    description: 'GitHub token'
+    required: true
+  environment_name:
+    description: 'Environment name'
+    required: true
+  environment_url:
+    description: 'Environment URL'
+    required: false
+  repo_name:
+    description: 'Repository name'
+    required: true
+  repo_owner_name:
+    description: 'Repository owner name'
+    required: true
+  tag_name:
+    description: 'Tag or branch reference'
+    required: true
+
+outputs:
+  deployment_id:
+    description: 'Created deployment ID'
+    value: ${{ steps.deployment.outputs.deployment_id }}
+
+runs:
+  using: composite
+  steps:
+    - name: Create GitHub Deployment
+      uses: chrnorm/deployment-action@v2
+      id: deployment
+      with:
+        token: ${{ inputs.token }}
+        environment-url: ${{ inputs.environment_url }}
+        environment: ${{ inputs.environment_name }}
+        repo: ${{ inputs.repo_name }}
+        owner: ${{ inputs.repo_owner_name }}
+        ref: ${{ inputs.tag_name }}
