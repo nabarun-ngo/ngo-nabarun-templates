@@ -52,14 +52,14 @@ runs:
         # Check input flag
         update_from_env='${{ inputs.update_from_env }}'
         if [[ "$update_from_env" == "true" ]]; then
-          echo "⚡ Updating merged JSON from GITHUB_ENV..."
+          echo "⚡ Selectively updating merged JSON from GITHUB_ENV (only existing keys)..."
 
-          # Convert GITHUB_ENV to JSON
-          env_json=$(awk -F= '{printf "\"%s\":\"%s\",", $1, $2}' "$GITHUB_ENV" | sed 's/,$//')
-          env_json="{${env_json}}"
-
-          # Merge env_json into merged (env values override merged JSON)
-          merged=$(jq -c -n --argjson m "$merged" --argjson e "$env_json" '$m + $e')
+          while IFS='=' read -r key value; do
+            # Only override if key exists in merged JSON
+            if echo "$merged" | jq -e --arg k "$key" 'has($k)' >/dev/null; then
+              merged=$(echo "$merged" | jq --arg k "$key" --arg v "$value" '.[$k]=$v')
+            fi
+          done < "$GITHUB_ENV"
         fi
 
         echo "Merged Variables: $merged"
