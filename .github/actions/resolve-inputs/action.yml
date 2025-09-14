@@ -18,7 +18,7 @@ inputs:
 outputs:
   variables:
     description: Merged inputs as a JSON string (payload overrides on conflicts)
-    value: ${{ steps.resolve.outputs.variables }}
+    value: ${{ steps.final.outputs.variables }}
 
 runs:
   using: composite
@@ -28,29 +28,23 @@ runs:
       shell: bash
       run: |
         set -euo pipefail
-
+        
         # Get inputs or fallback to event payloads
-        inputs_json='${{ inputs.inputs != "" && inputs.inputs || toJson(github.event.inputs) }}'
-        payload_json='${{ inputs.client_payload != "" && inputs.client_payload || toJson(github.event.client_payload) }}'
+        inputs_json='${{ inputs.inputs != '' && inputs.inputs || toJson(github.event.inputs) }}'
+        payload_json='${{ inputs.client_payload != '' && inputs.client_payload || toJson(github.event.client_payload) }}'
 
-        sanitize() {
-          local raw="$1"
-          if [[ -z "$raw" || "$raw" == "null" ]]; then
-            echo '{}'
-            return
-          fi
-          echo "$raw" | jq -c 'try (if type=="object" then . else {} end) catch {}' 2>/dev/null || echo '{}'
-        }
+        # Determine which input to use
+        if [[ "$payload_json" != "null" && ! -z "$payload_json" ]]; then
+          final_data="$payload_json"
+        else
+          final_data="$inputs_json"
+        fi
 
-        a=$(sanitize "$inputs_json")
-        b=$(sanitize "$payload_json")
+        # Ensure JSON is properly formatted
+        final_data=$(echo "$final_data" | jq -c '.' || echo '{}')
 
-        # Shallow merge: payload overrides inputs
-        merged=$(jq -c -n --argjson a "$a" --argjson b "$b" '$a + $b')
-
-        # Save initial merged JSON
-        echo "Merged Variables: $merged"
-        echo "variables=$merged" >> "$GITHUB_OUTPUT"
+        echo "Final Merged Data: $final_data"
+        echo "variables=$final_data" >> "$GITHUB_OUTPUT"
 
     - id: override_env
       name: Override merged JSON from GITHUB_ENV
@@ -101,6 +95,4 @@ runs:
       shell: bash
       run: |
         echo "All GitHub environment variables (key=value):"
-        while IFS='=' read -r key value; do
-          echo "$key=$value"
-        done < "$GITHUB_ENV"
+        env
