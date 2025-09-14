@@ -41,12 +41,58 @@ jobs:
     if: ${{ inputs.sync_auth0 }}
     environment: ${{ inputs.auth0_target_env }}
     steps:
-      - name: Sync Auth0 Tenants
-        uses: nabarun-ngo/ngo-nabarun-templates/.github/actions/sync-auth0-v2@main
-        with:
-          branch_name: ${{ inputs.branch_name }}
-          source_config: ${{ secrets.auth0_source_config }}
-          dest_config: ${{ secrets.auth0_dest_config }}
+    - name: Checkout repository | Branch ${{ inputs.branch_name }}
+      uses: actions/checkout@v4
+      with:
+        repository: nabarun-ngo/ngo-nabarun-templates
+        ref: ${{ inputs.branch_name }}
+    
+    - name: Install Auth0 Deploy CLI
+      shell: bash
+      run: |
+        npm install -g auth0-deploy-cli@latest
+        a0deploy --version
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+    
+    - name: Create JSON files from secret
+      shell: bash
+      run: |
+        echo '${{ secrets.source_config }}' > auth0-source.json
+        echo '${{ secrets.dest_config }}' > auth0-target.json
+    
+    - name: Export from Source Tenant
+      shell: bash
+      run: |
+        a0deploy export -c auth0-source.json -f yaml -o ./exported
+        echo "Files in the './exported' directory and subdirectories:"
+        find ./exported -type f -print
+    
+    - name: Upload Raw Tenant File
+      uses: actions/upload-artifact@v4
+      with:
+        name: Raw Tenant Folder
+        path: ./exported
+        
+    - name: Run Python script to process Auth0 data
+      shell: bash
+      run: python scripts/auth0/process_auth0_v2.py auth0-source.json ./exported/tenant.yaml
+    
+    - name: Upload Processed Tenant File
+      uses: actions/upload-artifact@v4
+      with:
+        name: Processed Tenant File
+        path: ./exported/tenant.yaml
+        
+    - name: Deploy to Target Tenant
+      shell: bash
+      run: |
+        echo "Files in the './exported' directory and subdirectories:"
+        find ./exported -type f -print
+        a0deploy import -c auth0-target.json -f yaml -i ./exported/tenant.yaml
 
   sync_data_firebase:
     name: 'Sync Firebase Data'
