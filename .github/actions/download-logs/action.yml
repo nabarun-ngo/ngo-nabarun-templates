@@ -1,0 +1,73 @@
+name: "Download GCP Logs by UUID"
+description: "Download logs from Google Cloud Logging filtered by UUID, with output as TXT, CSV, or HTML."
+
+inputs:
+  uuid:
+    description: "The UUID to search for in logs."
+    required: true
+  gcp_sa_key:
+    description: "Google Cloud service account JSON key."
+    required: true
+  output_type:
+    description: "Output format (txt, csv, html)."
+    required: true
+    default: "txt"
+
+outputs:
+  output_path:
+    description: "Path to the generated log file."
+    value: ${{ steps.convert.outputs.output_path }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Authenticate with Google Cloud
+      uses: google-github-actions/auth@v2
+      with:
+        credentials_json: ${{ inputs.gcp_sa_key }}
+
+    - name: Set up Cloud SDK
+      uses: google-github-actions/setup-gcloud@v2
+
+    - name: Download raw logs
+      shell: bash
+      run: |
+        gcloud logging read \
+          "textPayload:\"${{ inputs.uuid }}\"" \
+          --format=json > raw_logs.json
+
+    - name: Convert logs to requested format
+      id: convert
+      shell: bash
+      run: |
+        case "${{ inputs.output_type }}" in
+          txt)
+            jq -r 'reverse | .[] | .textPayload' raw_logs.json \
+              > gcp_text_logs-${{ inputs.uuid }}.txt
+            OUT_FILE="gcp_text_logs-${{ inputs.uuid }}.txt"
+            ;;
+          csv)
+            jq -r 'reverse | .[] | [.textPayload] | @csv' raw_logs.json \
+              > gcp_csv_logs-${{ inputs.uuid }}.csv
+            OUT_FILE="gcp_csv_logs-${{ inputs.uuid }}.csv"
+            ;;
+          html)
+            echo "<!DOCTYPE html>" > gcp_html_logs-${{ inputs.uuid }}.html
+            echo "<html><head><meta charset='UTF-8'><title>Logs</title>" >> gcp_html_logs-${{ inputs.uuid }}.html
+            echo "<style>body{font-family:monospace;white-space:pre-wrap;} .log{margin:5px 0;padding:5px;border-bottom:1px solid #ccc;}</style></head><body>" >> gcp_html_logs-${{ inputs.uuid }}.html
+            jq -r 'reverse | .[] | .textPayload' raw_logs.json \
+              | while IFS= read -r line; do
+                  echo "<div class=\"log\">$line</div>" >> gcp_html_logs-${{ inputs.uuid }}.html
+                done
+            echo "</body></html>" >> gcp_html_logs-${{ inputs.uuid }}.html
+            OUT_FILE="gcp_html_logs-${{ inputs.uuid }}.html"
+            ;;
+          *)
+            echo "❌ Invalid output_type: ${{ inputs.output_type }}"
+            exit 1
+            ;;
+        esac
+        echo "output_path=$OUT_FILE" >> $GITHUB_OUTPUT
