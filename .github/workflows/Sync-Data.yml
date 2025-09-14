@@ -58,8 +58,8 @@ jobs:
         uses: nabarun-ngo/ngo-nabarun-templates/.github/actions/sync-firebase-v2@main
         with:
           branch_name: ${{ inputs.branch_name }}
-          firebase_source_project: ${{ inputs.firebase_source_project }}
-          firebase_target_project: ${{ inputs.firebase_target_project }}
+          firebase_source_project: ${{ secrets.firebase_source_project }}
+          firebase_target_project: ${{ secrets.firebase_target_project }}
           firebase_service_account_source: ${{ secrets.firebase_service_account_source }}
           firebase_service_account_target: ${{ secrets.firebase_service_account_target }}
 
