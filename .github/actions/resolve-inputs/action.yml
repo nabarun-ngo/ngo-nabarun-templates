@@ -46,12 +46,12 @@ runs:
         echo "Merged Data: $final_data"
         echo "variables=$final_data" >> "$GITHUB_OUTPUT"
 
-    # - id: override_env
-    #   name: Override merged JSON from GITHUB_ENV
-    #   if: ${{ inputs.update_from_env }}
-    #   shell: bash
-    #   run: |
-    #     set -euo pipefail
+    - id: override_env
+      name: Override merged JSON from GITHUB_ENV
+      if: ${{ inputs.update_from_env }}
+      shell: bash
+      run: |
+        set -euo pipefail
 
     #     merged='${{ steps.resolve.outputs.variables }}'
 
@@ -87,7 +87,7 @@ runs:
       id: final
       run: |
         set -euo pipefail
-        merged_json='${{ inputs.update_from_env && steps.override_env.outputs.variables || steps.resolve.outputs.variables }}'
+        merged_json='${{ inputs.update_from_env == 'true' && steps.override_env.outputs.variables || steps.resolve.outputs.variables }}'
         echo "$merged_json" | jq -r 'to_entries | map("\(.key)=\(.value|tostring)") | .[]' >> "$GITHUB_ENV"
         echo "variables=$merged" >> "$GITHUB_OUTPUT"
 
