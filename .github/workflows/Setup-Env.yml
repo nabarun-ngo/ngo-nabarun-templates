@@ -38,13 +38,6 @@ jobs:
           inputs: ${{ inputs.inputs }}
           client_payload: ${{ inputs.client_payload }}
      
-      - name: Print all GitHub environment variables
-        shell: bash
-        run: |
-            echo "All GitHub environment variables (key=value):"
-            while IFS='=' read -r key value; do
-              echo "$key=$value"
-            done < "$GITHUB_ENV"
       # This script will compute the workflow run-name and set it as output variable 'run_name'
       - name: Execute Shell Script
         if: ${{ inputs.script_path != '' }}
