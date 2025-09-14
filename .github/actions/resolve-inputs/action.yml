@@ -29,60 +29,78 @@ runs:
       run: |
         set -euo pipefail
 
-        # Prefer provided inputs; otherwise, auto-detect from event contexts
-        inputs_json='${{ inputs.inputs != '' && inputs.inputs || toJson(github.event.inputs) }}'
-        payload_json='${{ inputs.client_payload != '' && inputs.client_payload || toJson(github.event.client_payload) }}'
+        # Get inputs or fallback to event payloads
+        inputs_json='${{ inputs.inputs != "" && inputs.inputs || toJson(github.event.inputs) }}'
+        payload_json='${{ inputs.client_payload != "" && inputs.client_payload || toJson(github.event.client_payload) }}'
 
         sanitize() {
           local raw="$1"
-          if [ -z "$raw" ] || [ "$raw" = "null" ]; then
+          if [[ -z "$raw" || "$raw" == "null" ]]; then
             echo '{}'
             return
           fi
-          # Ensure valid JSON object; otherwise fallback to {}
           echo "$raw" | jq -c 'try (if type=="object" then . else {} end) catch {}' 2>/dev/null || echo '{}'
         }
 
         a=$(sanitize "$inputs_json")
         b=$(sanitize "$payload_json")
 
-        # Shallow merge; repository_dispatch (b) overrides workflow_dispatch (a) on conflicts
+        # Shallow merge: payload overrides inputs
         merged=$(jq -c -n --argjson a "$a" --argjson b "$b" '$a + $b')
 
-        update_from_env='${{ inputs.update_from_env }}'
-        if [[ "$update_from_env" == "true" ]]; then
-          echo "⚡ Selectively updating merged JSON from GITHUB_ENV (only existing keys)..."
-        
+        # Save initial merged JSON
+        echo "Merged Variables: $merged"
+        echo "variables=$merged" >> "$GITHUB_OUTPUT"
+
+    - id: override_env
+      name: Override merged JSON from GITHUB_ENV
+      if: ${{ inputs.update_from_env }}
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        merged='${{ steps.resolve.outputs.variables }}'
+
+        if [[ -f "${GITHUB_ENV:-}" ]]; then
+          echo "⚡ Overriding merged JSON from GITHUB_ENV (only existing keys, preserving types)..."
+
           while IFS= read -r line || [[ -n "$line" ]]; do
-            # Skip empty lines
             [[ -z "$line" ]] && continue
-            # Split only on the first '='
             key="${line%%=*}"
             value="${line#*=}"
-        
-            # Only override if key exists in merged JSON
+            key="$(echo -n "$key" | xargs)"
+            value="$(echo -n "$value" | xargs)"
+
             if echo "$merged" | jq -e --arg k "$key" 'has($k)' >/dev/null 2>&1; then
-              # Properly escape value for jq
-              merged=$(echo "$merged" | jq --arg k "$key" --arg v "$value" '.[$k]=$v')
+              if [[ "$value" =~ ^(true|TRUE)$ ]]; then
+                merged=$(echo "$merged" | jq --arg k "$key" '.[$k]=true')
+              elif [[ "$value" =~ ^(false|FALSE)$ ]]; then
+                merged=$(echo "$merged" | jq --arg k "$key" '.[$k]=false')
+              elif [[ "$value" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
+                merged=$(echo "$merged" | jq --arg k "$key" --argjson v "$value" '.[$k]=$v')
+              else
+                merged=$(echo "$merged" | jq --arg k "$key" --arg v "$value" '.[$k]=$v')
+              fi
             fi
           done < "$GITHUB_ENV"
         fi
 
-        echo "Merged Variables: $merged"
+        echo "Final Merged Variables After Override: $merged"
         echo "variables=$merged" >> "$GITHUB_OUTPUT"
 
-    - name: Export merged variables to environment
+    - name: Export final merged variables to GitHub environment
       shell: bash
+      id: final
       run: |
-          set -euo pipefail
-          merged_json='${{ steps.resolve.outputs.variables }}'
-          echo "Exporting merged variables to $GITHUB_ENV..."
-          echo "$merged_json" | jq -r 'to_entries|map("\(.key)=\(.value)")|.[]' >> "$GITHUB_ENV"
+        set -euo pipefail
+        merged_json='${{ inputs.update_from_env && steps.override_env.outputs.variables || steps.resolve.outputs.variables }}'
+        echo "$merged_json" | jq -r 'to_entries | map("\(.key)=\(.value|tostring)") | .[]' >> "$GITHUB_ENV"
+        echo "variables=$merged" >> "$GITHUB_OUTPUT"
 
     - name: Print all GitHub environment variables
       shell: bash
       run: |
-          echo "All GitHub environment variables (key=value):"
-          while IFS='=' read -r key value; do
-            echo "$key=$value"
-          done < "$GITHUB_ENV"
+        echo "All GitHub environment variables (key=value):"
+        while IFS='=' read -r key value; do
+          echo "$key=$value"
+        done < "$GITHUB_ENV"
