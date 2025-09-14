@@ -26,6 +26,11 @@ jobs:
     outputs:
       variables: ${{ steps.set_vars.outputs.variables }}
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
       - name: Resolve and Export Inputs
         id: set_vars
         uses: ./.github/actions/resolve-inputs
@@ -40,9 +45,18 @@ jobs:
             while IFS='=' read -r key value; do
               echo "$key=$value"
             done < "$GITHUB_ENV"
-
-      - name: Execute Custom Shell Script
+      # This script will compute the workflow run-name and set it as output variable 'run_name'
+      - name: Execute Shell Script
         if: ${{ inputs.script_path != '' }}
+        id: execute_script
         run: |
           chmod +x ${{ inputs.script_path }}
           ${{ inputs.script_path }}
+
+      - name: Update Workflow Run Name
+        if: ${{ inputs.script_path != '' }}
+        uses: ./.github/actions/update-run-name
+        with:
+          name: ${{ steps.execute_script.outputs.run_name }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+
