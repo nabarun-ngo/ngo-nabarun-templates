@@ -49,14 +49,20 @@ runs:
         # Shallow merge; repository_dispatch (b) overrides workflow_dispatch (a) on conflicts
         merged=$(jq -c -n --argjson a "$a" --argjson b "$b" '$a + $b')
 
-        # Check input flag
         update_from_env='${{ inputs.update_from_env }}'
         if [[ "$update_from_env" == "true" ]]; then
           echo "⚡ Selectively updating merged JSON from GITHUB_ENV (only existing keys)..."
-
-          while IFS='=' read -r key value; do
+        
+          while IFS= read -r line || [[ -n "$line" ]]; do
+            # Skip empty lines
+            [[ -z "$line" ]] && continue
+            # Split only on the first '='
+            key="${line%%=*}"
+            value="${line#*=}"
+        
             # Only override if key exists in merged JSON
-            if echo "$merged" | jq -e --arg k "$key" 'has($k)' >/dev/null; then
+            if echo "$merged" | jq -e --arg k "$key" 'has($k)' >/dev/null 2>&1; then
+              # Properly escape value for jq
               merged=$(echo "$merged" | jq --arg k "$key" --arg v "$value" '.[$k]=$v')
             fi
           done < "$GITHUB_ENV"
