@@ -2,6 +2,12 @@ name: Sync
 on:
   workflow_call:
     inputs:
+      auth0_target_env:
+        required: true
+        type: string
+      firebase_target_env:
+        required: true
+        type: string
       sync_auth0:
         required: true
         type: boolean
@@ -31,20 +37,26 @@ on:
         
 jobs:
 
-  sync_data:
-    name: 'Sync Data'
+  sync_data_auth0:
+    name: 'Sync Auth0 Data'
     runs-on: ubuntu-latest
+    if: ${{ inputs.sync_auth0 }}
+    environment: ${{ inputs.auth0_target_env }}
     steps:
       - name: Sync Auth0 Tenants
-        if: ${{ inputs.sync_auth0 }}
         uses: nabarun-ngo/ngo-nabarun-templates/.github/actions/sync-auth0-v2@main
         with:
           branch_name: ${{ inputs.branch_name }}
           source_config: ${{ secrets.auth0_source_config }}
           dest_config: ${{ secrets.auth0_dest_config }}
 
+  sync_data_firebase:
+    name: 'Sync Firebase Data'
+    runs-on: ubuntu-latest
+    if: ${{ inputs.sync_firebaseRC }}
+    environment: ${{ inputs.firebase_target_env }}
+    steps:
       - name: Sync Firebase Remote Config
-        if: ${{ inputs.sync_firebaseRC }}
         uses: nabarun-ngo/ngo-nabarun-templates/.github/actions/sync-firebase-v2@main
         with:
           branch_name: ${{ inputs.branch_name }}
