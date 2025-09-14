@@ -40,15 +40,24 @@ runs:
         
     - name: Export Remote Config from Source
       shell: bash
+      env:
+          SOURCE_PROJECT: ${{ inputs.firebase_source_project }}
       run: |
-        HTTP_STATUS=$(curl -w "%{http_code}" -o remote-config.json -D headers_source.txt -X GET \
+        RESPONSE=$(curl -s -w "HTTPSTATUS:%{http_code}" -o remote-config.json -D headers_source.txt -X GET \
           -H "Authorization: Bearer $ACCESS_TOKEN" \
           -H "Accept: application/json" \
-          "https://firebaseremoteconfig.googleapis.com/v1/projects/${{ inputs.firebase_source_project }}/remoteConfig")
+          "https://firebaseremoteconfig.googleapis.com/v1/projects/$SOURCE_PROJECT/remoteConfig")
+      
+        # Split response into body and status
+        HTTP_BODY=$(echo "$RESPONSE" | sed -e 's/HTTPSTATUS\:.*//g')
+        HTTP_STATUS=$(echo "$RESPONSE" | tr -d '\n' | sed -e 's/.*HTTPSTATUS://')
+      
         if [[ $HTTP_STATUS -ge 400 ]]; then
-          echo "❌ ERROR: Failed to export Remote Config from source (HTTP $HTTP_STATUS)"
+          echo "❌ ERROR: Failed to export Remote Config (HTTP $HTTP_STATUS)"
+          echo "🔎 API Response: $HTTP_BODY"
           exit 1
         fi
+      
         ETAG=$(grep -Fi "etag:" headers_source.txt | awk '{print $2}' | tr -d '\r')
         echo "SOURCE_ETAG=$ETAG" >> $GITHUB_ENV
         
