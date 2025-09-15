@@ -284,11 +284,11 @@ jobs:
           name: application-jar-${{ inputs.tag_name }}
           path: ./artifacts/
           
-      - name: Download app.yaml artifact
+      - name: Download app.yaml artifact to workspace root
         uses: actions/download-artifact@v4
         with:
           name: app-yaml-${{ inputs.tag_name }}
-          path: ./artifacts/
+          path: .
 
       - name: Create GitHub Deployment
         uses: chrnorm/deployment-action@v2
@@ -310,7 +310,7 @@ jobs:
       - name: Setup Application Variables
         uses: ikuanyshbekov/app-yaml-env-compiler@v1.0
         with:
-          path: './artifacts/${{ inputs.gae_app_yaml_path }}'
+          path: '${{ inputs.gae_app_yaml_path }}'
         env:
           ENVIRONMENT: ${{ inputs.app_env }}
           DOPPLER_PROJECT_NAME: ${{ inputs.app_doppler_project_name }}
@@ -324,7 +324,7 @@ jobs:
         with:
           project_id: ${{ vars.GCP_PROJECT_ID || secrets.gcp_project_id }}
           deliverables: './artifacts/${{ needs.build_application.outputs.jar_name }}'
-          flags: '--appyaml=./artifacts/${{ inputs.gae_app_yaml_path }} --quiet --no-promote'
+          flags: '--appyaml=${{ inputs.gae_app_yaml_path }} --quiet --no-promote'
           
       - name: Get deployed version
         id: get_version
