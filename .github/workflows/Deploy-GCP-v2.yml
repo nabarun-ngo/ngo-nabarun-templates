@@ -1,0 +1,595 @@
+name: Build and Deploy to GCP App Engine v2
+on:
+  workflow_call:
+    inputs:
+      tag_name:
+        required: true
+        type: string
+      repo_name:
+        required: true
+        type: string
+      repo_owner_name:
+        required: true
+        type: string
+      environment_name:
+        required: true
+        type: string
+      environment_url:
+        required: false
+        type: string
+      target_folder:
+        required: true
+        type: string
+      gae_app_yaml_path:
+        required: false
+        type: string
+        default: 'app.yaml'
+      gae_service_name:
+        required: false
+        type: string
+        default: 'default'
+      app_env:
+        required: true
+        type: string
+      app_doppler_project_name:
+        required: true
+        type: string
+      app_log_level:
+        required: false
+        type: string
+        default: 'INFO'
+      keep_gae_versions:
+        description: "Number of GAE versions to keep (optional, default 1)"
+        required: false
+        type: number
+        default: 1
+      gcs_keep_days:
+        description: "Number of days to keep files in GCS bucket (optional, default 5)"
+        required: false
+        type: number
+        default: 5
+      # New v2 inputs for better control
+      java_version:
+        description: "Java version to use (default: 17)"
+        required: false
+        type: string
+        default: '17'
+      deployment_timeout:
+        description: "Deployment timeout in minutes (default: 25)"
+        required: false
+        type: number
+        default: 25
+      enable_health_check:
+        description: "Enable post-deployment health check (default: true)"
+        required: false
+        type: boolean
+        default: true
+      maven_options:
+        description: "Additional Maven options"
+        required: false
+        type: string
+        default: '-Dmaven.test.skip=true -Dmaven.javadoc.skip=true'
+    secrets:
+      gcp_project_id:
+        required: true
+      gcp_service_account:
+        required: true
+      app_doppler_service_token:
+        required: true
+      repo_token:
+        required: true
+
+# Note: PROJECT_ID will be resolved from GitHub environment variables (vars.GCP_PROJECT_ID) 
+# in each step that needs it, with fallback to secrets.gcp_project_id
+
+jobs:  
+  validate_inputs:
+    name: 'Validate Deployment Inputs'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      validation_passed: ${{ steps.validate.outputs.validation_passed }}
+    steps:
+      - name: Checkout repository for validation
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag_name }}
+          repository: '${{ inputs.repo_owner_name }}/${{ inputs.repo_name }}'
+          fetch-depth: 0
+          token: ${{ secrets.repo_token }}
+
+      - name: Validate deployment inputs
+        id: validate
+        shell: bash
+        run: |
+          echo "🔍 Validating deployment inputs..."
+          VALIDATION_ERRORS=0
+          
+          # Validate tag format
+          if [[ ! "${{ inputs.tag_name }}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9\.-]+)?$ ]]; then
+            echo "⚠️ Warning: Tag '${{ inputs.tag_name }}' doesn't match semantic versioning (v1.2.3)"
+          fi
+          
+          # Validate required files exist
+          if [[ ! -f "${{ inputs.gae_app_yaml_path }}" ]]; then
+            echo "❌ ERROR: App YAML file not found: ${{ inputs.gae_app_yaml_path }}"
+            VALIDATION_ERRORS=$((VALIDATION_ERRORS + 1))
+          else
+            echo "✅ App YAML found: ${{ inputs.gae_app_yaml_path }}"
+          fi
+          
+          # Validate target folder exists and contains pom.xml
+          if [[ ! -d "${{ inputs.target_folder }}" ]]; then
+            echo "❌ ERROR: Target folder not found: ${{ inputs.target_folder }}"
+            VALIDATION_ERRORS=$((VALIDATION_ERRORS + 1))
+          else
+            echo "✅ Target folder exists: ${{ inputs.target_folder }}"
+          fi
+          
+          # Look for pom.xml to ensure it's a Maven project
+          if [[ ! -f "pom.xml" ]]; then
+            echo "❌ ERROR: pom.xml not found in repository root"
+            VALIDATION_ERRORS=$((VALIDATION_ERRORS + 1))
+          else
+            echo "✅ Maven project detected (pom.xml found)"
+          fi
+          
+          # Validate numeric inputs
+          if [[ ${{ inputs.keep_gae_versions }} -lt 1 ]]; then
+            echo "❌ ERROR: keep_gae_versions must be >= 1"
+            VALIDATION_ERRORS=$((VALIDATION_ERRORS + 1))
+          fi
+          
+          if [[ ${{ inputs.gcs_keep_days }} -lt 1 ]]; then
+            echo "❌ ERROR: gcs_keep_days must be >= 1"
+            VALIDATION_ERRORS=$((VALIDATION_ERRORS + 1))
+          fi
+          
+          # Final validation result
+          if [[ $VALIDATION_ERRORS -eq 0 ]]; then
+            echo "✅ All input validation checks passed"
+            echo "validation_passed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "❌ Validation failed with $VALIDATION_ERRORS errors"
+            echo "validation_passed=false" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+
+  build_and_deploy_to_gcp:
+    name: 'Build and Deploy to GCP App Engine'
+    runs-on: ubuntu-latest
+    needs: [validate_inputs]
+    if: needs.validate_inputs.outputs.validation_passed == 'true'
+    environment: ${{ inputs.environment_name }}
+    timeout-minutes: ${{ inputs.deployment_timeout }}
+    outputs:
+      deployment_version: ${{ steps.get_version.outputs.version }}
+    steps:
+      - name: Checkout repository | Tag ${{ inputs.tag_name }}
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag_name }}
+          repository: '${{ inputs.repo_owner_name }}/${{ inputs.repo_name }}'
+          fetch-depth: 0
+          token: ${{ secrets.repo_token }}
+
+      - name: Create GitHub Deployment
+        uses: chrnorm/deployment-action@v2
+        id: deployment
+        with:
+          token: ${{ secrets.repo_token }}
+          environment-url: ${{ inputs.environment_url }}
+          environment: ${{ inputs.environment_name }}
+          repo: ${{ inputs.repo_name }}
+          owner: ${{ inputs.repo_owner_name }}
+          ref: ${{ inputs.tag_name }}
+    
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ inputs.java_version }}
+          distribution: 'temurin'
+
+      - name: Cache Maven dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.m2/repository
+          key: maven-${{ runner.os }}-java${{ inputs.java_version }}-${{ hashFiles('**/pom.xml') }}
+          restore-keys: |
+            maven-${{ runner.os }}-java${{ inputs.java_version }}-
+            maven-${{ runner.os }}-
+        
+      - name: Build with Maven
+        shell: bash
+        timeout-minutes: 15
+        run: |
+          echo "🔨 Building with Maven..."
+          echo "📝 Maven options: ${{ inputs.maven_options }}"
+          
+          mvn clean package ${{ inputs.maven_options }} \
+            -B -V \
+            -Duser.timezone=UTC \
+            || {
+              echo "❌ Maven build failed"
+              echo "📋 Last 50 lines of Maven output:"
+              tail -50 ~/.m2/repository/.metadata/.log 2>/dev/null || echo "No Maven log found"
+              exit 1
+            }
+          
+          echo "✅ Maven build completed successfully"
+          
+      - name: Validate and Get JAR file path
+        id: get-jar-path
+        shell: bash
+        run: |
+          echo "🔍 Looking for JAR file in ${{ inputs.target_folder }}..."
+          
+          # Find the main JAR file (exclude sources, javadoc, tests)
+          JAR_FILES=($(find "${{ inputs.target_folder }}" -name "*.jar" -type f \
+            | grep -v "sources\.jar" \
+            | grep -v "javadoc\.jar" \
+            | grep -v "test\.jar" \
+            | sort))
+          
+          if [[ ${#JAR_FILES[@]} -eq 0 ]]; then
+            echo "❌ No JAR file found in ${{ inputs.target_folder }}"
+            echo "📁 Directory contents:"
+            ls -la "${{ inputs.target_folder }}"
+            exit 1
+          fi
+          
+          # Use the first JAR file (typically the main one)
+          JAR_PATH="${JAR_FILES[0]}"
+          
+          if [[ ${#JAR_FILES[@]} -gt 1 ]]; then
+            echo "⚠️ Multiple JAR files found, using: $JAR_PATH"
+            echo "📋 All JARs found:"
+            printf '%s\n' "${JAR_FILES[@]}"
+          fi
+          
+          # Verify JAR file is not empty and is valid
+          if [[ ! -s "$JAR_PATH" ]]; then
+            echo "❌ JAR file is empty: $JAR_PATH"
+            exit 1
+          fi
+          
+          # Basic JAR validation
+          if ! jar tf "$JAR_PATH" >/dev/null 2>&1; then
+            echo "❌ JAR file appears to be corrupted: $JAR_PATH"
+            exit 1
+          fi
+          
+          JAR_SIZE=$(du -h "$JAR_PATH" | cut -f1)
+          echo "✅ Found valid JAR file: $JAR_PATH"
+          echo "📦 JAR size: $JAR_SIZE"
+          
+          # Output for next steps
+          echo "jar_path=$JAR_PATH" >> "$GITHUB_ENV"
+          echo "jar_path=$JAR_PATH" >> "$GITHUB_OUTPUT"
+                  
+      - name: Setup Google Cloud CLI
+        uses: google-github-actions/auth@v2
+        with:
+          project_id: ${{ vars.GCP_PROJECT_ID || secrets.gcp_project_id }}
+          credentials_json: ${{ secrets.gcp_service_account }}
+        
+      - name: Setup Application Variables
+        uses: ikuanyshbekov/app-yaml-env-compiler@v1.0
+        with:
+          path: '${{ inputs.gae_app_yaml_path }}'
+        env:
+          ENVIRONMENT: ${{ inputs.app_env }}
+          DOPPLER_PROJECT_NAME: ${{ inputs.app_doppler_project_name }}
+          DOPPLER_SERVICE_TOKEN: ${{ secrets.app_doppler_service_token }}
+          LOG_LEVEL: ${{ inputs.app_log_level }}
+          VERSION: ${{ inputs.tag_name }}
+         
+      - name: Deploy to Google App Engine
+        uses: google-github-actions/deploy-appengine@v2
+        timeout-minutes: 20
+        with:
+          project_id: ${{ vars.GCP_PROJECT_ID || secrets.gcp_project_id }}
+          deliverables: ${{ steps.get-jar-path.outputs.jar_path }}
+          flags: '--appyaml=${{ inputs.gae_app_yaml_path }} --quiet --no-promote'
+          
+      - name: Get deployed version
+        id: get_version
+        shell: bash
+        run: |
+          echo "🔍 Getting deployed version information..."
+          
+          PROJECT_ID="${{ vars.GCP_PROJECT_ID || secrets.gcp_project_id }}"
+          SERVICE_NAME="${{ inputs.gae_service_name }}"
+          
+          DEPLOYED_VERSION=$(gcloud app versions list \
+            --service="$SERVICE_NAME" \
+            --project="$PROJECT_ID" \
+            --format="value(version.id)" \
+            --limit=1 \
+            --sort-by=~version.createTime)
+          
+          if [[ -z "$DEPLOYED_VERSION" ]]; then
+            echo "❌ Could not determine deployed version"
+            exit 1
+          fi
+          
+          echo "🚀 Deployed version: $DEPLOYED_VERSION"
+          echo "version=$DEPLOYED_VERSION" >> "$GITHUB_OUTPUT"
+          
+      - name: Promote to production
+        shell: bash
+        timeout-minutes: 10
+        run: |
+          echo "🚀 Promoting version ${{ steps.get_version.outputs.version }} to production..."
+          
+          PROJECT_ID="${{ vars.GCP_PROJECT_ID || secrets.gcp_project_id }}"
+          SERVICE_NAME="${{ inputs.gae_service_name }}"
+          
+          gcloud app versions migrate "${{ steps.get_version.outputs.version }}" \
+            --service="$SERVICE_NAME" \
+            --project="$PROJECT_ID" \
+            --quiet
+          
+          echo "✅ Version promoted successfully"
+
+      - name: Health check deployment
+        if: inputs.enable_health_check
+        shell: bash
+        timeout-minutes: 5
+        run: |
+          echo "🏥 Performing deployment health check..."
+          
+          if [[ -n "${{ inputs.environment_url }}" ]]; then
+            MAX_ATTEMPTS=10
+            ATTEMPT=1
+            SUCCESS=false
+            
+            while [[ $ATTEMPT -le $MAX_ATTEMPTS ]]; do
+              echo "🔍 Health check attempt $ATTEMPT/$MAX_ATTEMPTS"
+              
+              if curl -f -s --max-time 30 "${{ inputs.environment_url }}/health" >/dev/null 2>&1 || \
+                 curl -f -s --max-time 30 "${{ inputs.environment_url }}" >/dev/null 2>&1; then
+                echo "✅ Health check passed on attempt $ATTEMPT"
+                SUCCESS=true
+                break
+              fi
+              
+              echo "⏳ Health check failed, waiting 15 seconds..."
+              sleep 15
+              ATTEMPT=$((ATTEMPT + 1))
+            done
+            
+            if [[ "$SUCCESS" != "true" ]]; then
+              echo "⚠️ Health check failed after $MAX_ATTEMPTS attempts"
+              echo "🔍 This doesn't necessarily mean deployment failed - the app might still be starting"
+            fi
+          else
+            echo "ℹ️ No environment URL provided, skipping HTTP health check"
+          fi
+
+      - name: Update deployment status (success)
+        if: success()
+        uses: chrnorm/deployment-status@v2
+        with:
+          state: 'success'
+          deployment-id: ${{ steps.deployment.outputs.deployment_id }}
+          token: ${{ secrets.repo_token }}
+          environment-url: ${{ inputs.environment_url }}
+          repo: ${{ inputs.repo_name }}
+          owner: ${{ inputs.repo_owner_name }}
+
+      - name: Update deployment status (failure)
+        if: failure()
+        uses: chrnorm/deployment-status@v2
+        with:
+          state: 'failure'
+          deployment-id: ${{ steps.deployment.outputs.deployment_id }}
+          token: ${{ secrets.repo_token }}
+          environment-url: ${{ inputs.environment_url }}
+          repo: ${{ inputs.repo_name }}
+          owner: ${{ inputs.repo_owner_name }}
+
+  clean_gcp_resources:
+    name: 'Clean Up Old GCP Resources'
+    runs-on: ubuntu-latest
+    needs: [build_and_deploy_to_gcp]
+    # Always run cleanup, but only if deployment job completed (success or failure)
+    if: always() && needs.build_and_deploy_to_gcp.result != 'cancelled'
+    timeout-minutes: 20
+    steps:
+      - name: Setup Google Cloud CLI
+        uses: google-github-actions/auth@v2
+        with:
+          project_id: ${{ vars.GCP_PROJECT_ID || secrets.gcp_project_id }}
+          credentials_json: ${{ secrets.gcp_service_account }}
+
+      - name: Clean Artifact Registry repositories
+        shell: bash
+        continue-on-error: true
+        run: |
+          echo "🧹 Cleaning up Artifact Registry repositories..."
+          
+          PROJECT="${{ vars.GCP_PROJECT_ID || secrets.gcp_project_id }}"
+          
+          # Try to get region from GAE app
+          REGION=$(gcloud app describe --project="$PROJECT" --format="value(locationId)" 2>/dev/null || echo "")
+          
+          if [[ -z "$REGION" ]]; then
+            echo "⚠️ Could not determine region from App Engine"
+            # Try common regions instead of failing
+            REGIONS=("asia-south1" "us-central1" "europe-west1" "asia-northeast1")
+            echo "🔍 Will check common regions: ${REGIONS[*]}"
+          else
+            REGIONS=("$REGION")
+            echo "📍 Using App Engine region: $REGION"
+          fi
+          
+          TOTAL_DELETED=0
+          
+          for REGION in "${REGIONS[@]}"; do
+            echo "🔍 Checking region: $REGION"
+            
+            # List repositories with error handling
+            REPOS=$(gcloud artifacts repositories list \
+              --location="$REGION" \
+              --project="$PROJECT" \
+              --format="value(name)" 2>/dev/null || echo "")
+            
+            if [[ -n "$REPOS" ]]; then
+              echo "📋 Found repositories in $REGION:"
+              echo "$REPOS"
+              
+              for REPO in $REPOS; do
+                echo "🗑️ Deleting repository: $REPO"
+                if gcloud artifacts repositories delete "$REPO" \
+                   --location="$REGION" \
+                   --project="$PROJECT" \
+                   --quiet 2>/dev/null; then
+                  echo "✅ Successfully deleted $REPO"
+                  TOTAL_DELETED=$((TOTAL_DELETED + 1))
+                else
+                  echo "⚠️ Failed to delete $REPO (may not exist or no permissions)"
+                fi
+              done
+            else
+              echo "ℹ️ No repositories found in $REGION"
+            fi
+          done
+          
+          echo "📊 Cleanup summary: $TOTAL_DELETED repositories deleted"
+
+      - name: Clean old GAE versions
+        shell: bash
+        run: |
+          echo "🧹 Cleaning old GAE versions..."
+          
+          PROJECT="${{ vars.GCP_PROJECT_ID || secrets.gcp_project_id }}"
+          SERVICE="${{ inputs.gae_service_name }}"
+          KEEP=${{ inputs.keep_gae_versions }}
+          
+          echo "📊 Configuration: Keep $KEEP versions for service '$SERVICE'"
+          
+          # Get all versions sorted by creation time (newest first)
+          VERSIONS=$(gcloud app versions list \
+            --service="$SERVICE" \
+            --project="$PROJECT" \
+            --format="value(version.id)" \
+            --sort-by=~version.createTime 2>/dev/null || echo "")
+          
+          if [[ -z "$VERSIONS" ]]; then
+            echo "ℹ️ No versions found for service $SERVICE"
+            exit 0
+          fi
+          
+          # Count total versions
+          VERSION_ARRAY=($VERSIONS)
+          VERSION_COUNT=${#VERSION_ARRAY[@]}
+          
+          echo "📈 Total versions found: $VERSION_COUNT"
+          echo "📋 All versions: ${VERSION_ARRAY[*]}"
+          
+          if [[ $VERSION_COUNT -le $KEEP ]]; then
+            echo "✅ No cleanup needed (keeping $KEEP, found $VERSION_COUNT)"
+            exit 0
+          fi
+          
+          # Calculate versions to delete
+          DELETE_COUNT=$((VERSION_COUNT - KEEP))
+          echo "🗑️ Will delete $DELETE_COUNT old versions"
+          
+          # Delete old versions (skip the first KEEP versions)
+          DELETED_COUNT=0
+          for ((i=$KEEP; i<$VERSION_COUNT; i++)); do
+            VERSION="${VERSION_ARRAY[$i]}"
+            echo "🗑️ Deleting version: $VERSION"
+            
+            if gcloud app versions delete "$VERSION" \
+               --service="$SERVICE" \
+               --project="$PROJECT" \
+               --quiet 2>/dev/null; then
+              echo "✅ Successfully deleted $VERSION"
+              DELETED_COUNT=$((DELETED_COUNT + 1))
+            else
+              echo "⚠️ Failed to delete $VERSION (may be serving traffic)"
+            fi
+          done
+          
+          echo "📊 Cleanup summary: $DELETED_COUNT/$DELETE_COUNT versions deleted"
+
+      - name: Clean old GCS files
+        shell: bash
+        continue-on-error: true
+        timeout-minutes: 10
+        run: |
+          echo "🧹 Cleaning old files from GCS buckets..."
+          
+          PROJECT="${{ vars.GCP_PROJECT_ID || secrets.gcp_project_id }}"
+          KEEP_DAYS=${{ inputs.gcs_keep_days }}
+          
+          echo "🗓️ Deleting files older than $KEEP_DAYS days"
+          
+          # Common GCS bucket patterns for GAE
+          BUCKET_PATTERNS=(
+            "staging.$PROJECT.appspot.com"
+            "$PROJECT.appspot.com" 
+            "artifacts.$PROJECT.appspot.com"
+            "$PROJECT-staging"
+            "$PROJECT-artifacts"
+          )
+          
+          TOTAL_FILES_DELETED=0
+          
+          for BUCKET_NAME in "${BUCKET_PATTERNS[@]}"; do
+            echo "🔍 Checking bucket: gs://$BUCKET_NAME"
+            
+            # Check if bucket exists and is accessible
+            if ! gcloud storage buckets describe "gs://$BUCKET_NAME" \
+               --project="$PROJECT" >/dev/null 2>&1; then
+              echo "ℹ️ Bucket gs://$BUCKET_NAME not found or not accessible"
+              continue
+            fi
+            
+            echo "📦 Processing bucket: gs://$BUCKET_NAME"
+            
+            # Calculate cutoff date in epoch format
+            CUTOFF_EPOCH=$(date -d "$KEEP_DAYS days ago" +%s)
+            echo "📅 Cutoff date: $(date -d "$KEEP_DAYS days ago")"
+            
+            # Use more efficient approach with gsutil
+            OLD_FILES_COUNT=0
+            
+            # List files with creation time and filter old ones
+            gcloud storage ls -l "gs://$BUCKET_NAME/**" \
+              --project="$PROJECT" 2>/dev/null | \
+            while IFS= read -r line; do
+              # Parse gsutil ls -l output: size date time filename
+              if [[ $line =~ ^[[:space:]]*[0-9]+[[:space:]]+([0-9]{4}-[0-9]{2}-[0-9]{2})T([0-9]{2}:[0-9]{2}:[0-9]{2}).*[[:space:]](gs://.+)$ ]]; then
+                FILE_DATE="${BASH_REMATCH[1]}"
+                FILE_TIME="${BASH_REMATCH[2]}"
+                FILE_PATH="${BASH_REMATCH[3]}"
+                
+                # Convert file date to epoch
+                FILE_EPOCH=$(date -d "$FILE_DATE $FILE_TIME" +%s 2>/dev/null || echo "0")
+                
+                if [[ $FILE_EPOCH -gt 0 && $FILE_EPOCH -lt $CUTOFF_EPOCH ]]; then
+                  echo "🗑️ Deleting old file: $FILE_PATH ($(date -d "@$FILE_EPOCH"))"
+                  
+                  if gcloud storage rm "$FILE_PATH" --project="$PROJECT" 2>/dev/null; then
+                    OLD_FILES_COUNT=$((OLD_FILES_COUNT + 1))
+                  else
+                    echo "⚠️ Failed to delete $FILE_PATH"
+                  fi
+                fi
+              fi
+            done
+            
+            TOTAL_FILES_DELETED=$((TOTAL_FILES_DELETED + OLD_FILES_COUNT))
+            
+            if [[ $OLD_FILES_COUNT -eq 0 ]]; then
+              echo "✅ No files older than $KEEP_DAYS days in gs://$BUCKET_NAME"
+            else
+              echo "📊 Deleted $OLD_FILES_COUNT old files from gs://$BUCKET_NAME"
+            fi
+          done
+          
+          echo "📊 Total cleanup summary: $TOTAL_FILES_DELETED files deleted from all buckets"
