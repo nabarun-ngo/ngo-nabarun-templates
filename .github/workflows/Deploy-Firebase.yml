@@ -17,13 +17,12 @@ on:
       environment_url:
         required: false
         type: string
-      firebase_project_id:
-        required: true
-        type: string
       npm_run_command:
         required: true
         type: string
     secrets:
+      firebase_project_id:
+        required: true
       firebase_service_account:
         required: true
       repo_token:
@@ -66,7 +65,7 @@ jobs:
         with:
           firebaseServiceAccount: '${{ secrets.firebase_service_account }}'
           channelId: live
-          projectId: ${{ inputs.firebase_project_id }}
+          projectId: ${{ secrets.firebase_project_id }}
 
       - name: Update deployment status (success)
         if: success()
