@@ -3,7 +3,7 @@ description: Determines configuration for scheduled workflows using github.event
 
 inputs:
   config_base_path:
-    description: Base path for configuration files (default: config)
+    description: 'Base path for configuration files (default: config)'
     required: false
     default: 'config'
   fallback_config:
