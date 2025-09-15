@@ -358,13 +358,42 @@ jobs:
           
           PROJECT_ID="${{ secrets.gcp_project_id }}"
           SERVICE_NAME="${{ inputs.gae_service_name }}"
+          VERSION="${{ steps.get_version.outputs.version }}"
           
-          gcloud app versions migrate "${{ steps.get_version.outputs.version }}" \
+          echo "🔍 Checking current traffic allocation..."
+          gcloud app versions list \
             --service="$SERVICE_NAME" \
             --project="$PROJECT_ID" \
-            --quiet
+            --format="table(version.id,traffic_split)"
           
-          echo "✅ Version promoted successfully"
+          # Try migrate first (works if warmup is enabled)
+          echo "🔄 Attempting traffic migration..."
+          if gcloud app versions migrate "$VERSION" \
+             --service="$SERVICE_NAME" \
+             --project="$PROJECT_ID" \
+             --quiet 2>/dev/null; then
+            echo "✅ Traffic migration successful"
+          else
+            echo "⚠️ Migration failed, trying alternative approach..."
+            echo "🔄 Setting traffic allocation to 100% for new version..."
+            
+            # Alternative: Set traffic allocation directly
+            gcloud app services set-traffic "$SERVICE_NAME" \
+              --splits="$VERSION=1" \
+              --project="$PROJECT_ID" \
+              --quiet
+            
+            echo "✅ Traffic allocation updated successfully"
+          fi
+          
+          echo "📈 Final traffic allocation:"
+          gcloud app versions list \
+            --service="$SERVICE_NAME" \
+            --project="$PROJECT_ID" \
+            --format="table(version.id,traffic_split)" \
+            --filter="traffic_split>0"
+          
+          echo "✅ Version promotion completed successfully"
 
       - name: Health check deployment
         if: inputs.enable_health_check
@@ -427,8 +456,8 @@ jobs:
     name: 'Clean Up Old GCP Resources'
     runs-on: ubuntu-latest
     needs: [deploy_to_gcp]
-    # Always run cleanup, but only if deployment job completed (success or failure)
-    if: always() && needs.deploy_to_gcp.result != 'cancelled'
+    # Only run cleanup when deployment succeeds
+    if: needs.deploy_to_gcp.result == 'success'
     timeout-minutes: 20
     steps:
       - name: Setup Google Cloud CLI
