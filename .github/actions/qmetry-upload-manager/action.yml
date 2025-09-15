@@ -121,6 +121,41 @@ runs:
         repository: ${{ inputs.templates_repository }}
         path: 'qmetry-templates'
         
+    - name: Preprocess folder IDs
+      id: preprocess_ids
+      shell: bash
+      run: |
+        echo "🔧 Preprocessing folder IDs to ensure proper formatting..."
+        
+        # Remove any commas from folder IDs (in case of thousands separators)
+        TEST_CYCLE_FOLDER="${{ inputs.test_cycle_folder }}"
+        TEST_CASE_FOLDER="${{ inputs.test_case_folder }}"
+        
+        # Clean the values by removing commas and whitespace
+        CLEAN_TEST_CYCLE_FOLDER=$(echo "$TEST_CYCLE_FOLDER" | tr -d ',[:space:]')
+        CLEAN_TEST_CASE_FOLDER=$(echo "$TEST_CASE_FOLDER" | tr -d ',[:space:]')
+        
+        echo "📊 Folder ID Processing:"
+        echo "  Test Cycle Folder: '$TEST_CYCLE_FOLDER' -> '$CLEAN_TEST_CYCLE_FOLDER'"
+        echo "  Test Case Folder: '$TEST_CASE_FOLDER' -> '$CLEAN_TEST_CASE_FOLDER'"
+        
+        # Validate that cleaned values are numeric
+        if ! [[ "$CLEAN_TEST_CYCLE_FOLDER" =~ ^[0-9]+$ ]]; then
+          echo "❌ ERROR: Test cycle folder ID is not a valid number: '$CLEAN_TEST_CYCLE_FOLDER'"
+          exit 1
+        fi
+        
+        if ! [[ "$CLEAN_TEST_CASE_FOLDER" =~ ^[0-9]+$ ]]; then
+          echo "❌ ERROR: Test case folder ID is not a valid number: '$CLEAN_TEST_CASE_FOLDER'"
+          exit 1
+        fi
+        
+        # Set outputs
+        echo "clean_test_cycle_folder=$CLEAN_TEST_CYCLE_FOLDER" >> $GITHUB_OUTPUT
+        echo "clean_test_case_folder=$CLEAN_TEST_CASE_FOLDER" >> $GITHUB_OUTPUT
+        
+        echo "✅ Folder IDs preprocessed successfully"
+        
     - name: Generate QMetry upload URL
       id: generate_upload_url
       uses: fjogeleit/http-request-action@v1
@@ -138,12 +173,12 @@ runs:
             "matchTestSteps": true,
             "fields": {
               "testCycle": {
-                "folderId": ${{ inputs.test_cycle_folder }},
+                "folderId": ${{ steps.preprocess_ids.outputs.clean_test_cycle_folder }},
                 "summary": "${{ inputs.test_cycle_summary }}"
               },
               "testCase": {
                 "priority": "High",
-                "folderId": ${{ inputs.test_case_folder }}
+                "folderId": ${{ steps.preprocess_ids.outputs.clean_test_case_folder }}
               },
               "testCaseExecution": {
                 "customFields": [
