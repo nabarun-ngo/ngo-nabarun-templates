@@ -304,7 +304,7 @@ jobs:
       - name: Setup Google Cloud CLI
         uses: google-github-actions/auth@v2
         with:
-          project_id: ${{ vars.GCP_PROJECT_ID || secrets.gcp_project_id }}
+          project_id: ${{ secrets.gcp_project_id }}
           credentials_json: ${{ secrets.gcp_service_account }}
         
       - name: Setup Application Variables
@@ -322,7 +322,7 @@ jobs:
         uses: google-github-actions/deploy-appengine@v2
         timeout-minutes: 20
         with:
-          project_id: ${{ vars.GCP_PROJECT_ID || secrets.gcp_project_id }}
+          project_id: ${{ secrets.gcp_project_id }}
           deliverables: './artifacts/${{ needs.build_application.outputs.jar_name }}'
           flags: '--appyaml=${{ inputs.gae_app_yaml_path }} --quiet --no-promote'
           
@@ -332,7 +332,7 @@ jobs:
         run: |
           echo "🔍 Getting deployed version information..."
           
-          PROJECT_ID="${{ vars.GCP_PROJECT_ID || secrets.gcp_project_id }}"
+          PROJECT_ID="${{ secrets.gcp_project_id }}"
           SERVICE_NAME="${{ inputs.gae_service_name }}"
           
           DEPLOYED_VERSION=$(gcloud app versions list \
@@ -356,7 +356,7 @@ jobs:
         run: |
           echo "🚀 Promoting version ${{ steps.get_version.outputs.version }} to production..."
           
-          PROJECT_ID="${{ vars.GCP_PROJECT_ID || secrets.gcp_project_id }}"
+          PROJECT_ID="${{ secrets.gcp_project_id }}"
           SERVICE_NAME="${{ inputs.gae_service_name }}"
           
           gcloud app versions migrate "${{ steps.get_version.outputs.version }}" \
@@ -434,7 +434,7 @@ jobs:
       - name: Setup Google Cloud CLI
         uses: google-github-actions/auth@v2
         with:
-          project_id: ${{ vars.GCP_PROJECT_ID || secrets.gcp_project_id }}
+          project_id: ${{ secrets.gcp_project_id }}
           credentials_json: ${{ secrets.gcp_service_account }}
 
       - name: Clean Artifact Registry repositories
@@ -443,7 +443,7 @@ jobs:
         run: |
           echo "🧹 Cleaning up Artifact Registry repositories..."
           
-          PROJECT="${{ vars.GCP_PROJECT_ID || secrets.gcp_project_id }}"
+          PROJECT="${{ secrets.gcp_project_id }}"
           
           # Try to get region from GAE app
           REGION=$(gcloud app describe --project="$PROJECT" --format="value(locationId)" 2>/dev/null || echo "")
@@ -497,7 +497,7 @@ jobs:
         run: |
           echo "🧹 Cleaning old GAE versions..."
           
-          PROJECT="${{ vars.GCP_PROJECT_ID || secrets.gcp_project_id }}"
+          PROJECT="${{ secrets.gcp_project_id }}"
           SERVICE="${{ inputs.gae_service_name }}"
           KEEP=${{ inputs.keep_gae_versions }}
           
@@ -557,7 +557,7 @@ jobs:
         run: |
           echo "🧹 Cleaning old files from GCS buckets..."
           
-          PROJECT="${{ vars.GCP_PROJECT_ID || secrets.gcp_project_id }}"
+          PROJECT="${{ secrets.gcp_project_id }}"
           KEEP_DAYS=${{ inputs.gcs_keep_days }}
           
           echo "🗓️ Deleting files older than $KEEP_DAYS days"
