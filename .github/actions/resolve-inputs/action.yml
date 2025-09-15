@@ -1,5 +1,5 @@
 name: Resolve Inputs
-description: Merge inputs from workflow_dispatch and repository_dispatch into a single JSON output
+description: Merge inputs from workflow_dispatch, repository_dispatch, and schedule triggers into a single JSON output
 
 inputs:
   inputs:
@@ -10,86 +10,112 @@ inputs:
     description: JSON string of repository_dispatch client_payload (optional). If empty, auto-detect via github.event.client_payload
     required: false
     default: ''
-  update_from_env:
-    description: If set as true, this will try to override the merged json fron $GITHUB_ENV
+  schedule_config_file:
+    description: Path to JSON config file for scheduled workflows (optional). Used when github.event_name is 'schedule'
     required: false
-    default: false
+    default: ''
+
 
 outputs:
   variables:
-    description: Merged inputs as a JSON string (payload overrides on conflicts)
+    description: Merged inputs as a JSON string (supports workflow_dispatch, repository_dispatch, and schedule triggers)
     value: ${{ steps.final.outputs.variables }}
+  trigger_type:
+    description: The type of trigger that initiated the workflow (workflow_dispatch, repository_dispatch, schedule, etc.)
+    value: ${{ steps.resolve.outputs.trigger_type }}
 
 runs:
   using: composite
   steps:
     - id: resolve
-      name: Resolve and merge inputs
+      name: Resolve and merge inputs based on trigger type
       shell: bash
       run: |
         set -euo pipefail
         
-        # Get inputs or fallback to event payloads
-        inputs_json='${{ inputs.inputs != '' && inputs.inputs || toJson(github.event.inputs) }}'
-        payload_json='${{ inputs.client_payload != '' && inputs.client_payload || toJson(github.event.client_payload) }}'
-
-        # Determine which input to use
-        if [[ "$payload_json" != "null" && ! -z "$payload_json" ]]; then
-          final_data="$payload_json"
-        else
-          final_data="$inputs_json"
-        fi
-
+        # Detect trigger type
+        event_name="${{ github.event_name }}"
+        echo "Trigger type: $event_name"
+        echo "trigger_type=$event_name" >> "$GITHUB_OUTPUT"
+        
+        # Initialize final_data
+        final_data='{}'
+        
+        case "$event_name" in
+          "workflow_dispatch")
+            echo "📝 Processing workflow_dispatch trigger"
+            inputs_json='${{ inputs.inputs != '' && inputs.inputs || toJson(github.event.inputs) }}'
+            if [[ "$inputs_json" != "null" && "$inputs_json" != "{}" && ! -z "$inputs_json" ]]; then
+              final_data="$inputs_json"
+              echo "✅ Using workflow_dispatch inputs"
+            else
+              echo "ℹ️ No workflow_dispatch inputs found"
+            fi
+            ;;
+            
+          "repository_dispatch")
+            echo "🚀 Processing repository_dispatch trigger"
+            payload_json='${{ inputs.client_payload != '' && inputs.client_payload || toJson(github.event.client_payload) }}'
+            if [[ "$payload_json" != "null" && "$payload_json" != "{}" && ! -z "$payload_json" ]]; then
+              final_data="$payload_json"
+              echo "✅ Using repository_dispatch payload"
+            else
+              echo "ℹ️ No repository_dispatch payload found"
+            fi
+            ;;
+            
+          "schedule")
+            echo "⏰ Processing schedule trigger"
+            if [[ -n "${{ inputs.schedule_config_file }}" ]]; then
+              config_file="${{ inputs.schedule_config_file }}"
+              if [[ -f "$config_file" ]]; then
+                echo "📄 Reading schedule config from: $config_file"
+                final_data=$(cat "$config_file" | jq -c '.')
+                echo "✅ Using schedule config file"
+              else
+                echo "❌ Schedule config file not found: $config_file"
+                echo "Using empty config for schedule trigger"
+              fi
+            else
+              echo "ℹ️ No schedule config file specified"
+              echo "Using empty config for schedule trigger"
+            fi
+            ;;
+            
+          *)
+            echo "❓ Unknown or unsupported trigger type: $event_name"
+            echo "Trying to resolve from available inputs..."
+            
+            # Fallback: try to get data from any available source
+            inputs_json='${{ inputs.inputs != '' && inputs.inputs || toJson(github.event.inputs) }}'
+            payload_json='${{ inputs.client_payload != '' && inputs.client_payload || toJson(github.event.client_payload) }}'
+            
+            if [[ "$payload_json" != "null" && "$payload_json" != "{}" && ! -z "$payload_json" ]]; then
+              final_data="$payload_json"
+              echo "✅ Using fallback repository_dispatch payload"
+            elif [[ "$inputs_json" != "null" && "$inputs_json" != "{}" && ! -z "$inputs_json" ]]; then
+              final_data="$inputs_json"
+              echo "✅ Using fallback workflow_dispatch inputs"
+            fi
+            ;;
+        esac
+        
         # Ensure JSON is properly formatted
         final_data=$(echo "$final_data" | jq -c '.' || echo '{}')
-
-        echo "Merged Data: $final_data"
+        
+        echo "Final merged data: $final_data"
         echo "variables=$final_data" >> "$GITHUB_OUTPUT"
 
-    - id: override_env
-      name: Override merged JSON from GITHUB_ENV
-      if: ${{ inputs.update_from_env }}
-      shell: bash
-      run: |
-        set -euo pipefail
-
-    #     merged='${{ steps.resolve.outputs.variables }}'
-
-    #     if [[ -f "${GITHUB_ENV:-}" ]]; then
-    #       echo "⚡ Overriding merged JSON from GITHUB_ENV (only existing keys, preserving types)..."
-
-    #       while IFS= read -r line || [[ -n "$line" ]]; do
-    #         [[ -z "$line" ]] && continue
-    #         key="${line%%=*}"
-    #         value="${line#*=}"
-    #         key="$(echo -n "$key" | xargs)"
-    #         value="$(echo -n "$value" | xargs)"
-
-    #         if echo "$merged" | jq -e --arg k "$key" 'has($k)' >/dev/null 2>&1; then
-    #           if [[ "$value" =~ ^(true|TRUE)$ ]]; then
-    #             merged=$(echo "$merged" | jq --arg k "$key" '.[$k]=true')
-    #           elif [[ "$value" =~ ^(false|FALSE)$ ]]; then
-    #             merged=$(echo "$merged" | jq --arg k "$key" '.[$k]=false')
-    #           elif [[ "$value" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
-    #             merged=$(echo "$merged" | jq --arg k "$key" --argjson v "$value" '.[$k]=$v')
-    #           else
-    #             merged=$(echo "$merged" | jq --arg k "$key" --arg v "$value" '.[$k]=$v')
-    #           fi
-    #         fi
-    #       done < "$GITHUB_ENV"
-    #     fi
-
-    #     echo "Final Merged Variables After Override: $merged"
-    #     echo "variables=$merged" >> "$GITHUB_OUTPUT"
+    
 
     - name: Export final merged variables to GitHub environment
       shell: bash
       id: final
       run: |
         set -euo pipefail
-        merged_json='${{ inputs.update_from_env == 'true' && steps.override_env.outputs.variables || steps.resolve.outputs.variables }}'
+        merged_json='${{ steps.resolve.outputs.variables }}'
         echo "$merged_json" | jq -r 'to_entries | map("\(.key)=\(.value|tostring)") | .[]' >> "$GITHUB_ENV"
-        echo "variables=$merged" >> "$GITHUB_OUTPUT"
+        echo "variables=$merged_json" >> "$GITHUB_OUTPUT"
 
     - name: Print all GitHub environment variables
       shell: bash
