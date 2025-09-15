@@ -1,0 +1,49 @@
+name: Example Resolve Variables
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target environment'
+        required: true
+        type: choice
+        options:
+          - dev
+          - staging
+          - prod
+        default: dev
+      service_name:
+        description: 'Service name'
+        required: false
+        type: string
+        default: 'test-service'
+
+jobs:
+  test_resolve_variables:
+    uses: ./.github/workflows/Setup-Env.yml
+    with:
+      inputs: ${{ toJson(github.event.inputs) }}
+      script_path: "./examples/scripts/set-env-variables.sh"
+      resolve_variables: "fe_tag_name,be_tag_name,deployment_id,build_number,is_production"
+
+  show_results:
+    name: Show Resolved Results
+    runs-on: ubuntu-latest
+    needs: test_resolve_variables
+    steps:
+      - name: Display Final Configuration
+        run: |
+          echo "=== Final Configuration with Resolved Variables ==="
+          echo '${{ needs.test_resolve_variables.outputs.variables }}' | jq .
+          
+      - name: Show Specific Resolved Values
+        run: |
+          variables='${{ needs.test_resolve_variables.outputs.variables }}'
+          
+          echo "🎯 Extracted Values:"
+          echo "  Environment: $(echo "$variables" | jq -r '.environment // "unknown"')"
+          echo "  Service Name: $(echo "$variables" | jq -r '.service_name // "unknown"')"
+          echo "  FE Tag: $(echo "$variables" | jq -r '.fe_tag_name // "not-set"')"
+          echo "  BE Tag: $(echo "$variables" | jq -r '.be_tag_name // "not-set"')"
+          echo "  Deployment ID: $(echo "$variables" | jq -r '.deployment_id // "not-set"')"
+          echo "  Build Number: $(echo "$variables" | jq -r '.build_number // "not-set"')"
+          echo "  Is Production: $(echo "$variables" | jq -r '.is_production // "not-set"')"

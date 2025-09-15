@@ -1,0 +1,117 @@
+name: Update JSON from Environment
+description: Updates a JSON object with values from environment variables with proper type detection
+
+inputs:
+  base_json:
+    description: Base JSON object to update
+    required: true
+  resolve_variables:
+    description: Comma-separated list of environment variable names to resolve from $GITHUB_ENV into JSON
+    required: false
+    default: ''
+
+outputs:
+  updated_json:
+    description: Updated JSON object with environment variables merged
+    value: ${{ steps.update.outputs.updated_json }}
+  variables_resolved:
+    description: Number of variables that were successfully resolved
+    value: ${{ steps.update.outputs.variables_resolved }}
+  variables_missing:
+    description: Number of variables that were missing from environment
+    value: ${{ steps.update.outputs.variables_missing }}
+
+runs:
+  using: composite
+  steps:
+    - id: update
+      name: Update JSON with environment variables
+      shell: bash
+      run: |
+        set -euo pipefail
+        
+        echo "🔄 Updating JSON with environment variables..."
+        
+        # Get inputs
+        base_json='${{ inputs.base_json }}'
+        resolve_vars='${{ inputs.resolve_variables }}'
+        
+        echo "📄 Base JSON: $base_json"
+        
+        # Initialize final JSON with base
+        final_json="$base_json"
+        variables_resolved=0
+        variables_missing=0
+        
+        # Process resolve_variables if provided
+        if [[ -n "$resolve_vars" && "$resolve_vars" != "" ]]; then
+          echo "🔍 Processing resolve_variables: $resolve_vars"
+          
+          # Convert comma-separated string to array
+          IFS=',' read -ra var_array <<< "$resolve_vars"
+          
+          echo "Variables to resolve from environment:"
+          for var_name in "${var_array[@]}"; do
+            # Trim whitespace
+            var_name=$(echo "$var_name" | xargs)
+            echo "  - $var_name"
+          done
+          
+          echo ""
+          echo "⚙️ Checking environment variables and updating JSON..."
+          
+          # Process each variable in the array
+          for var_name in "${var_array[@]}"; do
+            # Trim whitespace
+            var_name=$(echo "$var_name" | xargs)
+            
+            # Check if this environment variable exists
+            if [[ -v "$var_name" ]]; then
+              var_value="${!var_name}"
+              echo "✅ Found $var_name in environment: $var_value"
+              
+              # Determine value type and add to JSON appropriately
+              if [[ "$var_value" =~ ^[0-9]+$ ]]; then
+                # Integer
+                final_json=$(echo "$final_json" | jq --arg k "$var_name" --argjson v "$var_value" '. + {($k): $v}')
+                echo "  → Added as integer: $var_name = $var_value"
+              elif [[ "$var_value" =~ ^[0-9]+\.[0-9]+$ ]]; then
+                # Float
+                final_json=$(echo "$final_json" | jq --arg k "$var_name" --argjson v "$var_value" '. + {($k): $v}')
+                echo "  → Added as float: $var_name = $var_value"
+              elif [[ "$var_value" =~ ^(true|TRUE|false|FALSE)$ ]]; then
+                # Boolean
+                bool_value=$(echo "$var_value" | tr '[:upper:]' '[:lower:]')
+                final_json=$(echo "$final_json" | jq --arg k "$var_name" --argjson v "$bool_value" '. + {($k): $v}')
+                echo "  → Added as boolean: $var_name = $bool_value"
+              else
+                # String
+                final_json=$(echo "$final_json" | jq --arg k "$var_name" --arg v "$var_value" '. + {($k): $v}')
+                echo "  → Added as string: $var_name = \"$var_value\""
+              fi
+              variables_resolved=$((variables_resolved + 1))
+            else
+              echo "⚠️ Environment variable '$var_name' not found, skipping"
+              variables_missing=$((variables_missing + 1))
+            fi
+          done
+        else
+          echo "ℹ️ No resolve_variables specified, returning base JSON as-is"
+        fi
+        
+        # Validate final JSON
+        if echo "$final_json" | jq empty 2>/dev/null; then
+          echo "✅ Final JSON is valid"
+        else
+          echo "❌ Final JSON is invalid, falling back to base JSON"
+          final_json="$base_json"
+        fi
+        
+        echo ""
+        echo "📈 Final updated JSON: $final_json"
+        echo "📊 Summary: $variables_resolved resolved, $variables_missing missing"
+        
+        # Set outputs
+        echo "updated_json=$final_json" >> "$GITHUB_OUTPUT"
+        echo "variables_resolved=$variables_resolved" >> "$GITHUB_OUTPUT"
+        echo "variables_missing=$variables_missing" >> "$GITHUB_OUTPUT"

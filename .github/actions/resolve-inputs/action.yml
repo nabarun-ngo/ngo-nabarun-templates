@@ -134,8 +134,4 @@ runs:
         echo "$merged_json" | jq -r 'to_entries | map("\(.key)=\(.value|tostring)") | .[]' >> "$GITHUB_ENV"
         echo "variables=$merged_json" >> "$GITHUB_OUTPUT"
 
-    - name: Print all GitHub environment variables
-      shell: bash
-      run: |
-        echo "All GitHub environment variables (key=value):"
-        env
+   
