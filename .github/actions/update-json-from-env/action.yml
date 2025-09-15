@@ -107,11 +107,14 @@ runs:
           final_json="$base_json"
         fi
         
+        # Ensure JSON is compact (single line) for GitHub Actions output
+        compact_json=$(echo "$final_json" | jq -c .)
+        
         echo ""
-        echo "📈 Final updated JSON: $final_json"
+        echo "📈 Final updated JSON: $compact_json"
         echo "📊 Summary: $variables_resolved resolved, $variables_missing missing"
         
         # Set outputs
-        echo "updated_json=$final_json" >> "$GITHUB_OUTPUT"
+        echo "updated_json=$compact_json" >> "$GITHUB_OUTPUT"
         echo "variables_resolved=$variables_resolved" >> "$GITHUB_OUTPUT"
         echo "variables_missing=$variables_missing" >> "$GITHUB_OUTPUT"
