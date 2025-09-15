@@ -1,0 +1,121 @@
+name: Example Script with Arguments
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target environment'
+        required: true
+        type: choice
+        options:
+          - dev
+          - staging
+          - prod
+        default: dev
+      action:
+        description: 'Action to perform'
+        required: true
+        type: choice
+        options:
+          - validate
+          - deploy
+          - rollback
+        default: validate
+      dry_run:
+        description: 'Enable dry-run mode'
+        required: false
+        type: boolean
+        default: true
+      timeout:
+        description: 'Timeout in seconds'
+        required: false
+        type: string
+        default: '60'
+      verbose:
+        description: 'Enable verbose output'
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  setup:
+    uses: ./.github/workflows/Setup-Env.yml
+    with:
+      inputs: ${{ toJson(github.event.inputs) }}
+      script_path: "./examples/scripts/example-with-arguments.sh"
+      script_args: >-
+        --environment ${{ github.event.inputs.environment }}
+        --action ${{ github.event.inputs.action }}
+        --dry-run ${{ github.event.inputs.dry_run }}
+        --timeout ${{ github.event.inputs.timeout }}
+        ${{ github.event.inputs.verbose == 'true' && '--verbose' || '' }}
+
+  show_results:
+    name: Show Configuration Results
+    runs-on: ubuntu-latest
+    needs: setup
+    steps:
+      - name: Display Final Configuration
+        run: |
+          echo "=== Final Configuration ==="
+          echo '${{ needs.setup.outputs.variables }}' | jq .
+          
+      - name: Extract and Use Specific Values
+        run: |
+          variables='${{ needs.setup.outputs.variables }}'
+          
+          # Extract values using jq
+          environment=$(echo "$variables" | jq -r '.environment // .ENVIRONMENT')
+          action=$(echo "$variables" | jq -r '.ACTION')
+          dry_run=$(echo "$variables" | jq -r '.DRY_RUN')
+          replicas=$(echo "$variables" | jq -r '.REPLICAS')
+          cpu_limit=$(echo "$variables" | jq -r '.CPU_LIMIT')
+          
+          echo "🎯 Extracted Configuration:"
+          echo "  Environment: $environment"
+          echo "  Action: $action"
+          echo "  Dry Run: $dry_run"
+          echo "  Replicas: $replicas"
+          echo "  CPU Limit: $cpu_limit"
+          
+      - name: Show Deployment Strategy
+        run: |
+          variables='${{ needs.setup.outputs.variables }}'
+          
+          deployment_type=$(echo "$variables" | jq -r '.deployment_strategy.type')
+          max_unavailable=$(echo "$variables" | jq -r '.deployment_strategy.max_unavailable')
+          
+          echo "🚀 Deployment Configuration:"
+          echo "  Strategy: $deployment_type"
+          echo "  Max Unavailable: $max_unavailable"
+          
+      - name: Conditional Logic Based on Arguments
+        run: |
+          variables='${{ needs.setup.outputs.variables }}'
+          
+          action=$(echo "$variables" | jq -r '.ACTION')
+          environment=$(echo "$variables" | jq -r '.environment // .ENVIRONMENT')
+          dry_run=$(echo "$variables" | jq -r '.DRY_RUN')
+          
+          echo "🔍 Conditional Processing:"
+          
+          if [ "$dry_run" = "true" ]; then
+            echo "  ℹ️  Dry-run mode enabled - no actual deployment"
+          else
+            echo "  🚀 Live deployment mode"
+          fi
+          
+          case "$action" in
+            "deploy")
+              if [ "$environment" = "prod" ]; then
+                echo "  🔴 Production deployment - extra validation required"
+              else
+                echo "  🟡 Non-production deployment"
+              fi
+              ;;
+            "rollback")
+              echo "  ⏪ Rollback operation initiated"
+              ;;
+            "validate")
+              echo "  ✅ Validation only - no deployment"
+              ;;
+          esac

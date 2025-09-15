@@ -106,8 +106,11 @@ Examples:
 
 ## Tips
 
-- Always test with `workflow_dispatch` trigger first before relying on schedules
-- Use descriptive cron expressions as JSON keys for clarity
-- Keep configuration files in version control
-- Use environment-specific settings within each cron configuration
-- Check workflow logs to see which configuration was detected and loaded
+- **Always test with `workflow_dispatch` trigger first** before relying on schedules
+- **Use descriptive cron expressions** as JSON keys for clarity
+- **Keep configuration files in version control**
+- **Use environment-specific settings** within each cron configuration
+- **Check workflow logs** to see which configuration was detected and loaded
+- **Scripts are optional** - Setup-Env works perfectly without any script
+- **Script arguments are supported** - Use `script_args` parameter for complex scenarios
+- **Script output merges with config** - Script values take precedence over base configuration

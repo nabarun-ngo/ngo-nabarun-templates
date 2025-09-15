@@ -1,0 +1,73 @@
+name: Test Setup-Env (No Script)
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target environment'
+        required: true
+        type: choice
+        options:
+          - dev
+          - staging
+          - prod
+        default: dev
+      service_name:
+        description: 'Service name'
+        required: false
+        type: string
+        default: 'test-service'
+      enable_monitoring:
+        description: 'Enable monitoring'
+        required: false
+        type: boolean
+        default: true
+
+jobs:
+  # Test without any script - should just return the input configuration
+  test_no_script:
+    uses: ./.github/workflows/Setup-Env.yml
+    with:
+      inputs: ${{ toJson(github.event.inputs) }}
+
+  # Test with empty script path - should behave the same as no script
+  test_empty_script:
+    uses: ./.github/workflows/Setup-Env.yml
+    with:
+      inputs: ${{ toJson(github.event.inputs) }}
+      script_path: ""
+
+  # Show results from both tests
+  show_results:
+    name: Show Test Results
+    runs-on: ubuntu-latest
+    needs: [test_no_script, test_empty_script]
+    steps:
+      - name: Compare Results
+        run: |
+          echo "=== Test No Script Results ==="
+          echo '${{ needs.test_no_script.outputs.variables }}' | jq .
+          
+          echo ""
+          echo "=== Test Empty Script Results ==="
+          echo '${{ needs.test_empty_script.outputs.variables }}' | jq .
+          
+          echo ""
+          echo "=== Verification ==="
+          
+          # Extract values for comparison
+          no_script_env=$(echo '${{ needs.test_no_script.outputs.variables }}' | jq -r '.environment')
+          empty_script_env=$(echo '${{ needs.test_empty_script.outputs.variables }}' | jq -r '.environment')
+          
+          if [[ "$no_script_env" == "$empty_script_env" ]]; then
+            echo "✅ Both approaches produce the same environment: $no_script_env"
+          else
+            echo "❌ Results differ: no_script=$no_script_env, empty_script=$empty_script_env"
+          fi
+          
+          # Test that input values are preserved
+          expected_env="${{ github.event.inputs.environment }}"
+          if [[ "$no_script_env" == "$expected_env" ]]; then
+            echo "✅ Input environment preserved correctly: $expected_env"
+          else
+            echo "❌ Input environment not preserved: expected=$expected_env, got=$no_script_env"
+          fi
