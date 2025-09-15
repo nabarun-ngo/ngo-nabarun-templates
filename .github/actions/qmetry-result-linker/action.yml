@@ -1,0 +1,180 @@
+name: 'QMetry Result Linker'
+description: 'Generates execution URLs, finalizes result tracking, and caches variables for future re-runs'
+inputs:
+  qmetry_open_api_key:
+    description: 'QMetry Open API key for retrieving test cycles'
+    required: true
+  qmetry_project_id:
+    description: 'QMetry project ID'
+    required: true
+  jira_url:
+    description: 'JIRA/Atlassian base URL'
+    required: true
+  test_cycle_summary:
+    description: 'Test cycle summary to search for'
+    required: true
+  workflow_name:
+    description: 'Name of the current workflow'
+    required: true
+  run_id:
+    description: 'GitHub workflow run ID'
+    required: true
+  cache_file_path:
+    description: 'Path to cache file for variables'
+    required: false
+    default: 'variables.env'
+    
+outputs:
+  execution_url:
+    description: 'JIRA execution URL for the test cycle'
+    value: ${{ steps.generate_urls.outputs.execution_url }}
+  test_cycle:
+    description: 'QMetry test cycle key'
+    value: ${{ steps.generate_urls.outputs.test_cycle }}
+  execution_id:
+    description: 'QMetry execution ID'
+    value: ${{ steps.generate_urls.outputs.execution_id }}
+  cache_key:
+    description: 'Cache key used for storing variables'
+    value: ${{ steps.cache_variables.outputs.cache_key }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Initialize result linking
+      shell: bash
+      run: |
+        echo "🔗 Starting QMetry result linking process..."
+        echo "📊 Linking Configuration:"
+        echo "  JIRA URL: ${{ inputs.jira_url }}"
+        echo "  QMetry Project ID: ${{ inputs.qmetry_project_id }}"
+        echo "  Test Cycle Summary: ${{ inputs.test_cycle_summary }}"
+        echo "  Workflow: ${{ inputs.workflow_name }}"
+        echo "  Run ID: ${{ inputs.run_id }}"
+        echo "  Cache File: ${{ inputs.cache_file_path }}"
+        echo ""
+        
+    - name: Retrieve test cycle information
+      id: retrieve_test_cycle
+      uses: fjogeleit/http-request-action@v1
+      with:
+        url: 'https://qtmcloud.qmetry.com/rest/api/latest/testcycles/search/?fields=key'
+        method: POST
+        customHeaders: '{"Content-Type": "application/json","apiKey":"${{ inputs.qmetry_open_api_key }}"}'
+        data: |
+          {
+            "filter": {
+              "summary": "${{ inputs.test_cycle_summary }}",
+              "projectId": "${{ inputs.qmetry_project_id }}",
+              "isAutomated": true
+            }
+          }
+          
+    - name: Process test cycle response
+      shell: bash
+      run: |
+        echo "🔍 Processing test cycle retrieval response..."
+        
+        RESPONSE='${{ steps.retrieve_test_cycle.outputs.response }}'
+        echo "📡 QMetry Search Response:"
+        echo "$RESPONSE" | jq '.' || echo "Response: $RESPONSE"
+        
+        # Validate response structure
+        DATA_COUNT=$(echo "$RESPONSE" | jq '.data | length' 2>/dev/null || echo "0")
+        echo "📊 Found $DATA_COUNT test cycle(s)"
+        
+        if [[ "$DATA_COUNT" -eq 0 ]]; then
+          echo "❌ ERROR: No test cycles found matching the summary"
+          echo "🔍 Search criteria:"
+          echo "  Summary: ${{ inputs.test_cycle_summary }}"
+          echo "  Project ID: ${{ inputs.qmetry_project_id }}"
+          echo "  Automated: true"
+          exit 1
+        fi
+        
+        # Extract first test cycle info
+        EXECUTION_ID=$(echo "$RESPONSE" | jq -r '.data[0].id // empty')
+        TEST_CYCLE=$(echo "$RESPONSE" | jq -r '.data[0].key // empty')
+        
+        if [[ -z "$EXECUTION_ID" || -z "$TEST_CYCLE" ]]; then
+          echo "❌ ERROR: Could not extract execution ID or test cycle from response"
+          echo "📄 Response data: $RESPONSE"
+          exit 1
+        fi
+        
+        echo "✅ Test cycle information extracted:"
+        echo "  🆔 Execution ID: $EXECUTION_ID"
+        echo "  🎯 Test Cycle: $TEST_CYCLE"
+        
+    - name: Generate execution URLs and cache variables
+      id: generate_urls
+      shell: bash
+      run: |
+        echo "🔗 Generating execution URLs and caching variables..."
+        
+        # Extract values from previous step
+        EXECUTION_ID='${{ fromJson(steps.retrieve_test_cycle.outputs.response).data[0].id }}'
+        TEST_CYCLE='${{ fromJson(steps.retrieve_test_cycle.outputs.response).data[0].key }}'
+        
+        # Generate JIRA execution URL
+        EXECUTION_URL="${{ inputs.jira_url }}/plugins/servlet/ac/com.infostretch.QmetryTestManager/qtm4j-test-management?project.id=${{ inputs.qmetry_project_id }}#!/executionPage/$EXECUTION_ID"
+        
+        echo "🔗 Generated URLs:"
+        echo "  📊 JIRA QMetry Test Cycle: $TEST_CYCLE"
+        echo "  🔗 JIRA QMetry Execution URL: $EXECUTION_URL"
+        
+        # Set outputs
+        echo "execution_url=$EXECUTION_URL" >> $GITHUB_OUTPUT
+        echo "test_cycle=$TEST_CYCLE" >> $GITHUB_OUTPUT
+        echo "execution_id=$EXECUTION_ID" >> $GITHUB_OUTPUT
+        
+        # Prepare cache variables
+        echo "📋 Preparing cache variables for potential re-runs..."
+        
+        # Create/update cache file
+        cat > "${{ inputs.cache_file_path }}" << EOF
+        execution_id=$EXECUTION_ID
+        test_cycle=$TEST_CYCLE
+        run_id=${{ inputs.run_id }}
+        created_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+        workflow=${{ inputs.workflow_name }}
+        jira_url=${{ inputs.jira_url }}
+        EOF
+        
+        echo "✅ Cache file created successfully:"
+        echo "📄 Contents of ${{ inputs.cache_file_path }}:"
+        cat "${{ inputs.cache_file_path }}"
+        
+    - name: Cache variables for future re-runs
+      id: cache_variables
+      uses: actions/cache/save@v4
+      with:
+        path: ${{ inputs.cache_file_path }}
+        key: cache-variables-${{ inputs.workflow_name }}-${{ inputs.run_id }}
+        
+    - name: Generate cache summary
+      shell: bash
+      run: |
+        CACHE_KEY="cache-variables-${{ inputs.workflow_name }}-${{ inputs.run_id }}"
+        echo "cache_key=$CACHE_KEY" >> $GITHUB_OUTPUT
+        
+        echo "📦 Variables cached successfully for re-runs:"
+        echo "  🗝️ Cache Key: $CACHE_KEY"
+        echo "  📄 Cache File: ${{ inputs.cache_file_path }}"
+        echo "  🎯 Test Cycle: ${{ steps.generate_urls.outputs.test_cycle }}"
+        echo "  🆔 Execution ID: ${{ steps.generate_urls.outputs.execution_id }}"
+        echo "  🔄 Next re-run will reuse the same test cycle"
+        
+    - name: Result linking summary
+      shell: bash
+      run: |
+        echo "📊 QMetry Result Linker Summary:"
+        echo "  ✅ Status: Success"
+        echo "  🎯 Test Cycle: ${{ steps.generate_urls.outputs.test_cycle }}"
+        echo "  🆔 Execution ID: ${{ steps.generate_urls.outputs.execution_id }}"
+        echo "  🔗 Execution URL: ${{ steps.generate_urls.outputs.execution_url }}"
+        echo "  📦 Cache Status: Saved successfully"
+        echo "  🗝️ Cache Key: cache-variables-${{ inputs.workflow_name }}-${{ inputs.run_id }}"
+        echo ""
+        echo "🎉 Test results are now available in QMetry!"
+        echo "🔗 Direct link: ${{ steps.generate_urls.outputs.execution_url }}"

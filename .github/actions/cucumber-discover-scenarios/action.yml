@@ -1,0 +1,111 @@
+name: 'Cucumber Scenario Discovery'
+description: 'Discovers Cucumber scenarios by tag and creates a matrix for parallel execution'
+inputs:
+  cucumber_tags:
+    description: 'Cucumber tags to filter scenarios (e.g., @smoke, @regression)'
+    required: true
+  max_scenarios_per_job:
+    description: 'Maximum number of scenarios per matrix job'
+    required: false
+    default: '5'
+  test_directory:
+    description: 'Directory containing the test project'
+    required: false
+    default: 'test'
+  
+outputs:
+  matrix:
+    description: 'JSON matrix for GitHub Actions strategy'
+    value: ${{ steps.create_matrix.outputs.matrix }}
+  scenario_count:
+    description: 'Total number of scenarios found'
+    value: ${{ steps.create_matrix.outputs.scenario_count }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Validate inputs
+      shell: bash
+      run: |
+        echo "🔍 Validating scenario discovery inputs..."
+        if [[ -z "${{ inputs.cucumber_tags }}" ]]; then
+          echo "❌ ERROR: cucumber_tags input is required"
+          exit 1
+        fi
+        if [[ ! -d "${{ inputs.test_directory }}" ]]; then
+          echo "❌ ERROR: Test directory '${{ inputs.test_directory }}' not found"
+          exit 1
+        fi
+        echo "✅ Input validation passed"
+
+    - name: Discover scenarios with Cucumber dry-run
+      shell: bash
+      working-directory: ${{ inputs.test_directory }}
+      run: |
+        echo "🔍 Discovering scenarios with tag: ${{ inputs.cucumber_tags }}..."
+        
+        # Run Cucumber dry-run with JSON plugin
+        mvn clean test -q \
+          -Dcucumber.filter.tags="${{ inputs.cucumber_tags }}" \
+          -Dcucumber.execution.dry-run=true \
+          -Dcucumber.plugin=json:target/cucumber.json || true
+        
+        if [[ ! -f "target/cucumber.json" ]]; then
+          echo "❌ ERROR: Cucumber JSON output not generated"
+          exit 1
+        fi
+        
+        echo "✅ Cucumber dry-run completed successfully"
+
+    - name: Create test execution matrix
+      id: create_matrix
+      shell: bash
+      working-directory: ${{ inputs.test_directory }}
+      run: |
+        echo "📊 Creating test execution matrix..."
+        
+        # Check if jq is available
+        if ! command -v jq &> /dev/null; then
+          echo "❌ ERROR: jq is not installed or not available"
+          exit 1
+        fi
+        
+        # Extract scenario line numbers by tag
+        SCENARIOS=$(jq -r \
+          --arg tag "${{ inputs.cucumber_tags }}" '
+          [ .[] as $feature
+            | $feature.elements[]
+            | select(.tags[]?.name == $tag)
+            | "\($feature.uri):\(.line)"
+          ]' target/cucumber.json)
+        
+        COUNT=$(echo "$SCENARIOS" | jq 'length')
+        echo "📈 Total scenarios found: $COUNT"
+        
+        if [[ $COUNT -eq 0 ]]; then
+          echo "⚠️ WARNING: No scenarios found with tag '${{ inputs.cucumber_tags }}'"
+          echo "matrix={\"include\":[]}" >> $GITHUB_OUTPUT
+          echo "scenario_count=0" >> $GITHUB_OUTPUT
+          exit 0
+        fi
+        
+        # Create matrix batches
+        PER_JOB=${{ inputs.max_scenarios_per_job }}
+        MATRIX="["
+        
+        for ((i=0; i<COUNT; i+=PER_JOB)); do
+          BATCH=$(echo "$SCENARIOS" | jq -c ".[$i:${i}+${PER_JOB}]")
+          MATRIX+="{\"scenarios\":$BATCH},"
+        done
+        
+        # Remove trailing comma and close array
+        MATRIX="${MATRIX%,}]"
+        
+        # Output for GitHub Actions
+        echo "matrix={\"include\":$MATRIX}" >> $GITHUB_OUTPUT
+        echo "scenario_count=$COUNT" >> $GITHUB_OUTPUT
+        
+        echo "✅ Matrix created successfully:"
+        echo "   Scenarios: $COUNT"
+        echo "   Jobs: $(( (COUNT + PER_JOB - 1) / PER_JOB ))"
+        echo "   Max per job: $PER_JOB"

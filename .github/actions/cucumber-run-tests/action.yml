@@ -1,0 +1,140 @@
+name: 'Cucumber Test Execution'
+description: 'Runs Cucumber tests with configurable environment and retry settings'
+inputs:
+  scenarios:
+    description: 'Comma-separated list of scenarios to run (e.g., "file1.feature:10,file2.feature:20")'
+    required: true
+  job_index:
+    description: 'Job index for file naming and identification'
+    required: true
+  test_environment:
+    description: 'Test environment (dev, staging, prod, etc.)'
+    required: true
+  doppler_project_name:
+    description: 'Doppler project name for configuration'
+    required: true
+  doppler_service_token:
+    description: 'Doppler service token for authentication'
+    required: true
+  max_rerun_attempts:
+    description: 'Maximum number of test rerun attempts on failure'
+    required: false
+    default: '0'
+  test_directory:
+    description: 'Directory containing the test project'
+    required: false
+    default: 'test'
+  headless_mode:
+    description: 'Run tests in headless mode (Y/N)'
+    required: false
+    default: 'N'
+  
+outputs:
+  test_status:
+    description: 'Test execution status (PASSED or FAILED)'
+    value: ${{ steps.run_tests.outputs.test_status }}
+  exit_code:
+    description: 'Test execution exit code'
+    value: ${{ steps.run_tests.outputs.exit_code }}
+  results_path:
+    description: 'Path to test results files'
+    value: ${{ inputs.test_directory }}/target
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Validate test inputs
+      shell: bash
+      run: |
+        echo "🔍 Validating test execution inputs..."
+        
+        if [[ -z "${{ inputs.scenarios }}" ]]; then
+          echo "❌ ERROR: scenarios input is required"
+          exit 1
+        fi
+        
+        if [[ ! -d "${{ inputs.test_directory }}" ]]; then
+          echo "❌ ERROR: Test directory '${{ inputs.test_directory }}' not found"
+          exit 1
+        fi
+        
+        if [[ ! -f "${{ inputs.test_directory }}/pom.xml" ]]; then
+          echo "❌ ERROR: Maven pom.xml not found in '${{ inputs.test_directory }}'"
+          exit 1
+        fi
+        
+        echo "✅ Input validation passed"
+
+    - name: Display test parameters
+      shell: bash
+      run: |
+        echo "🏁 Starting test execution for job index: ${{ inputs.job_index }}"
+        echo "🔢 Max Rerun Attempts: ${{ inputs.max_rerun_attempts }}"
+        echo "🔢 Scenarios: ${{ inputs.scenarios }}"
+        echo "🌐 Environment: ${{ inputs.test_environment }}"
+        echo "📁 Test Directory: ${{ inputs.test_directory }}"
+
+    - name: Execute Cucumber tests
+      id: run_tests
+      shell: bash
+      working-directory: ${{ inputs.test_directory }}
+      run: |
+        set +e  # Don't exit on error, capture status
+        
+        echo "🚀 Executing Cucumber tests..."
+        
+        # Run Maven test with Cucumber
+        mvn -Dsurefire.rerunFailingTestsCount=${{ inputs.max_rerun_attempts }} clean test -q \
+          -Dcucumber.features="${{ inputs.scenarios }}" \
+          -Dcucumber.plugin="pretty,html:target/cucumber-${{ inputs.job_index }}.html,json:target/cucumber-${{ inputs.job_index }}.json,junit:target/cucumber-${{ inputs.job_index }}.xml" \
+          -DENVIRONMENT=${{ inputs.test_environment }} \
+          -DCONFIG_SOURCE=doppler \
+          -DDOPPLER_PROJECT_NAME=${{ inputs.doppler_project_name }} \
+          -DDOPPLER_SERVICE_TOKEN=${{ inputs.doppler_service_token }} \
+          -Dheadless=${{ inputs.headless_mode }}
+        
+        TEST_EXIT_CODE=$?
+        
+        # Set outputs based on test results
+        if [ $TEST_EXIT_CODE -eq 0 ]; then
+          echo "test_status=PASSED" >> $GITHUB_OUTPUT
+          echo "exit_code=$TEST_EXIT_CODE" >> $GITHUB_OUTPUT
+          echo "✅ Tests completed successfully"
+        else
+          echo "test_status=FAILED" >> $GITHUB_OUTPUT  
+          echo "exit_code=$TEST_EXIT_CODE" >> $GITHUB_OUTPUT
+          echo "❌ Tests failed with exit code: $TEST_EXIT_CODE"
+        fi
+        
+        # Exit with the actual test exit code
+        exit $TEST_EXIT_CODE
+
+    - name: Verify test artifacts
+      shell: bash
+      working-directory: ${{ inputs.test_directory }}
+      run: |
+        echo "📋 Verifying test artifacts..."
+        
+        EXPECTED_FILES=(
+          "target/cucumber-${{ inputs.job_index }}.json"
+          "target/cucumber-${{ inputs.job_index }}.xml"
+          "target/cucumber-${{ inputs.job_index }}.html"
+        )
+        
+        MISSING_FILES=0
+        for file in "${EXPECTED_FILES[@]}"; do
+          if [[ -f "$file" ]]; then
+            echo "✅ Found: $file"
+          else
+            echo "⚠️ Missing: $file"
+            MISSING_FILES=$((MISSING_FILES + 1))
+          fi
+        done
+        
+        if [[ $MISSING_FILES -gt 0 ]]; then
+          echo "⚠️ Warning: $MISSING_FILES expected test artifacts are missing"
+          echo "📁 Available files in target directory:"
+          ls -la target/ || echo "target directory not found"
+        else
+          echo "✅ All expected test artifacts are present"
+        fi

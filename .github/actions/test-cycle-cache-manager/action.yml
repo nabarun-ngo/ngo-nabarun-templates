@@ -1,0 +1,144 @@
+name: 'Test Cycle Cache Manager'
+description: 'Manages test cycle caching and state restoration for workflow re-runs'
+inputs:
+  workflow_name:
+    description: 'Name of the current workflow'
+    required: true
+  run_id:
+    description: 'GitHub workflow run ID'
+    required: true
+  run_attempt:
+    description: 'GitHub workflow run attempt number'
+    required: true
+  test_type:
+    description: 'Type of test being executed'
+    required: true
+  cache_file_path:
+    description: 'Path to cache file'
+    required: false
+    default: 'variables.env'
+    
+outputs:
+  test_cycle_summary:
+    description: 'Generated test cycle summary'
+    value: ${{ steps.generate_summary.outputs.test_cycle_summary }}
+  is_rerun:
+    description: 'Whether this is a re-run (true/false)'
+    value: ${{ steps.load_cache.outputs.is_rerun }}
+  cached_test_cycle:
+    description: 'Test cycle ID from cache (if available)'
+    value: ${{ steps.load_cache.outputs.cached_test_cycle }}
+  cache_status:
+    description: 'Status of cache operation'
+    value: ${{ steps.load_cache.outputs.cache_status }}
+  cache_key:
+    description: 'Cache key used for this run'
+    value: ${{ steps.generate_summary.outputs.cache_key }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Initialize cache management
+      shell: bash
+      run: |
+        echo "🗄️ Starting test cycle cache management..."
+        echo "📊 Cache Configuration:"
+        echo "  Workflow: ${{ inputs.workflow_name }}"
+        echo "  Run ID: ${{ inputs.run_id }}"
+        echo "  Run Attempt: ${{ inputs.run_attempt }}"
+        echo "  Test Type: ${{ inputs.test_type }}"
+        echo "  Cache File: ${{ inputs.cache_file_path }}"
+        
+        CACHE_KEY="cache-variables-${{ inputs.workflow_name }}-${{ inputs.run_id }}"
+        echo "  Cache Key: $CACHE_KEY"
+        echo ""
+        
+    - name: Restore cached variables
+      id: restore_cache
+      uses: actions/cache/restore@v4
+      with:
+        path: ${{ inputs.cache_file_path }}
+        key: cache-variables-${{ inputs.workflow_name }}-${{ inputs.run_id }}
+        restore-keys: |
+          cache-variables-${{ inputs.workflow_name }}-${{ inputs.run_id }}
+          
+    - name: Load cached variables
+      id: load_cache
+      shell: bash
+      run: |
+        echo "🔍 Checking for cached variables..."
+        
+        if [[ -f "${{ inputs.cache_file_path }}" ]]; then
+          echo "📄 Found cached test cycle from previous attempt"
+          echo "  Run ID: ${{ inputs.run_id }}"
+          echo "  Attempt: ${{ inputs.run_attempt }}"
+          echo ""
+          
+          echo "📋 Cached variables:"
+          cat "${{ inputs.cache_file_path }}"
+          echo ""
+          
+          # Load variables into environment
+          while IFS='=' read -r key value; do
+            if [[ ! -z "$key" && ! "$key" =~ ^# ]]; then
+              echo "$key=$value" >> $GITHUB_ENV
+              echo "  ✅ Loaded: $key=$value"
+            fi
+          done < "${{ inputs.cache_file_path }}"
+          
+          # Extract test cycle if available
+          CACHED_TEST_CYCLE=$(grep '^test_cycle=' "${{ inputs.cache_file_path }}" | cut -d= -f2 || echo "")
+          
+          echo "is_rerun=true" >> $GITHUB_OUTPUT
+          echo "cached_test_cycle=$CACHED_TEST_CYCLE" >> $GITHUB_OUTPUT
+          echo "cache_status=restored" >> $GITHUB_OUTPUT
+          
+          echo "✅ Successfully restored cached variables"
+          echo "🔄 This is a re-run - will reuse existing test cycle: $CACHED_TEST_CYCLE"
+          
+        else
+          echo "🆕 No cache found - this is the first attempt"
+          echo "  Run ID: ${{ inputs.run_id }}"
+          echo "  Attempt: ${{ inputs.run_attempt }}"
+          echo "  New test cycle will be created"
+          
+          echo "is_rerun=false" >> $GITHUB_OUTPUT
+          echo "cached_test_cycle=" >> $GITHUB_OUTPUT
+          echo "cache_status=not_found" >> $GITHUB_OUTPUT
+          
+          echo "✅ Prepared for new test cycle creation"
+        fi
+        
+    - name: Generate test cycle summary
+      id: generate_summary
+      shell: bash
+      run: |
+        echo "📝 Generating test cycle summary..."
+        
+        TEST_CYCLE_SUMMARY="Automated Test Cycle - ${{ inputs.test_type }} | Run Id : ${{ inputs.run_id }}"
+        CACHE_KEY="cache-variables-${{ inputs.workflow_name }}-${{ inputs.run_id }}"
+        
+        echo "test_cycle_summary=$TEST_CYCLE_SUMMARY" >> $GITHUB_OUTPUT
+        echo "cache_key=$CACHE_KEY" >> $GITHUB_OUTPUT
+        
+        echo "📋 Test cycle summary generated:"
+        echo "  Summary: $TEST_CYCLE_SUMMARY"
+        echo "  Cache Key: $CACHE_KEY"
+        
+    - name: Cache management summary
+      shell: bash
+      run: |
+        echo "📊 Test Cycle Cache Management Summary:"
+        echo "  🔄 Is Re-run: ${{ steps.load_cache.outputs.is_rerun }}"
+        echo "  📦 Cache Status: ${{ steps.load_cache.outputs.cache_status }}"
+        echo "  🎯 Test Cycle Summary: ${{ steps.generate_summary.outputs.test_cycle_summary }}"
+        echo "  🗝️ Cache Key: ${{ steps.generate_summary.outputs.cache_key }}"
+        
+        if [[ "${{ steps.load_cache.outputs.is_rerun }}" == "true" ]]; then
+          echo "  ♻️ Cached Test Cycle: ${{ steps.load_cache.outputs.cached_test_cycle }}"
+          echo "  📋 Action: Will reuse existing QMetry test cycle"
+        else
+          echo "  🆕 Action: Will create new QMetry test cycle"
+        fi
+        
+        echo "✅ Cache management completed successfully"

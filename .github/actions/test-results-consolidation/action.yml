@@ -1,0 +1,175 @@
+name: 'Test Results Consolidation'
+description: 'Downloads parallel test artifacts, merges results, and prepares consolidated report'
+inputs:
+  templates_repository:
+    description: 'Templates repository containing merge scripts'
+    required: false
+    default: 'nabarun-ngo/ngo-nabarun-templates'
+  artifact_download_path:
+    description: 'Path to download all artifacts'
+    required: false
+    default: 'all-results'
+  merged_output_path:
+    description: 'Path for merged output files'
+    required: false
+    default: 'merged'
+  merged_artifact_name:
+    description: 'Name for merged artifact upload'
+    required: false
+    default: 'merged-cucumber-json'
+  
+outputs:
+  merged_file_path:
+    description: 'Path to the merged cucumber.json file'
+    value: ${{ steps.consolidate.outputs.merged_file_path }}
+  artifact_count:
+    description: 'Number of artifacts processed'
+    value: ${{ steps.consolidate.outputs.artifact_count }}
+  total_scenarios:
+    description: 'Total number of scenarios in merged results'
+    value: ${{ steps.consolidate.outputs.total_scenarios }}
+  consolidation_status:
+    description: 'Status of consolidation process'
+    value: ${{ steps.consolidate.outputs.status }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Setup consolidation environment
+      shell: bash
+      run: |
+        echo "🚀 Starting test results consolidation process..."
+        echo "📊 Configuration:"
+        echo "  Templates Repository: ${{ inputs.templates_repository }}"
+        echo "  Download Path: ${{ inputs.artifact_download_path }}"
+        echo "  Output Path: ${{ inputs.merged_output_path }}"
+        echo "  Artifact Name: ${{ inputs.merged_artifact_name }}"
+        echo "  Workflow: ${{ github.workflow }}"
+        echo "  Run ID: ${{ github.run_id }}"
+        
+    - name: Checkout template repository
+      uses: actions/checkout@v4
+      with:
+        repository: ${{ inputs.templates_repository }}
+        path: 'templates'
+      
+    - name: Download all test artifacts
+      uses: actions/download-artifact@v4
+      with:
+        path: ${{ inputs.artifact_download_path }}
+      
+    - name: Analyze downloaded artifacts
+      shell: bash
+      run: |
+        echo "📥 Analyzing downloaded artifacts..."
+        
+        if [[ ! -d "${{ inputs.artifact_download_path }}" ]]; then
+          echo "❌ ERROR: Artifact download path not found: ${{ inputs.artifact_download_path }}"
+          exit 1
+        fi
+        
+        echo "📁 Contents of ${{ inputs.artifact_download_path }}:"
+        ls -la "${{ inputs.artifact_download_path }}" || echo "Could not list download path"
+        
+        echo ""
+        echo "🔍 Detailed artifact structure:"
+        find "${{ inputs.artifact_download_path }}" -type f -name "*.json" | head -10 | while read file; do
+          echo "  📄 Found: $file ($(wc -c < "$file") bytes)"
+        done
+        
+        # Count artifacts
+        JSON_COUNT=$(find "${{ inputs.artifact_download_path }}" -name "*.json" | wc -l)
+        echo "📊 Total JSON artifacts found: $JSON_COUNT"
+        
+        if [[ $JSON_COUNT -eq 0 ]]; then
+          echo "⚠️ WARNING: No JSON artifacts found - this might indicate a problem with parallel test execution"
+        fi
+
+    - name: Consolidate test results
+      id: consolidate
+      shell: bash
+      run: |
+        echo "🔄 Starting test results consolidation..."
+        
+        # Verify merge script exists
+        MERGE_SCRIPT="templates/scripts/merge-cucumber-jsons.sh"
+        if [[ ! -f "$MERGE_SCRIPT" ]]; then
+          echo "❌ ERROR: Merge script not found: $MERGE_SCRIPT"
+          echo "📁 Available files in templates/scripts/:"
+          ls -la templates/scripts/ || echo "scripts directory not found"
+          exit 1
+        fi
+        
+        echo "✅ Merge script found: $MERGE_SCRIPT"
+        
+        # Make merge script executable
+        chmod +x "$MERGE_SCRIPT"
+        
+        # Create output directory
+        mkdir -p "${{ inputs.merged_output_path }}"
+        echo "📁 Created output directory: ${{ inputs.merged_output_path }}"
+        
+        # Run merge script
+        echo "🔧 Running merge script..."
+        bash "$MERGE_SCRIPT" "${{ inputs.artifact_download_path }}" "${{ inputs.merged_output_path }}"
+        MERGE_EXIT_CODE=$?
+        
+        if [[ $MERGE_EXIT_CODE -ne 0 ]]; then
+          echo "❌ ERROR: Merge script failed with exit code: $MERGE_EXIT_CODE"
+          exit 1
+        fi
+        
+        # Verify merged file was created
+        MERGED_FILE="${{ inputs.merged_output_path }}/cucumber.json"
+        if [[ ! -f "$MERGED_FILE" ]]; then
+          echo "❌ ERROR: Merged file not created: $MERGED_FILE"
+          echo "📁 Contents of ${{ inputs.merged_output_path }}:"
+          ls -la "${{ inputs.merged_output_path }}" || echo "Output directory not accessible"
+          exit 1
+        fi
+        
+        # Analyze merged results
+        FILE_SIZE=$(wc -c < "$MERGED_FILE")
+        echo "📊 Merged file created successfully:"
+        echo "  📄 File: $MERGED_FILE"
+        echo "  📏 Size: $FILE_SIZE bytes"
+        
+        # Count scenarios in merged file (if jq is available)
+        if command -v jq >/dev/null 2>&1; then
+          TOTAL_SCENARIOS=$(jq '[.[] | .elements | length] | add // 0' "$MERGED_FILE" 2>/dev/null || echo "unknown")
+          echo "  🎯 Total scenarios: $TOTAL_SCENARIOS"
+        else
+          TOTAL_SCENARIOS="unknown"
+          echo "  🎯 Total scenarios: $TOTAL_SCENARIOS (jq not available)"
+        fi
+        
+        # Count original artifacts
+        ARTIFACT_COUNT=$(find "${{ inputs.artifact_download_path }}" -name "*.json" | wc -l)
+        
+        # Set outputs
+        echo "merged_file_path=$MERGED_FILE" >> $GITHUB_OUTPUT
+        echo "artifact_count=$ARTIFACT_COUNT" >> $GITHUB_OUTPUT
+        echo "total_scenarios=$TOTAL_SCENARIOS" >> $GITHUB_OUTPUT
+        echo "status=success" >> $GITHUB_OUTPUT
+        
+        echo "✅ Consolidation completed successfully!"
+        echo "  📊 Processed $ARTIFACT_COUNT artifacts"
+        echo "  🎯 Total scenarios: $TOTAL_SCENARIOS"
+        
+    - name: Upload consolidated results
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ inputs.merged_artifact_name }}
+        path: ${{ inputs.merged_output_path }}/cucumber.json
+        retention-days: 7
+        
+    - name: Consolidation summary
+      shell: bash
+      run: |
+        echo "📋 Test Results Consolidation Summary:"
+        echo "  ✅ Status: Success"
+        echo "  📥 Downloaded artifacts: ${{ steps.consolidate.outputs.artifact_count }}"
+        echo "  📄 Merged file: ${{ steps.consolidate.outputs.merged_file_path }}"
+        echo "  🎯 Total scenarios: ${{ steps.consolidate.outputs.total_scenarios }}"
+        echo "  📦 Uploaded as: ${{ inputs.merged_artifact_name }}"
+        echo "  🔄 Ready for QMetry upload"

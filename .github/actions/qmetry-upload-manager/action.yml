@@ -1,0 +1,288 @@
+name: 'QMetry Upload Manager'
+description: 'Handles complete QMetry upload process including URL generation, file upload, and import tracking'
+inputs:
+  qmetry_api_key:
+    description: 'QMetry API key for authentication'
+    required: true
+  test_environment:
+    description: 'Test environment name'
+    required: true
+  test_cycle_summary:
+    description: 'Summary for the test cycle'
+    required: true
+  test_cycle_folder:
+    description: 'QMetry folder ID for test cycles'
+    required: true
+  test_case_folder:
+    description: 'QMetry folder ID for test cases'
+    required: true
+  app_server_version:
+    description: 'Server application version'
+    required: true
+  app_ui_version:
+    description: 'UI application version'
+    required: true
+  test_type:
+    description: 'Type of test being executed'
+    required: true
+  run_id:
+    description: 'GitHub workflow run ID'
+    required: true
+  run_attempt:
+    description: 'GitHub workflow run attempt number'
+    required: true
+  results_file_path:
+    description: 'Path to the test results JSON file'
+    required: true
+  cached_test_cycle:
+    description: 'Cached test cycle ID for reuse (optional)'
+    required: false
+    default: ''
+  templates_repository:
+    description: 'Templates repository containing scripts'
+    required: false
+    default: 'nabarun-ngo/ngo-nabarun-templates'
+    
+outputs:
+  upload_url:
+    description: 'Generated QMetry upload URL'
+    value: ${{ steps.generate_upload_url.outputs.upload_url }}
+  tracking_id:
+    description: 'QMetry import tracking ID'
+    value: ${{ steps.generate_upload_url.outputs.tracking_id }}
+  upload_status:
+    description: 'Status of file upload'
+    value: ${{ steps.upload_file.outputs.status }}
+  import_status:
+    description: 'Status of QMetry import'
+    value: ${{ steps.wait_import.outputs.import_status }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Initialize QMetry upload
+      shell: bash
+      run: |
+        echo "📡 Starting QMetry upload process..."
+        echo "📊 Upload Configuration:"
+        echo "  Environment: ${{ inputs.test_environment }}"
+        echo "  Test Type: ${{ inputs.test_type }}"
+        echo "  Test Cycle Summary: ${{ inputs.test_cycle_summary }}"
+        echo "  Results File: ${{ inputs.results_file_path }}"
+        echo "  Run ID: ${{ inputs.run_id }}-${{ inputs.run_attempt }}"
+        echo "  Server Version: ${{ inputs.app_server_version }}"
+        echo "  UI Version: ${{ inputs.app_ui_version }}"
+        
+        if [[ -n "${{ inputs.cached_test_cycle }}" ]]; then
+          echo "  🔄 Reusing Test Cycle: ${{ inputs.cached_test_cycle }}"
+        else
+          echo "  🆕 Creating New Test Cycle"
+        fi
+        echo ""
+        
+    - name: Validate upload prerequisites
+      shell: bash
+      run: |
+        echo "🔍 Validating upload prerequisites..."
+        
+        # Check if results file exists
+        if [[ ! -f "${{ inputs.results_file_path }}" ]]; then
+          echo "❌ ERROR: Results file not found: ${{ inputs.results_file_path }}"
+          echo "📁 Current directory contents:"
+          ls -la . || echo "Could not list current directory"
+          exit 1
+        fi
+        
+        # Check file size and content
+        FILE_SIZE=$(wc -c < "${{ inputs.results_file_path }}")
+        echo "✅ Results file validated:"
+        echo "  📄 Path: ${{ inputs.results_file_path }}"
+        echo "  📏 Size: $FILE_SIZE bytes"
+        
+        if [[ $FILE_SIZE -lt 10 ]]; then
+          echo "⚠️ WARNING: File size is very small ($FILE_SIZE bytes) - may be empty"
+        fi
+        
+        # Check if file contains valid JSON
+        if command -v jq >/dev/null 2>&1; then
+          if jq empty "${{ inputs.results_file_path }}" 2>/dev/null; then
+            echo "✅ JSON validation passed"
+          else
+            echo "❌ ERROR: Invalid JSON in results file"
+            echo "📄 First 200 characters of file:"
+            head -c 200 "${{ inputs.results_file_path }}" || echo "Could not read file"
+            exit 1
+          fi
+        fi
+        
+    - name: Checkout templates repository
+      uses: actions/checkout@v4
+      with:
+        repository: ${{ inputs.templates_repository }}
+        path: 'qmetry-templates'
+        
+    - name: Generate QMetry upload URL
+      id: generate_upload_url
+      uses: fjogeleit/http-request-action@v1
+      with:
+        url: 'https://qtmcloud.qmetry.com/rest/api/automation/importresult'
+        method: POST
+        customHeaders: '{"Content-Type": "application/json","apiKey":"${{ inputs.qmetry_api_key }}"}'
+        data: |
+         {
+            "format": "cucumber",
+            "testCycleToReuse": "${{ inputs.cached_test_cycle }}",
+            "attachFile": true,
+            "isZip": false,
+            "environment": "${{ inputs.test_environment }}",
+            "matchTestSteps": true,
+            "fields": {
+              "testCycle": {
+                "folderId": ${{ inputs.test_cycle_folder }},
+                "summary": "${{ inputs.test_cycle_summary }}"
+              },
+              "testCase": {
+                "priority": "High",
+                "folderId": ${{ inputs.test_case_folder }}
+              },
+              "testCaseExecution": {
+                "customFields": [
+                  {
+                    "name": "Run Id",
+                    "value": "${{ inputs.run_id }}-${{ inputs.run_attempt }}"
+                  },
+                  {
+                    "name": "Server Version",
+                    "value": "${{ inputs.app_server_version }}"
+                  },
+                  {
+                    "name": "UI Version",
+                    "value": "${{ inputs.app_ui_version }}"
+                  },
+                  {
+                    "name": "Test Type",
+                    "value": "${{ inputs.test_type }}"
+                  }
+                ]
+              }
+            }
+          }
+          
+    - name: Process upload URL response
+      shell: bash
+      run: |
+        echo "🔗 Processing QMetry upload URL response..."
+        
+        RESPONSE='${{ steps.generate_upload_url.outputs.response }}'
+        echo "📡 QMetry API Response:"
+        echo "$RESPONSE" | jq '.' || echo "Response: $RESPONSE"
+        
+        # Extract key information
+        UPLOAD_URL=$(echo "$RESPONSE" | jq -r '.url // empty')
+        TRACKING_ID=$(echo "$RESPONSE" | jq -r '.trackingId // empty')
+        
+        if [[ -z "$UPLOAD_URL" ]]; then
+          echo "❌ ERROR: No upload URL received from QMetry"
+          echo "📄 Full response: $RESPONSE"
+          exit 1
+        fi
+        
+        if [[ -z "$TRACKING_ID" ]]; then
+          echo "❌ ERROR: No tracking ID received from QMetry"
+          echo "📄 Full response: $RESPONSE"
+          exit 1
+        fi
+        
+        echo "✅ QMetry upload URL generated successfully:"
+        echo "  🔗 Upload URL: $UPLOAD_URL"
+        echo "  🏷️ Tracking ID: $TRACKING_ID"
+        
+    - name: Upload results file to QMetry
+      id: upload_file
+      shell: bash
+      run: |
+        echo "📤 Uploading results file to QMetry..."
+        
+        UPLOAD_URL='${{ fromJson(steps.generate_upload_url.outputs.response).url }}'
+        RESULTS_FILE="${{ inputs.results_file_path }}"
+        
+        echo "🚀 Starting file upload:"
+        echo "  📄 File: $RESULTS_FILE"
+        echo "  🔗 URL: $UPLOAD_URL"
+        echo "  📏 File size: $(wc -c < "$RESULTS_FILE") bytes"
+        
+        # Perform upload with detailed logging
+        HTTP_CODE=$(curl -w "%{http_code}" -s -o upload_response.txt \
+          -X PUT \
+          -H "Content-Type: multipart/form-data" \
+          -H "User-Agent: PostmanRuntime/7.43.0" \
+          -d "@$RESULTS_FILE" \
+          "$UPLOAD_URL")
+        
+        echo "📊 Upload completed:"
+        echo "  📡 HTTP Code: $HTTP_CODE"
+        
+        if [[ -f "upload_response.txt" ]]; then
+          echo "  📄 Response:"
+          cat upload_response.txt
+        fi
+        
+        # Check if upload was successful
+        if [[ "$HTTP_CODE" -ge 200 && "$HTTP_CODE" -lt 300 ]]; then
+          echo "✅ File upload successful (HTTP $HTTP_CODE)"
+          echo "status=success" >> $GITHUB_OUTPUT
+        else
+          echo "❌ File upload failed (HTTP $HTTP_CODE)"
+          if [[ -f "upload_response.txt" ]]; then
+            echo "📄 Error response:"
+            cat upload_response.txt
+          fi
+          echo "status=failed" >> $GITHUB_OUTPUT
+          exit 1
+        fi
+        
+    - name: Wait for QMetry import completion
+      id: wait_import
+      shell: bash
+      run: |
+        echo "⏳ Waiting for QMetry import to complete..."
+        
+        TRACKING_ID='${{ fromJson(steps.generate_upload_url.outputs.response).trackingId }}'
+        WAIT_SCRIPT="qmetry-templates/scripts/wait-for-qmetry-report-import.sh"
+        
+        echo "📊 Import tracking:"
+        echo "  🏷️ Tracking ID: $TRACKING_ID"
+        echo "  📜 Wait script: $WAIT_SCRIPT"
+        
+        # Verify wait script exists
+        if [[ ! -f "$WAIT_SCRIPT" ]]; then
+          echo "❌ ERROR: Wait script not found: $WAIT_SCRIPT"
+          echo "📁 Available scripts:"
+          ls -la qmetry-templates/scripts/ || echo "Scripts directory not found"
+          exit 1
+        fi
+        
+        # Make script executable and run
+        chmod +x "$WAIT_SCRIPT"
+        
+        echo "🕐 Starting import wait process..."
+        if bash "$WAIT_SCRIPT" "$TRACKING_ID" "${{ inputs.qmetry_api_key }}"; then
+          echo "✅ QMetry import completed successfully"
+          echo "import_status=completed" >> $GITHUB_OUTPUT
+        else
+          echo "❌ QMetry import failed or timed out"
+          echo "import_status=failed" >> $GITHUB_OUTPUT
+          exit 1
+        fi
+        
+    - name: Upload summary
+      shell: bash
+      run: |
+        echo "📊 QMetry Upload Manager Summary:"
+        echo "  ✅ Status: Success"
+        echo "  🔗 Upload URL: Generated successfully"
+        echo "  🏷️ Tracking ID: ${{ fromJson(steps.generate_upload_url.outputs.response).trackingId }}"
+        echo "  📤 Upload Status: ${{ steps.upload_file.outputs.status }}"
+        echo "  📥 Import Status: ${{ steps.wait_import.outputs.import_status }}"
+        echo "  🎯 Test Results: Successfully uploaded to QMetry"
+        echo "🔄 Ready for result linking phase"

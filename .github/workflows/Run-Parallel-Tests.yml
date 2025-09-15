@@ -21,15 +21,15 @@ on:
       max_rerun_attempt:
         required: false
         type: number
-        default: 0
+        default: 1
       app_ui_version:
-        required: false
+        description: 'UI application version being tested'
+        required: true
         type: string
-        default: 'latest'
       app_server_version:
-        required: false
+        description: 'Server application version being tested'
+        required: true
         type: string
-        default: 'latest'
       java_version:
         required: false
         type: string
@@ -39,32 +39,32 @@ on:
         type: string
         default: 'target'
       repository_name:
-        required: false
+        description: 'Test repository name (org/repo-name)'
+        required: true
         type: string
-        default: 'nabarun-ngo/ngo-nabarun-test'
       branch_name:
         required: false
         type: string
-        default: 'master'
+        default: 'stage'
       test_cycle:
         required: false
         type: string
       test_cycle_folder:
-        required: false
+        description: 'QMetry folder ID for test cycles'
+        required: true
         type: string
-        default: '1388976'
       test_case_folder:
-        required: false
+        description: 'QMetry folder ID for test cases'
+        required: true
         type: string
-        default: '1449797'
       qmetry_project_id:
-        required: false
+        description: 'QMetry project ID'
+        required: true
         type: string
-        default: '10004'
       jira_url:
-        required: false
+        description: 'JIRA/Atlassian base URL'
+        required: true
         type: string
-        default: 'https://ngonabarun.atlassian.net'
       upload_result:
         required: false
         type: boolean
@@ -77,83 +77,58 @@ on:
         required: true
       qmetry_open_api_key:
         required: true
+    outputs:
+      test_execution_url:
+        description: "QMetry test execution URL"
+        value: ${{ jobs.upload_test_result.outputs.execution_url }}
+      test_cycle:
+        description: "QMetry test cycle key"
+        value: ${{ jobs.upload_test_result.outputs.test_cycle }}
+      test_results_uploaded:
+        description: "Whether test results were uploaded to QMetry"
+        value: ${{ inputs.upload_result && jobs.upload_test_result.result == 'success' }}
         
 jobs:
   discover-scenarios:
     name: 'Discover Test'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     outputs:
-      matrix: ${{ steps.set-matrix.outputs.matrix }}
+      matrix: ${{ steps.discover.outputs.matrix }}
+      scenario_count: ${{ steps.discover.outputs.scenario_count }}
     steps:
-      - name: Checkout template repo (with scripts)
-        uses: actions/checkout@v4
+      - name: Setup test environment
+        uses: nabarun-ngo/ngo-nabarun-templates/.github/actions/test-setup@main
         with:
-          repository: nabarun-ngo/ngo-nabarun-templates
-          path: 'actions'
+          java_version: ${{ inputs.java_version }}
+          test_repository: ${{ inputs.repository_name }}
+          test_branch: ${{ inputs.branch_name }}
 
-      - name: Checkout test repository | Branch ${{ inputs.branch_name }}
-        uses: actions/checkout@v4
+      - name: Discover test scenarios
+        id: discover
+        uses: nabarun-ngo/ngo-nabarun-templates/.github/actions/cucumber-discover-scenarios@main
         with:
-          repository: ${{ inputs.repository_name }}
-          ref: ${{ inputs.branch_name }}
-          path: 'test'
-
-      - name: Set up Java
-        uses: actions/setup-java@v2
-        with:
-          java-version: ${{ inputs.java_version }} 
-          distribution: 'adopt'
-
-      - name: Install jq
-        run: sudo apt-get install jq
-
-      - name: Run discovery script
-        id: set-matrix
-        run: |
-          bash actions/scripts/discover_scenarios.sh "${{ inputs.test_cucumber_tags }}" "${{ inputs.max_tests_per_matrix }}"
+          cucumber_tags: ${{ inputs.test_cucumber_tags }}
+          max_scenarios_per_job: ${{ inputs.max_tests_per_matrix }}
 
   run_test:
     needs: discover-scenarios
     name: 'Run Test'
     runs-on: windows-latest
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix: ${{ fromJson(needs.discover-scenarios.outputs.matrix) }}
     steps:
-    - name: Checkout current repository
-      uses: actions/checkout@v4
+    - name: Setup test environment
+      uses: nabarun-ngo/ngo-nabarun-templates/.github/actions/test-setup@main
       with:
-        path: .
+        java_version: ${{ inputs.java_version }}
+        test_repository: ${{ inputs.repository_name }}
+        test_branch: ${{ inputs.branch_name }}
 
-    - name: Checkout template repository (with scripts)
-      uses: actions/checkout@v4
-      with:
-        repository: nabarun-ngo/ngo-nabarun-templates
-        path: 'actions'
-
-    - name: Checkout test repository | Branch ${{ inputs.branch_name }}
-      uses: actions/checkout@v4
-      with:
-        repository: ${{ inputs.repository_name }}
-        ref: ${{ inputs.branch_name }}
-        path: 'test'
-
-    - name: Set up Java
-      uses: actions/setup-java@v2
-      with:
-        java-version: ${{ inputs.java_version }}
-        distribution: 'adopt'
-
-    - name: Cache Maven dependencies
-      uses: actions/cache@v3
-      with:
-        path: C:\Users\runneradmin\.m2\repository
-        key: maven-${{ hashFiles('**/pom.xml') }}
-        restore-keys: |
-          maven-
-
-    - name: View Test Parameters
-      id : test_params
+    - name: Process test scenarios
+      id: test_params
       shell: bash
       run: |
         SCENARIOS=$(echo '${{ toJson(matrix.scenarios) }}' | jq -r '.[]' | paste -sd, -)
@@ -163,9 +138,15 @@ jobs:
         echo "scenarios=$SCENARIOS" >> $GITHUB_OUTPUT
 
     - name: Run Cucumber Tests
-      shell: bash
-      run: |
-        bash ./actions/scripts/run_cucumber_tests.sh ${{ steps.test_params.outputs.scenarios }} "${{ strategy.job-index }}" "${{ inputs.test_env }}" "${{ inputs.test_doppler_project_name }}" "${{ secrets.test_doppler_service_token }}" "${{ inputs.max_rerun_attempt }}"
+      id: run_tests
+      uses: nabarun-ngo/ngo-nabarun-templates/.github/actions/cucumber-run-tests@main
+      with:
+        scenarios: ${{ steps.test_params.outputs.scenarios }}
+        job_index: ${{ strategy.job-index }}
+        test_environment: ${{ inputs.test_env }}
+        doppler_project_name: ${{ inputs.test_doppler_project_name }}
+        doppler_service_token: ${{ secrets.test_doppler_service_token }}
+        max_rerun_attempts: ${{ inputs.max_rerun_attempt }}
       continue-on-error: true
 
     - name: Upload Test Results
@@ -175,9 +156,10 @@ jobs:
         path: test/target/cucumber-${{ strategy.job-index }}.json
 
     - name: Publish Test Results
-      uses: dorny/test-reporter@v1
+      uses: dorny/test-reporter@v2.1.1
+      if: always()  # Run even if tests failed
       with:
-        name: Report
+        name: Test Report - Job ${{ strategy.job-index }}
         path: test/target/cucumber-${{ strategy.job-index }}.xml
         reporter: java-junit
         fail-on-error: false
@@ -186,153 +168,65 @@ jobs:
     - name: Show Tests Result
       shell: bash
       run: |
+        TEST_STATUS="${{ steps.run_tests.outputs.test_status }}"
         echo "Test Status: $TEST_STATUS"
+        echo "Exit Code: ${{ steps.run_tests.outputs.exit_code }}"
         if [ "$TEST_STATUS" = "FAILED" ]; then
+          echo "❌ Test execution failed"
           exit 1
+        else
+          echo "✅ Test execution completed successfully"
         fi
           
   upload_test_result:
     name: 'Upload Test Results'
     if: ${{ inputs.upload_result == true &&  needs.run_test.result != 'cancelled' && always() }}
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     needs: run_test
+    outputs:
+      execution_url: ${{ steps.result_linker.outputs.execution_url }}
+      test_cycle: ${{ steps.result_linker.outputs.test_cycle }}
     steps:
-
-      - name: Checkout template repo (with scripts)
-        uses: actions/checkout@v4
-        with:
-          repository: nabarun-ngo/ngo-nabarun-templates
-          
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: all-results
-      
-      - name: List downloaded files
-        run: ls -R all-results
-
-      - name: Merge all cucumber-*.json into one
-        run: bash ./scripts/merge-cucumber-jsons.sh all-results merged
-      
-      - name: Upload merged cucumber.json
-        uses: actions/upload-artifact@v4
-        with:
-          name: merged-cucumber-json
-          path: merged/cucumber.json
-      
-      - name: Generate Test Cycle Summary
-        id: testCycle
-        run: |
-          echo "test_cycle_summary=Automated Test Cycle - ${{ inputs.test_type }} | Run Id : ${{ github.run_id }}" >> $GITHUB_OUTPUT  
-      
-      - name: Restore Cached Variables
-        uses: actions/cache@v4
-        with:
-          path: variables.env
-          key: cache-variables-${{ github.run_id }}
-          restore-keys: |
-            cache-variables-${{ github.run_id }}
-
-      - name: Load Variables
-        run: |
-          if [ -f variables.env ]; then
-            cat variables.env >> $GITHUB_ENV
-            echo "✅ Variables restored successfully!"
-          else
-            echo "❌ No cache found (first run)."
-          fi
-          echo "test_cycle=${{ env.test_cycle }}"
-
-      - name: Generate Upload URL
-        id: generate_url
-        uses: fjogeleit/http-request-action@v1
-        with:
-          url: 'https://qtmcloud.qmetry.com/rest/api/automation/importresult'
-          method: POST
-          customHeaders: '{"Content-Type": "application/json","apiKey":"${{ secrets.qmetry_api_key }}"}'
-          data: |
-           {
-              "format": "cucumber",
-              "testCycleToReuse": "${{ env.test_cycle }}",
-              "attachFile": true,
-              "isZip": false,
-              "environment": "${{ inputs.test_env }}",
-              "matchTestSteps": true,
-              "fields": {
-                "testCycle": {
-                  "folderId": ${{ inputs.test_cycle_folder }},
-                  "summary": "${{ steps.testCycle.outputs.test_cycle_summary }}"
-                },
-                "testCase": {
-                  "priority": "High",
-                  "folderId": ${{ inputs.test_case_folder }}
-                },
-                "testCaseExecution": {
-                  "customFields": [
-                    {
-                      "name": "Run Id",
-                      "value": "${{ github.run_id }}-${{ github.run_attempt }}"
-                    },
-                    {
-                      "name": "Server Version",
-                      "value": "${{ inputs.app_server_version }}"
-                    },
-                    {
-                      "name": "UI Version",
-                      "value": "${{ inputs.app_ui_version }}"
-                    },
-                    {
-                      "name": "Test Type",
-                      "value": "${{ inputs.test_type }}"
-                    }
-                  ]
-                }
-              }
-            }
-      - name: Upload file using PUT request
-        run: |
-          curl -X PUT \
-            -H "Content-Type: multipart/form-data" \
-            -H "User-Agent: PostmanRuntime/7.43.0" \
-            -d @merged/cucumber.json \
-            '${{ fromJson(steps.generate_url.outputs.response).url }}'
-      
-      
-      - name: Wait for QMetry Import to Complete
-        run: bash ./scripts/wait-for-qmetry-report-import.sh ${{ fromJson(steps.generate_url.outputs.response).trackingId }} ${{ secrets.qmetry_api_key }}
+      - name: Consolidate Test Results
+        id: consolidate
+        uses: nabarun-ngo/ngo-nabarun-templates/.github/actions/test-results-consolidation@main
         
-      - name: Retrieve Test Cycles 
-        id: retrieve_tc
-        uses: fjogeleit/http-request-action@v1
+      - name: Manage Test Cycle Cache  
+        id: cache_manager
+        uses: nabarun-ngo/ngo-nabarun-templates/.github/actions/test-cycle-cache-manager@main
         with:
-          url: 'https://qtmcloud.qmetry.com/rest/api/latest/testcycles/search/?fields=key'
-          method: POST
-          customHeaders: '{"Content-Type": "application/json","apiKey":"${{ secrets.qmetry_open_api_key }}"}'
-          data: |
-            {
-              "filter": {
-                "summary": "${{ steps.testCycle.outputs.test_cycle_summary }}",
-                "projectId": "${{ inputs.qmetry_project_id }}",
-                "isAutomated": true
-              }
-            }
-      
-      - name: Generate Execution URL
-        id: gen_exec_url
-        run: |
-          execution_id=${{ fromJson(steps.retrieve_tc.outputs.response).data[0].id }}
-          test_cycle=${{ fromJson(steps.retrieve_tc.outputs.response).data[0].key }} 
-          execution_url=${{ inputs.jira_url }}/plugins/servlet/ac/com.infostretch.QmetryTestManager/qtm4j-test-management?project.id=${{ inputs.qmetry_project_id }}#!/executionPage/$execution_id
-          echo "execution_url=$execution_url" >> $GITHUB_OUTPUT  
-          echo "execution_id=$execution_id" >> variables.env
-          echo "test_cycle=$test_cycle" >> variables.env
-          echo "JIRA Qmetry Test Cycle : $test_cycle"
-          echo "JIRA Qmetry Execution URL : $execution_url"
-
-      - name: Cache Variables by `run_id` ${{ github.run_id }}
-        uses: actions/cache@v4
+          workflow_name: ${{ github.workflow }}
+          run_id: ${{ github.run_id }}
+          run_attempt: ${{ github.run_attempt }}
+          test_type: ${{ inputs.test_type }}
+          
+      - name: Upload to QMetry
+        id: qmetry_upload
+        uses: nabarun-ngo/ngo-nabarun-templates/.github/actions/qmetry-upload-manager@main
         with:
-          path: variables.env
-          key: cache-variables-${{ github.run_id }}
+          qmetry_api_key: ${{ secrets.qmetry_api_key }}
+          test_environment: ${{ inputs.test_env }}
+          test_cycle_summary: ${{ steps.cache_manager.outputs.test_cycle_summary }}
+          test_cycle_folder: ${{ inputs.test_cycle_folder }}
+          test_case_folder: ${{ inputs.test_case_folder }}
+          app_server_version: ${{ inputs.app_server_version }}
+          app_ui_version: ${{ inputs.app_ui_version }}
+          test_type: ${{ inputs.test_type }}
+          run_id: ${{ github.run_id }}
+          run_attempt: ${{ github.run_attempt }}
+          results_file_path: ${{ steps.consolidate.outputs.merged_file_path }}
+          cached_test_cycle: ${{ steps.cache_manager.outputs.cached_test_cycle }}
+          
+      - name: Generate Result Links
+        id: result_linker  
+        uses: nabarun-ngo/ngo-nabarun-templates/.github/actions/qmetry-result-linker@main
+        with:
+          qmetry_open_api_key: ${{ secrets.qmetry_open_api_key }}
+          qmetry_project_id: ${{ inputs.qmetry_project_id }}
+          jira_url: ${{ inputs.jira_url }}
+          test_cycle_summary: ${{ steps.cache_manager.outputs.test_cycle_summary }}
+          workflow_name: ${{ github.workflow }}
+          run_id: ${{ github.run_id }}
       
       

@@ -1,0 +1,86 @@
+name: 'Test Environment Setup'
+description: 'Sets up Java, caches Maven dependencies, and checks out required repositories'
+inputs:
+  java_version:
+    description: 'Java version to use'
+    required: false
+    default: '22'
+  templates_repository:
+    description: 'Templates repository'
+    required: false
+    default: 'nabarun-ngo/ngo-nabarun-templates'
+  test_repository:
+    description: 'Test repository'
+    required: true
+  test_branch:
+    description: 'Test repository branch'
+    required: false
+    default: 'master'
+  templates_path:
+    description: 'Path to checkout templates repository'
+    required: false
+    default: 'actions'
+  test_path:
+    description: 'Path to checkout test repository'
+    required: false
+    default: 'test'
+  enable_maven_cache:
+    description: 'Whether to enable Maven dependency caching'
+    required: false
+    default: 'true'
+
+outputs:
+  java_version:
+    description: 'Java version that was set up'
+    value: ${{ inputs.java_version }}
+  cache_hit:
+    description: 'Whether Maven cache was hit'
+    value: ${{ steps.cache_maven.outputs.cache-hit }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Checkout template repository
+      uses: actions/checkout@v4
+      with:
+        repository: ${{ inputs.templates_repository }}
+        path: ${{ inputs.templates_path }}
+
+    - name: Checkout test repository
+      uses: actions/checkout@v4
+      with:
+        repository: ${{ inputs.test_repository }}
+        ref: ${{ inputs.test_branch }}
+        path: ${{ inputs.test_path }}
+
+    - name: Set up Java
+      uses: actions/setup-java@v4
+      with:
+        java-version: ${{ inputs.java_version }}
+        distribution: 'temurin'
+
+    - name: Cache Maven dependencies
+      if: inputs.enable_maven_cache == 'true'
+      id: cache_maven
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.m2/repository
+          C:\Users\runneradmin\.m2\repository
+        key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}
+        restore-keys: |
+          ${{ runner.os }}-maven-
+
+    - name: Install system dependencies
+      shell: bash
+      run: |
+        if command -v apt-get >/dev/null 2>&1; then
+          echo "📦 Installing jq on Ubuntu/Debian..."
+          sudo apt-get update && sudo apt-get install -y jq
+        elif command -v choco >/dev/null 2>&1; then
+          echo "📦 Installing jq on Windows via Chocolatey..."
+          choco install jq -y
+        else
+          echo "⚠️ Package manager not found, jq may need to be installed manually"
+        fi
+        echo "✅ System dependencies setup completed"
