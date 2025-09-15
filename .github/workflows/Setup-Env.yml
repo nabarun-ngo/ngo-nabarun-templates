@@ -42,7 +42,7 @@ jobs:
       - name: Determine Schedule Configuration
         id: determine_config
         if: ${{ github.event_name == 'schedule' }}
-        uses: nabarun-ngo/ngo-nabarun-templates/.github/actions/determine-schedule-config
+        uses: nabarun-ngo/ngo-nabarun-templates/.github/actions/determine-schedule-config@main
 
       - name: Resolve and Expose Inputs to $GITHUB_ENV
         id: resolve_input
@@ -102,7 +102,7 @@ jobs:
 
       - name: Resolve Final Inputs
         id: update_json
-        uses: nabarun-ngo/ngo-nabarun-templates/.github/actions/update-json-from-env
+        uses: nabarun-ngo/ngo-nabarun-templates/.github/actions/update-json-from-env@main
         with:
           base_json: ${{ steps.resolve_input.outputs.variables }}
           resolve_variables: ${{ inputs.resolve_variables }}
