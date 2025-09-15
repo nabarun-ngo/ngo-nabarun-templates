@@ -118,13 +118,7 @@ jobs:
             echo "✅ App YAML found: ${{ inputs.gae_app_yaml_path }}"
           fi
           
-          # Validate target folder exists and contains pom.xml
-          if [[ ! -d "${{ inputs.target_folder }}" ]]; then
-            echo "❌ ERROR: Target folder not found: ${{ inputs.target_folder }}"
-            VALIDATION_ERRORS=$((VALIDATION_ERRORS + 1))
-          else
-            echo "✅ Target folder exists: ${{ inputs.target_folder }}"
-          fi
+          # Target folder validation removed - will be validated during build
           
           # Look for pom.xml to ensure it's a Maven project
           if [[ ! -f "pom.xml" ]]; then
@@ -155,15 +149,14 @@ jobs:
             exit 1
           fi
 
-  build_and_deploy_to_gcp:
-    name: 'Build and Deploy to GCP App Engine'
+  build_application:
+    name: 'Build Application'
     runs-on: ubuntu-latest
     needs: [validate_inputs]
     if: needs.validate_inputs.outputs.validation_passed == 'true'
-    environment: ${{ inputs.environment_name }}
-    timeout-minutes: ${{ inputs.deployment_timeout }}
+    timeout-minutes: 20
     outputs:
-      deployment_version: ${{ steps.get_version.outputs.version }}
+      jar_name: ${{ steps.get-jar-path.outputs.jar_name }}
     steps:
       - name: Checkout repository | Tag ${{ inputs.tag_name }}
         uses: actions/checkout@v4
@@ -172,17 +165,6 @@ jobs:
           repository: '${{ inputs.repo_owner_name }}/${{ inputs.repo_name }}'
           fetch-depth: 0
           token: ${{ secrets.repo_token }}
-
-      - name: Create GitHub Deployment
-        uses: chrnorm/deployment-action@v2
-        id: deployment
-        with:
-          token: ${{ secrets.repo_token }}
-          environment-url: ${{ inputs.environment_url }}
-          environment: ${{ inputs.environment_name }}
-          repo: ${{ inputs.repo_name }}
-          owner: ${{ inputs.repo_owner_name }}
-          ref: ${{ inputs.tag_name }}
     
       - name: Set up Java
         uses: actions/setup-java@v4
@@ -234,12 +216,13 @@ jobs:
           if [[ ${#JAR_FILES[@]} -eq 0 ]]; then
             echo "❌ No JAR file found in ${{ inputs.target_folder }}"
             echo "📁 Directory contents:"
-            ls -la "${{ inputs.target_folder }}"
+            ls -la "${{ inputs.target_folder }}" || echo "Target folder does not exist"
             exit 1
           fi
           
           # Use the first JAR file (typically the main one)
           JAR_PATH="${JAR_FILES[0]}"
+          JAR_NAME=$(basename "$JAR_PATH")
           
           if [[ ${#JAR_FILES[@]} -gt 1 ]]; then
             echo "⚠️ Multiple JAR files found, using: $JAR_PATH"
@@ -262,10 +245,61 @@ jobs:
           JAR_SIZE=$(du -h "$JAR_PATH" | cut -f1)
           echo "✅ Found valid JAR file: $JAR_PATH"
           echo "📦 JAR size: $JAR_SIZE"
+          echo "📝 JAR name: $JAR_NAME"
           
-          # Output for next steps
-          echo "jar_path=$JAR_PATH" >> "$GITHUB_ENV"
-          echo "jar_path=$JAR_PATH" >> "$GITHUB_OUTPUT"
+          # Output for next jobs
+          echo "jar_name=$JAR_NAME" >> "$GITHUB_OUTPUT"
+          
+      - name: Upload JAR artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: application-jar-${{ inputs.tag_name }}
+          path: ${{ inputs.target_folder }}/${{ steps.get-jar-path.outputs.jar_name }}
+          retention-days: 1
+          
+      - name: Upload app.yaml artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-yaml-${{ inputs.tag_name }}
+          path: ${{ inputs.gae_app_yaml_path }}
+          retention-days: 1
+
+  deploy_to_gcp:
+    name: 'Deploy to GCP App Engine'
+    runs-on: ubuntu-latest
+    needs: [validate_inputs, build_application]
+    if: |
+      always() &&
+      needs.validate_inputs.outputs.validation_passed == 'true' &&
+      needs.build_application.result == 'success'
+    environment: ${{ inputs.environment_name }}
+    timeout-minutes: ${{ inputs.deployment_timeout }}
+    outputs:
+      deployment_version: ${{ steps.get_version.outputs.version }}
+      deployment_id: ${{ steps.deployment.outputs.deployment_id }}
+    steps:
+      - name: Download JAR artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: application-jar-${{ inputs.tag_name }}
+          path: ./artifacts/
+          
+      - name: Download app.yaml artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: app-yaml-${{ inputs.tag_name }}
+          path: ./artifacts/
+
+      - name: Create GitHub Deployment
+        uses: chrnorm/deployment-action@v2
+        id: deployment
+        with:
+          token: ${{ secrets.repo_token }}
+          environment-url: ${{ inputs.environment_url }}
+          environment: ${{ inputs.environment_name }}
+          repo: ${{ inputs.repo_name }}
+          owner: ${{ inputs.repo_owner_name }}
+          ref: ${{ inputs.tag_name }}
                   
       - name: Setup Google Cloud CLI
         uses: google-github-actions/auth@v2
@@ -276,7 +310,7 @@ jobs:
       - name: Setup Application Variables
         uses: ikuanyshbekov/app-yaml-env-compiler@v1.0
         with:
-          path: '${{ inputs.gae_app_yaml_path }}'
+          path: './artifacts/${{ inputs.gae_app_yaml_path }}'
         env:
           ENVIRONMENT: ${{ inputs.app_env }}
           DOPPLER_PROJECT_NAME: ${{ inputs.app_doppler_project_name }}
@@ -289,8 +323,8 @@ jobs:
         timeout-minutes: 20
         with:
           project_id: ${{ vars.GCP_PROJECT_ID || secrets.gcp_project_id }}
-          deliverables: ${{ steps.get-jar-path.outputs.jar_path }}
-          flags: '--appyaml=${{ inputs.gae_app_yaml_path }} --quiet --no-promote'
+          deliverables: './artifacts/${{ needs.build_application.outputs.jar_name }}'
+          flags: '--appyaml=./artifacts/${{ inputs.gae_app_yaml_path }} --quiet --no-promote'
           
       - name: Get deployed version
         id: get_version
@@ -392,9 +426,9 @@ jobs:
   clean_gcp_resources:
     name: 'Clean Up Old GCP Resources'
     runs-on: ubuntu-latest
-    needs: [build_and_deploy_to_gcp]
+    needs: [deploy_to_gcp]
     # Always run cleanup, but only if deployment job completed (success or failure)
-    if: always() && needs.build_and_deploy_to_gcp.result != 'cancelled'
+    if: always() && needs.deploy_to_gcp.result != 'cancelled'
     timeout-minutes: 20
     steps:
       - name: Setup Google Cloud CLI
