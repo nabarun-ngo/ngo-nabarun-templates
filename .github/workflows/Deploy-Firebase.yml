@@ -18,8 +18,34 @@ on:
         required: false
         type: string
       npm_run_command:
+        description: "NPM command to run (e.g., 'npm run build', 'yarn build')"
         required: true
         type: string
+      node_version:
+        description: "Node.js version to use"
+        required: false
+        type: string
+        default: '20'
+      working_directory:
+        description: "Working directory for the Node.js project"
+        required: false
+        type: string
+        default: '.'
+      package_manager:
+        description: "Package manager to use (npm, yarn, pnpm)"
+        required: false
+        type: string
+        default: 'npm'
+      build_output_dir:
+        description: "Build output directory (dist, build, etc.)"
+        required: false
+        type: string
+        default: 'dist'
+      firebase_channel:
+        description: "Firebase hosting channel (live, preview, etc.)"
+        required: false
+        type: string
+        default: 'live'
     secrets:
       firebase_project_id:
         required: true
@@ -27,18 +53,105 @@ on:
         required: true
       repo_token:
         required: true
+    outputs:
+      firebase_url:
+        description: "The URL of the deployed Firebase app"
+        value: ${{ jobs.deploy_to_firebase.outputs.firebase_url }}
+      firebase_channel:
+        description: "The Firebase channel where the app was deployed"
+        value: ${{ inputs.firebase_channel }}
      
-jobs:  
-   build-and-deploy:
-    name: 'Build Artifacts and Deploy to Firebase'
-    runs-on: 'ubuntu-latest'
-    environment: ${{ inputs.environment_name }}
+jobs:
+  build_application:
+    name: 'Build Node.js Application'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    outputs:
+      build_successful: ${{ steps.build.outputs.build_status }}
     steps:
-      - name: Checkout repository | tag ${{ inputs.tag_name }}
+      - name: Checkout repository | Tag ${{ inputs.tag_name }}
         uses: actions/checkout@v4
         with:
           ref: ${{ inputs.tag_name }}
           repository: '${{ inputs.repo_owner_name }}/${{ inputs.repo_name }}'
+          fetch-depth: 0
+          token: ${{ secrets.repo_token }}
+      
+      - name: Update package.json version
+        if: inputs.working_directory == '.'
+        uses: restackio/update-json-file-action@2.1
+        with:
+          file: package.json
+          fields: '{"version": "${{ inputs.tag_name }}"}'
+          
+      - name: Update package.json version in working directory
+        if: inputs.working_directory != '.'
+        uses: restackio/update-json-file-action@2.1
+        with:
+          file: ${{ inputs.working_directory }}/package.json
+          fields: '{"version": "${{ inputs.tag_name }}"}'
+      
+      - name: Build with Node.js
+        id: build
+        uses: nabarun-ngo/ngo-nabarun-templates/.github/actions/build-node@main
+        with:
+          node_version: ${{ inputs.node_version }}
+          working_directory: ${{ inputs.working_directory }}
+          command: ${{ inputs.npm_run_command }}
+          
+      - name: Validate build output
+        shell: bash
+        run: |
+          echo "🔍 Validating build output..."
+          BUILD_DIR="${{ inputs.working_directory }}/${{ inputs.build_output_dir }}"
+          
+          if [[ ! -d "$BUILD_DIR" ]]; then
+            echo "❌ Build output directory not found: $BUILD_DIR"
+            echo "📁 Available directories in ${{ inputs.working_directory }}:"
+            ls -la "${{ inputs.working_directory }}" || echo "Could not list directory"
+            exit 1
+          fi
+          
+          FILE_COUNT=$(find "$BUILD_DIR" -type f | wc -l)
+          if [[ $FILE_COUNT -eq 0 ]]; then
+            echo "❌ Build output directory is empty: $BUILD_DIR"
+            exit 1
+          fi
+          
+          echo "✅ Build output validated: $FILE_COUNT files in $BUILD_DIR"
+          
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: firebase-build-${{ inputs.tag_name }}
+          path: ${{ inputs.working_directory }}/${{ inputs.build_output_dir }}
+          retention-days: 1
+
+  deploy_to_firebase:
+    name: 'Deploy to Firebase Hosting'
+    runs-on: ubuntu-latest
+    needs: [build_application]
+    if: |
+      always() &&
+      needs.build_application.result == 'success'
+    environment: ${{ inputs.environment_name }}
+    timeout-minutes: 15
+    outputs:
+      deployment_id: ${{ steps.deployment.outputs.deployment_id }}
+      firebase_url: ${{ steps.firebase_deploy.outputs.details_url }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag_name }}
+          repository: '${{ inputs.repo_owner_name }}/${{ inputs.repo_name }}'
+          token: ${{ secrets.repo_token }}
+          
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: firebase-build-${{ inputs.tag_name }}
+          path: ${{ inputs.working_directory }}/${{ inputs.build_output_dir }}
 
       - name: Create GitHub Deployment
         uses: chrnorm/deployment-action@v2
@@ -49,23 +162,31 @@ jobs:
           environment: ${{ inputs.environment_name }}
           repo: ${{ inputs.repo_name }}
           owner: ${{ inputs.repo_owner_name }}
-          ref: ${{ inputs.tag_name }} 
-          
-      - name: Update package.json version
-        uses: restackio/update-json-file-action@2.1
-        with:
-          file: package.json
-          fields: '{"version": "${{ inputs.tag_name }}"}'
-          
-      - name: Build NPM
-        run: ${{ inputs.npm_run_command }}
+          ref: ${{ inputs.tag_name }}
 
-      - name: Deploy to Firebase
+      - name: Validate Firebase configuration
+        shell: bash
+        working-directory: ${{ inputs.working_directory }}
+        run: |
+          echo "🔍 Validating Firebase deployment configuration..."
+          
+          # Check Firebase configuration
+          if [[ ! -f "firebase.json" ]]; then
+            echo "❌ Firebase configuration file not found: firebase.json"
+            exit 1
+          fi
+          
+          echo "✅ Firebase configuration validated"
+
+      - name: Deploy to Firebase Hosting
+        id: firebase_deploy
         uses: FirebaseExtended/action-hosting-deploy@v0
         with:
-          firebaseServiceAccount: '${{ secrets.firebase_service_account }}'
-          channelId: live
+          firebaseServiceAccount: ${{ secrets.firebase_service_account }}
           projectId: ${{ secrets.firebase_project_id }}
+          channelId: ${{ inputs.firebase_channel }}
+        env:
+          FIREBASE_CLI_EXPERIMENTS: webframeworks
 
       - name: Update deployment status (success)
         if: success()
@@ -74,7 +195,7 @@ jobs:
           state: 'success'
           deployment-id: ${{ steps.deployment.outputs.deployment_id }}
           token: ${{ secrets.repo_token }}
-          environment-url: ${{ inputs.environment_url }}
+          environment-url: ${{ steps.firebase_deploy.outputs.details_url || inputs.environment_url }}
           repo: ${{ inputs.repo_name }}
           owner: ${{ inputs.repo_owner_name }}
 
