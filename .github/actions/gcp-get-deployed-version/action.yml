@@ -1,0 +1,131 @@
+name: 'GCP Get Deployed Version'
+description: 'Get the most recently deployed version of a Google App Engine service'
+author: 'Nabarun NGO'
+
+inputs:
+  project_id:
+    description: 'GCP Project ID where the service is deployed'
+    required: true
+  service_name:
+    description: 'Name of the App Engine service'
+    required: false
+    default: 'default'
+  sort_by:
+    description: 'Field to sort versions by (default: ~version.createTime for newest first)'
+    required: false
+    default: '~version.createTime'
+  limit:
+    description: 'Maximum number of versions to retrieve (default: 1)'
+    required: false
+    default: '1'
+  format:
+    description: 'Format for the gcloud output (default: value(version.id))'
+    required: false
+    default: 'value(version.id)'
+  additional_filters:
+    description: 'Additional filters to apply to the gcloud command (e.g., --filter="serving.status=SERVING")'
+    required: false
+    default: ''
+
+outputs:
+  version:
+    description: 'The ID of the deployed version'
+    value: ${{ steps.get-version.outputs.version }}
+  version_info:
+    description: 'Detailed information about the version'
+    value: ${{ steps.get-version.outputs.version_info }}
+  created_time:
+    description: 'Creation time of the version'
+    value: ${{ steps.get-version.outputs.created_time }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Get deployed version information
+      id: get-version
+      shell: bash
+      run: |
+        echo "🔍 Getting deployed version information..."
+        echo "📝 Project ID: ${{ inputs.project_id }}"
+        echo "🚀 Service: ${{ inputs.service_name }}"
+        echo "📊 Sort by: ${{ inputs.sort_by }}"
+        echo "🔢 Limit: ${{ inputs.limit }}"
+        
+        # Validate required gcloud CLI is available
+        if ! command -v gcloud >/dev/null 2>&1; then
+          echo "❌ gcloud CLI not found. Please ensure Google Cloud CLI is installed and authenticated."
+          exit 1
+        fi
+        
+        # Build the gcloud command
+        GCLOUD_CMD="gcloud app versions list"
+        GCLOUD_CMD="$GCLOUD_CMD --service=\"${{ inputs.service_name }}\""
+        GCLOUD_CMD="$GCLOUD_CMD --project=\"${{ inputs.project_id }}\""
+        GCLOUD_CMD="$GCLOUD_CMD --format=\"${{ inputs.format }}\""
+        GCLOUD_CMD="$GCLOUD_CMD --limit=${{ inputs.limit }}"
+        GCLOUD_CMD="$GCLOUD_CMD --sort-by=${{ inputs.sort_by }}"
+        
+        # Add additional filters if provided
+        if [[ -n "${{ inputs.additional_filters }}" ]]; then
+          echo "🔧 Additional filters: ${{ inputs.additional_filters }}"
+          GCLOUD_CMD="$GCLOUD_CMD ${{ inputs.additional_filters }}"
+        fi
+        
+        echo "🔧 Executing: $GCLOUD_CMD"
+        
+        # Get the deployed version
+        DEPLOYED_VERSION=$(eval "$GCLOUD_CMD" 2>/dev/null | head -1)
+        
+        if [[ -z "$DEPLOYED_VERSION" ]]; then
+          echo "❌ Could not determine deployed version"
+          echo "🔍 Debugging information:"
+          echo "   Project ID: ${{ inputs.project_id }}"
+          echo "   Service: ${{ inputs.service_name }}"
+          echo "   Command executed: $GCLOUD_CMD"
+          
+          # Try to list all services to help debug
+          echo "📋 Available services:"
+          gcloud app services list --project="${{ inputs.project_id }}" --format="value(id)" 2>/dev/null || echo "   Could not list services"
+          
+          # Try to list versions without filters
+          echo "📋 All versions for service '${{ inputs.service_name }}':"
+          gcloud app versions list --service="${{ inputs.service_name }}" --project="${{ inputs.project_id }}" --format="table(version.id,version.createTime,serving.status)" 2>/dev/null || echo "   Could not list versions"
+          
+          exit 1
+        fi
+        
+        echo "🚀 Found deployed version: $DEPLOYED_VERSION"
+        
+        # Get detailed version information
+        echo "📊 Getting detailed version information..."
+        VERSION_INFO=$(gcloud app versions describe "$DEPLOYED_VERSION" \
+          --service="${{ inputs.service_name }}" \
+          --project="${{ inputs.project_id }}" \
+          --format="json" 2>/dev/null || echo "{}")
+        
+        # Extract creation time if available
+        CREATED_TIME=$(echo "$VERSION_INFO" | jq -r '.createTime // "unknown"' 2>/dev/null || echo "unknown")
+        
+        if [[ "$CREATED_TIME" != "unknown" && "$CREATED_TIME" != "null" ]]; then
+          echo "📅 Version created: $CREATED_TIME"
+        fi
+        
+        # Validate the version format (basic sanity check)
+        if [[ ! "$DEPLOYED_VERSION" =~ ^[a-zA-Z0-9-]+$ ]]; then
+          echo "⚠️ Warning: Version ID '$DEPLOYED_VERSION' has unusual format"
+        fi
+        
+        echo "✅ Successfully retrieved deployed version information"
+        
+        # Set outputs
+        echo "version=$DEPLOYED_VERSION" >> "$GITHUB_OUTPUT"
+        echo "created_time=$CREATED_TIME" >> "$GITHUB_OUTPUT"
+        
+        # Set version info as multiline output
+        echo "version_info<<EOF" >> "$GITHUB_OUTPUT"
+        echo "$VERSION_INFO" >> "$GITHUB_OUTPUT"
+        echo "EOF" >> "$GITHUB_OUTPUT"
+
+branding:
+  icon: 'cloud'
+  color: 'blue'

@@ -1,0 +1,73 @@
+name: GCP Promote GAE Traffic
+description: Promotes GAE version to production with warmup fallback handling
+
+inputs:
+  project_id:
+    description: 'GCP Project ID'
+    required: true
+  service_name:
+    description: 'GAE Service Name'
+    required: true
+    default: 'default'
+  version:
+    description: 'Version to promote to production'
+    required: true
+
+outputs:
+  promotion_successful:
+    description: 'Whether promotion was successful (true/false)'
+    value: ${{ steps.promote.outputs.promotion_successful }}
+
+runs:
+  using: composite
+  steps:
+    - id: promote
+      name: Promote version to production
+      shell: bash
+      run: |
+        echo "🚀 Promoting version ${{ inputs.version }} to production..."
+        
+        PROJECT_ID="${{ inputs.project_id }}"
+        SERVICE_NAME="${{ inputs.service_name }}"
+        VERSION="${{ inputs.version }}"
+        
+        echo "🔍 Checking current traffic allocation..."
+        gcloud app versions list \
+          --service="$SERVICE_NAME" \
+          --project="$PROJECT_ID" \
+          --format="table(version.id,traffic_split)"
+        
+        # Try migrate first (works if warmup is enabled)
+        echo "🔄 Attempting traffic migration..."
+        if gcloud app versions migrate "$VERSION" \
+           --service="$SERVICE_NAME" \
+           --project="$PROJECT_ID" \
+           --quiet 2>/dev/null; then
+          echo "✅ Traffic migration successful"
+          echo "promotion_successful=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "⚠️ Migration failed, trying alternative approach..."
+          echo "🔄 Setting traffic allocation to 100% for new version..."
+          
+          # Alternative: Set traffic allocation directly
+          if gcloud app services set-traffic "$SERVICE_NAME" \
+             --splits="$VERSION=1" \
+             --project="$PROJECT_ID" \
+             --quiet; then
+            echo "✅ Traffic allocation updated successfully"
+            echo "promotion_successful=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "❌ Both migration and traffic allocation failed"
+            echo "promotion_successful=false" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+        fi
+        
+        echo "📈 Final traffic allocation:"
+        gcloud app versions list \
+          --service="$SERVICE_NAME" \
+          --project="$PROJECT_ID" \
+          --format="table(version.id,traffic_split)" \
+          --filter="traffic_split>0"
+        
+        echo "✅ Version promotion completed successfully"

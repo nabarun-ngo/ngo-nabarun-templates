@@ -1,0 +1,252 @@
+name: Validate and Find File
+description: Generic file validation and path resolution with flexible patterns and exclusions
+
+inputs:
+  search_directory:
+    description: 'Directory to search for files'
+    required: true
+  file_pattern:
+    description: 'File pattern to search for (e.g., "*.jar", "*.war", "*.zip")'
+    required: true
+  exclude_patterns:
+    description: 'Comma-separated list of patterns to exclude (e.g., "sources,javadoc,test")'
+    required: false
+    default: ''
+  file_type:
+    description: 'Human-readable file type for logging (e.g., "JAR", "WAR", "ZIP")'
+    required: false
+    default: 'file'
+  allow_multiple:
+    description: 'Allow multiple files to be found (true/false)'
+    required: false
+    default: 'false'
+  selection_strategy:
+    description: 'Strategy when multiple files found: "first", "last", "largest", "newest"'
+    required: false
+    default: 'first'
+  validate_file:
+    description: 'Perform additional file validation (true/false)'
+    required: false
+    default: 'true'
+  custom_validation_command:
+    description: 'Custom command to validate the file (optional)'
+    required: false
+
+outputs:
+  file_path:
+    description: 'Full path to the selected file'
+    value: ${{ steps.find.outputs.file_path }}
+  file_name:
+    description: 'Name of the selected file'
+    value: ${{ steps.find.outputs.file_name }}
+  file_size:
+    description: 'Human-readable size of the file'
+    value: ${{ steps.find.outputs.file_size }}
+  files_found_count:
+    description: 'Total number of files found matching the pattern'
+    value: ${{ steps.find.outputs.files_found_count }}
+  all_files_found:
+    description: 'All files found matching the pattern (newline-separated)'
+    value: ${{ steps.find.outputs.all_files_found }}
+
+runs:
+  using: composite
+  steps:
+    - id: find
+      name: Find and validate file
+      shell: bash
+      run: |
+        echo "🔍 Searching for ${{ inputs.file_type }} files..."
+        echo "📂 Search directory: ${{ inputs.search_directory }}"
+        echo "🔍 File pattern: ${{ inputs.file_pattern }}"
+        echo "🚫 Exclude patterns: ${{ inputs.exclude_patterns }}"
+        
+        # Check if search directory exists
+        if [[ ! -d "${{ inputs.search_directory }}" ]]; then
+          echo "❌ Search directory not found: ${{ inputs.search_directory }}"
+          echo "📁 Available directories in current path:"
+          ls -la . || echo "No directories found"
+          exit 1
+        fi
+        
+        # Build the find command
+        FIND_CMD="find \"${{ inputs.search_directory }}\" -name \"${{ inputs.file_pattern }}\" -type f"
+        
+        # Add exclusions if provided
+        EXCLUDE_PATTERNS="${{ inputs.exclude_patterns }}"
+        if [[ -n "$EXCLUDE_PATTERNS" && "$EXCLUDE_PATTERNS" != "" ]]; then
+          IFS=',' read -ra EXCLUDE_ARRAY <<< "$EXCLUDE_PATTERNS"
+          for exclude in "${EXCLUDE_ARRAY[@]}"; do
+            # Trim whitespace
+            exclude=$(echo "$exclude" | xargs)
+            FIND_CMD="$FIND_CMD | grep -v \"$exclude\""
+          done
+        fi
+        
+        # Sort the results
+        FIND_CMD="$FIND_CMD | sort"
+        
+        echo "🔍 Search command: $FIND_CMD"
+        
+        # Execute the search
+        FILES_FOUND=($(eval $FIND_CMD))
+        FILES_COUNT=${#FILES_FOUND[@]}
+        
+        echo "📊 Found $FILES_COUNT ${{ inputs.file_type }} files"
+        
+        # Check if any files were found
+        if [[ $FILES_COUNT -eq 0 ]]; then
+          echo "❌ No ${{ inputs.file_type }} files found matching pattern: ${{ inputs.file_pattern }}"
+          echo "📁 Directory contents:"
+          ls -la "${{ inputs.search_directory }}" || echo "Directory is empty or inaccessible"
+          exit 1
+        fi
+        
+        # Handle multiple files based on allow_multiple setting
+        if [[ $FILES_COUNT -gt 1 ]]; then
+          if [[ "${{ inputs.allow_multiple }}" != "true" ]]; then
+            echo "⚠️ Multiple ${{ inputs.file_type }} files found:"
+            printf '%s\n' "${FILES_FOUND[@]}"
+            echo "📋 Selection strategy: ${{ inputs.selection_strategy }}"
+          else
+            echo "✅ Multiple ${{ inputs.file_type }} files found (allowed):"
+            printf '%s\n' "${FILES_FOUND[@]}"
+          fi
+        fi
+        
+        # Select the file based on strategy
+        case "${{ inputs.selection_strategy }}" in
+          "first")
+            SELECTED_FILE="${FILES_FOUND[0]}"
+            echo "📄 Selected first file: $SELECTED_FILE"
+            ;;
+          "last")
+            SELECTED_FILE="${FILES_FOUND[-1]}"
+            echo "📄 Selected last file: $SELECTED_FILE"
+            ;;
+          "largest")
+            echo "📊 Finding largest file..."
+            LARGEST_FILE=""
+            LARGEST_SIZE=0
+            for file in "${FILES_FOUND[@]}"; do
+              if [[ -f "$file" ]]; then
+                SIZE=$(stat -f%z "$file" 2>/dev/null || stat -c%s "$file" 2>/dev/null || echo "0")
+                if [[ $SIZE -gt $LARGEST_SIZE ]]; then
+                  LARGEST_SIZE=$SIZE
+                  LARGEST_FILE="$file"
+                fi
+              fi
+            done
+            SELECTED_FILE="$LARGEST_FILE"
+            echo "📄 Selected largest file: $SELECTED_FILE ($(du -h "$SELECTED_FILE" | cut -f1))"
+            ;;
+          "newest")
+            echo "📊 Finding newest file..."
+            NEWEST_FILE=""
+            NEWEST_TIME=0
+            for file in "${FILES_FOUND[@]}"; do
+              if [[ -f "$file" ]]; then
+                MTIME=$(stat -f%m "$file" 2>/dev/null || stat -c%Y "$file" 2>/dev/null || echo "0")
+                if [[ $MTIME -gt $NEWEST_TIME ]]; then
+                  NEWEST_TIME=$MTIME
+                  NEWEST_FILE="$file"
+                fi
+              fi
+            done
+            SELECTED_FILE="$NEWEST_FILE"
+            echo "📄 Selected newest file: $SELECTED_FILE"
+            ;;
+          *)
+            SELECTED_FILE="${FILES_FOUND[0]}"
+            echo "⚠️ Unknown selection strategy '${{ inputs.selection_strategy }}', using first file: $SELECTED_FILE"
+            ;;
+        esac
+        
+        # Validate the selected file exists and is not empty
+        if [[ ! -f "$SELECTED_FILE" ]]; then
+          echo "❌ Selected file does not exist: $SELECTED_FILE"
+          exit 1
+        fi
+        
+        if [[ ! -s "$SELECTED_FILE" ]]; then
+          echo "❌ Selected file is empty: $SELECTED_FILE"
+          exit 1
+        fi
+        
+        # Perform validation if enabled
+        if [[ "${{ inputs.validate_file }}" == "true" ]]; then
+          echo "🔍 Validating file: $SELECTED_FILE"
+          
+          # Custom validation command if provided
+          if [[ -n "${{ inputs.custom_validation_command }}" ]]; then
+            echo "🧪 Running custom validation: ${{ inputs.custom_validation_command }}"
+            if eval "${{ inputs.custom_validation_command }} \"$SELECTED_FILE\""; then
+              echo "✅ Custom validation passed"
+            else
+              echo "❌ Custom validation failed"
+              exit 1
+            fi
+          else
+            # Default validation based on file type
+            case "${{ inputs.file_pattern }}" in
+              "*.jar")
+                if command -v jar >/dev/null 2>&1; then
+                  if jar tf "$SELECTED_FILE" >/dev/null 2>&1; then
+                    echo "✅ JAR file validation passed"
+                  else
+                    echo "❌ JAR file appears to be corrupted"
+                    exit 1
+                  fi
+                else
+                  echo "⚠️ 'jar' command not available, skipping JAR validation"
+                fi
+                ;;
+              "*.zip")
+                if command -v unzip >/dev/null 2>&1; then
+                  if unzip -t "$SELECTED_FILE" >/dev/null 2>&1; then
+                    echo "✅ ZIP file validation passed"
+                  else
+                    echo "❌ ZIP file appears to be corrupted"
+                    exit 1
+                  fi
+                else
+                  echo "⚠️ 'unzip' command not available, skipping ZIP validation"
+                fi
+                ;;
+              *)
+                echo "ℹ️ No specific validation available for pattern: ${{ inputs.file_pattern }}"
+                echo "✅ Basic file validation passed (exists and not empty)"
+                ;;
+            esac
+          fi
+        else
+          echo "ℹ️ File validation skipped"
+        fi
+        
+        # Get file information
+        FILE_NAME=$(basename "$SELECTED_FILE")
+        FILE_SIZE=$(du -h "$SELECTED_FILE" | cut -f1)
+        
+        echo "✅ ${{ inputs.file_type }} file validation completed successfully"
+        echo "📄 Selected file: $SELECTED_FILE"
+        echo "📝 File name: $FILE_NAME"
+        echo "📦 File size: $FILE_SIZE"
+        
+        # Set outputs
+        echo "file_path=$SELECTED_FILE" >> "$GITHUB_OUTPUT"
+        echo "file_name=$FILE_NAME" >> "$GITHUB_OUTPUT"
+        echo "file_size=$FILE_SIZE" >> "$GITHUB_OUTPUT"
+        echo "files_found_count=$FILES_COUNT" >> "$GITHUB_OUTPUT"
+        
+        # Export all found files (newline-separated)
+        ALL_FILES=""
+        for file in "${FILES_FOUND[@]}"; do
+          if [[ -n "$ALL_FILES" ]]; then
+            ALL_FILES="${ALL_FILES}\n${file}"
+          else
+            ALL_FILES="$file"
+          fi
+        done
+        echo "all_files_found<<EOF" >> "$GITHUB_OUTPUT"
+        echo -e "$ALL_FILES" >> "$GITHUB_OUTPUT"
+        echo "EOF" >> "$GITHUB_OUTPUT"

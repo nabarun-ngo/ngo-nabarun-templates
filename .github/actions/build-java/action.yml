@@ -1,44 +1,199 @@
 name: 'Java Build and Test'
-description: 'Build and test a Java project.'
+description: 'Build and test a Java Maven project with comprehensive caching and error handling'
+author: 'Nabarun NGO'
+
 inputs:
   java_version:
-    description: 'Java version'
+    description: 'Java version to use (e.g., 17, 11, 8)'
     required: false
     default: '17'
   working_directory:
-    description: 'Directory where the code resides'
+    description: 'Directory where the Maven project resides'
     required: false
     default: '.'
-  command:
-    description: 'Command to run (e.g., mvn clean test)'
-    required: true
+  maven_command:
+    description: 'Maven command to run (e.g., "clean package", "clean test")'
+    required: false
+    default: 'clean package'
+  maven_options:
+    description: 'Additional Maven options/flags'
+    required: false
+    default: '-Dmaven.test.skip=true -Dmaven.javadoc.skip=true'
+  build_timeout_minutes:
+    description: 'Timeout for the build step in minutes'
+    required: false
+    default: '15'
+  upload_test_results:
+    description: 'Whether to upload test results as artifacts'
+    required: false
+    default: 'true'
+  test_results_artifact_name:
+    description: 'Name for the test results artifact'
+    required: false
+    default: 'java-test-results'
+  enable_cache:
+    description: 'Whether to enable Maven dependency caching'
+    required: false
+    default: 'true'
+  cache_key_prefix:
+    description: 'Prefix for Maven cache key'
+    required: false
+    default: 'maven'
+
+outputs:
+  build_status:
+    description: 'Status of the build (success/failure)'
+    value: ${{ steps.build.outputs.status }}
+  build_time:
+    description: 'Build duration in seconds'
+    value: ${{ steps.build.outputs.duration }}
+  maven_version:
+    description: 'Maven version used for the build'
+    value: ${{ steps.setup.outputs.maven_version }}
+
 runs:
   using: 'composite'
   steps:
+    - name: Setup Java and Maven
+      id: setup
+      shell: bash
+      run: |
+        echo "🚀 Setting up Java ${{ inputs.java_version }} and Maven environment..."
+        echo "📂 Working directory: ${{ inputs.working_directory }}"
+        
+        # Validate working directory
+        if [[ ! -d "${{ inputs.working_directory }}" ]]; then
+          echo "❌ Working directory does not exist: ${{ inputs.working_directory }}"
+          exit 1
+        fi
+        
+        # Check for pom.xml
+        if [[ ! -f "${{ inputs.working_directory }}/pom.xml" ]]; then
+          echo "❌ pom.xml not found in ${{ inputs.working_directory }}"
+          echo "📁 Directory contents:"
+          ls -la "${{ inputs.working_directory }}" || echo "Could not list directory"
+          exit 1
+        fi
+        
+        echo "✅ Maven project detected (pom.xml found)"
+        
+        # Get Maven version (will be set up in next step)
+        echo "maven_version=unknown" >> "$GITHUB_OUTPUT"
+    
     - name: Set up Java
       uses: actions/setup-java@v4
       with:
         distribution: 'temurin'
         java-version: ${{ inputs.java_version }}
-        cache: maven
-    - name: Install Maven
+
+    - name: Cache Maven dependencies
+      if: inputs.enable_cache == 'true'
+      uses: actions/cache@v4
+      with:
+        path: ~/.m2/repository
+        key: ${{ inputs.cache_key_prefix }}-${{ runner.os }}-java${{ inputs.java_version }}-${{ hashFiles(format('{0}/**/pom.xml', inputs.working_directory)) }}
+        restore-keys: |
+          ${{ inputs.cache_key_prefix }}-${{ runner.os }}-java${{ inputs.java_version }}-
+          ${{ inputs.cache_key_prefix }}-${{ runner.os }}-
+
+    - name: Verify Maven installation
+      shell: bash
       run: |
-        sudo apt-get update
-        sudo apt-get install -y maven
-        mvn -version
-    - name: Run Build and Test Command
+        echo "🔍 Verifying Maven installation..."
+        
+        if ! command -v mvn >/dev/null 2>&1; then
+          echo "⚠️ Maven not found in PATH, installing..."
+          if [[ "$RUNNER_OS" == "Linux" ]]; then
+            sudo apt-get update
+            sudo apt-get install -y maven
+          else
+            echo "❌ Maven installation not supported for $RUNNER_OS"
+            echo "Please use a runner with Maven pre-installed or add Maven setup to your workflow"
+            exit 1
+          fi
+        fi
+        
+        MVN_VERSION=$(mvn -version | head -n 1 | cut -d' ' -f3)
+        echo "✅ Maven $MVN_VERSION is available"
+        echo "maven_version=$MVN_VERSION" >> "$GITHUB_OUTPUT"
+        
+        # Display Java version for verification
+        echo "☕ Java version:"
+        java -version
+
+    - name: Build with Maven
+      id: build
+      shell: bash
+      timeout-minutes: ${{ fromJSON(inputs.build_timeout_minutes) }}
       working-directory: ${{ inputs.working_directory }}
       run: |
-        echo "Running: ${{ inputs.command }}"
-        ${{ inputs.command }}
-    - name: Upload Java Test Results
-      if: always()
+        echo "🔨 Building with Maven..."
+        echo "📝 Maven command: ${{ inputs.maven_command }}"
+        echo "📝 Maven options: ${{ inputs.maven_options }}"
+        
+        # Record start time
+        BUILD_START=$(date +%s)
+        
+        # Build the full Maven command
+        MVN_CMD="mvn ${{ inputs.maven_command }}"
+        if [[ -n "${{ inputs.maven_options }}" ]]; then
+          MVN_CMD="$MVN_CMD ${{ inputs.maven_options }}"
+        fi
+        
+        # Add standard flags for CI
+        MVN_CMD="$MVN_CMD -B -V -Duser.timezone=UTC"
+        
+        echo "🔧 Executing: $MVN_CMD"
+        
+        # Run Maven with error handling
+        if eval "$MVN_CMD"; then
+          BUILD_END=$(date +%s)
+          BUILD_DURATION=$((BUILD_END - BUILD_START))
+          
+          echo "✅ Maven build completed successfully in ${BUILD_DURATION}s"
+          echo "status=success" >> "$GITHUB_OUTPUT"
+          echo "duration=$BUILD_DURATION" >> "$GITHUB_OUTPUT"
+        else
+          BUILD_END=$(date +%s)
+          BUILD_DURATION=$((BUILD_END - BUILD_START))
+          
+          echo "❌ Maven build failed after ${BUILD_DURATION}s"
+          echo "status=failure" >> "$GITHUB_OUTPUT"
+          echo "duration=$BUILD_DURATION" >> "$GITHUB_OUTPUT"
+          
+          # Enhanced error reporting
+          echo "📝 Build failure diagnostics:"
+          echo "   Working directory: $(pwd)"
+          echo "   Maven version: $(mvn -version | head -n 1)"
+          echo "   Java version: $(java -version 2>&1 | head -n 1)"
+          echo "   Command executed: $MVN_CMD"
+          
+          # Try to show recent logs
+          if [[ -f "~/.m2/repository/.metadata/.log" ]]; then
+            echo "📋 Last 50 lines of Maven log:"
+            tail -50 ~/.m2/repository/.metadata/.log 2>/dev/null || echo "Could not read Maven log"
+          fi
+          
+          # Show target directory contents for debugging
+          if [[ -d "target" ]]; then
+            echo "📁 Target directory contents:"
+            ls -la target/ 2>/dev/null || echo "Could not list target directory"
+          fi
+          
+          exit 1
+        fi
+
+    - name: Upload test results
+      if: always() && inputs.upload_test_results == 'true'
       uses: actions/upload-artifact@v4
       with:
-        name: java-test-results
-        path: ${{ inputs.working_directory }}/target/surefire-reports
-    - name: Check Java Build Status
-      id: check
-      run: |
-        echo "✅ Java Build and Tests Successful"
-        echo "status=success" >> "$GITHUB_OUTPUT"
+        name: ${{ inputs.test_results_artifact_name }}
+        path: |
+          ${{ inputs.working_directory }}/target/surefire-reports/
+          ${{ inputs.working_directory }}/target/failsafe-reports/
+        if-no-files-found: ignore
+        retention-days: 7
+
+branding:
+  icon: 'coffee'
+  color: 'orange'

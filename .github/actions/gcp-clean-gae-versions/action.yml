@@ -1,0 +1,90 @@
+name: GCP Clean Old GAE Versions
+description: Cleans up old GAE versions keeping only the specified number of recent versions
+
+inputs:
+  project_id:
+    description: 'GCP Project ID'
+    required: true
+  service_name:
+    description: 'GAE Service Name'
+    required: true
+    default: 'default'
+  keep_versions:
+    description: 'Number of versions to keep'
+    required: false
+    default: '1'
+
+outputs:
+  versions_deleted:
+    description: 'Number of versions actually deleted'
+    value: ${{ steps.cleanup.outputs.versions_deleted }}
+  total_versions_found:
+    description: 'Total number of versions found before cleanup'
+    value: ${{ steps.cleanup.outputs.total_versions_found }}
+
+runs:
+  using: composite
+  steps:
+    - id: cleanup
+      name: Clean old GAE versions
+      shell: bash
+      run: |
+        echo "🧹 Cleaning old GAE versions..."
+        
+        PROJECT="${{ inputs.project_id }}"
+        SERVICE="${{ inputs.service_name }}"
+        KEEP=${{ inputs.keep_versions }}
+        
+        echo "📊 Configuration: Keep $KEEP versions for service '$SERVICE'"
+        
+        # Get all versions sorted by creation time (newest first)
+        VERSIONS=$(gcloud app versions list \
+          --service="$SERVICE" \
+          --project="$PROJECT" \
+          --format="value(version.id)" \
+          --sort-by=~version.createTime 2>/dev/null || echo "")
+        
+        if [[ -z "$VERSIONS" ]]; then
+          echo "ℹ️ No versions found for service $SERVICE"
+          echo "total_versions_found=0" >> "$GITHUB_OUTPUT"
+          echo "versions_deleted=0" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+        
+        # Count total versions
+        VERSION_ARRAY=($VERSIONS)
+        VERSION_COUNT=${#VERSION_ARRAY[@]}
+        
+        echo "📈 Total versions found: $VERSION_COUNT"
+        echo "📋 All versions: ${VERSION_ARRAY[*]}"
+        echo "total_versions_found=$VERSION_COUNT" >> "$GITHUB_OUTPUT"
+        
+        if [[ $VERSION_COUNT -le $KEEP ]]; then
+          echo "✅ No cleanup needed (keeping $KEEP, found $VERSION_COUNT)"
+          echo "versions_deleted=0" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+        
+        # Calculate versions to delete
+        DELETE_COUNT=$((VERSION_COUNT - KEEP))
+        echo "🗑️ Will delete $DELETE_COUNT old versions"
+        
+        # Delete old versions (skip the first KEEP versions)
+        DELETED_COUNT=0
+        for ((i=$KEEP; i<$VERSION_COUNT; i++)); do
+          VERSION="${VERSION_ARRAY[$i]}"
+          echo "🗑️ Deleting version: $VERSION"
+          
+          if gcloud app versions delete "$VERSION" \
+             --service="$SERVICE" \
+             --project="$PROJECT" \
+             --quiet 2>/dev/null; then
+            echo "✅ Successfully deleted $VERSION"
+            DELETED_COUNT=$((DELETED_COUNT + 1))
+          else
+            echo "⚠️ Failed to delete $VERSION (may be serving traffic)"
+          fi
+        done
+        
+        echo "📊 Cleanup summary: $DELETED_COUNT/$DELETE_COUNT versions deleted"
+        echo "versions_deleted=$DELETED_COUNT" >> "$GITHUB_OUTPUT"

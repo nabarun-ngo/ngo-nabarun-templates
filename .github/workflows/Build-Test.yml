@@ -1,4 +1,4 @@
-name: Build
+name: Build and Test
 on:
   workflow_call:
     inputs:
@@ -15,7 +15,7 @@ on:
         required: false
         type: string
       command:
-        description: "Command to run (e.g., npm run build, mvn clean test)"
+        description: "Build command to run (e.g., 'npm run build', 'clean test', 'clean package')"
         required: true
         type: string
       node_version:
@@ -33,6 +33,11 @@ on:
         required: false
         type: string
         default: "."
+      maven_options:
+        description: "Additional Maven options (for Java apps)"
+        required: false
+        type: string
+        default: "-Dmaven.test.skip=false"
 
 
 jobs:
@@ -62,4 +67,8 @@ jobs:
         with:
           java_version: ${{ inputs.java_version }}
           working_directory: ${{ inputs.working_directory }}
-          command: ${{ inputs.command }}
+          maven_command: ${{ inputs.command }}
+          maven_options: ${{ inputs.maven_options }}
+          enable_cache: 'true'
+          upload_test_results: 'true'
+          build_timeout_minutes: '20'

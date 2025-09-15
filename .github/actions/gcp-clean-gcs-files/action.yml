@@ -1,0 +1,241 @@
+name: 'GCP Clean GCS Files'
+description: 'Clean old files from Google Cloud Storage buckets based on age criteria'
+author: 'Nabarun NGO'
+
+inputs:
+  project_id:
+    description: 'GCP Project ID where the buckets are located'
+    required: true
+  keep_days:
+    description: 'Number of days to keep files (delete files older than this)'
+    required: false
+    default: '5'
+  bucket_patterns:
+    description: 'Comma-separated list of bucket name patterns to clean'
+    required: false
+    default: 'auto'
+  dry_run:
+    description: 'Run in dry-run mode (list files to delete without actually deleting)'
+    required: false
+    default: 'false'
+  timeout_minutes:
+    description: 'Timeout for the cleanup operation in minutes'
+    required: false
+    default: '10'
+  include_subdirectories:
+    description: 'Include files in subdirectories (recursive)'
+    required: false
+    default: 'true'
+  custom_bucket_names:
+    description: 'Comma-separated list of specific bucket names to clean (overrides patterns)'
+    required: false
+    default: ''
+  file_pattern:
+    description: 'File pattern to match (e.g., "*.log", "temp/*")'
+    required: false
+    default: '**'
+
+outputs:
+  files_deleted:
+    description: 'Total number of files deleted'
+    value: ${{ steps.cleanup.outputs.files_deleted }}
+  buckets_processed:
+    description: 'Number of buckets processed'
+    value: ${{ steps.cleanup.outputs.buckets_processed }}
+  cleanup_summary:
+    description: 'Detailed summary of the cleanup operation'
+    value: ${{ steps.cleanup.outputs.cleanup_summary }}
+  errors_encountered:
+    description: 'Number of errors encountered during cleanup'
+    value: ${{ steps.cleanup.outputs.errors_encountered }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Clean old GCS files
+      id: cleanup
+      shell: bash
+      run: |
+        echo "🧹 Starting GCS file cleanup operation..."
+        echo "📝 Project ID: ${{ inputs.project_id }}"
+        echo "🗓️ Keep files newer than: ${{ inputs.keep_days }} days"
+        echo "🔄 Dry run mode: ${{ inputs.dry_run }}"
+        echo "📁 File pattern: ${{ inputs.file_pattern }}"
+        
+        # Validate required tools
+        if ! command -v gcloud >/dev/null 2>&1; then
+          echo "❌ gcloud CLI not found. Please ensure Google Cloud CLI is installed and authenticated."
+          exit 1
+        fi
+        
+        PROJECT="${{ inputs.project_id }}"
+        KEEP_DAYS="${{ inputs.keep_days }}"
+        DRY_RUN="${{ inputs.dry_run }}"
+        FILE_PATTERN="${{ inputs.file_pattern }}"
+        
+        # Validate inputs
+        if [[ ! "$KEEP_DAYS" =~ ^[0-9]+$ ]] || [[ "$KEEP_DAYS" -lt 1 ]]; then
+          echo "❌ Invalid keep_days value: $KEEP_DAYS. Must be a positive integer."
+          exit 1
+        fi
+        
+        # Calculate cutoff date in epoch format
+        CUTOFF_EPOCH=$(date -d "$KEEP_DAYS days ago" +%s)
+        CUTOFF_DATE=$(date -d "$KEEP_DAYS days ago" "+%Y-%m-%d")
+        echo "📅 Cutoff date: $CUTOFF_DATE (files older than this will be deleted)"
+        
+        # Determine bucket list
+        if [[ -n "${{ inputs.custom_bucket_names }}" ]]; then
+          echo "🎯 Using custom bucket names: ${{ inputs.custom_bucket_names }}"
+          IFS=',' read -ra BUCKET_PATTERNS <<< "${{ inputs.custom_bucket_names }}"
+        elif [[ "${{ inputs.bucket_patterns }}" == "auto" ]]; then
+          echo "🔍 Using automatic GAE bucket patterns for project: $PROJECT"
+          BUCKET_PATTERNS=(
+            "staging.$PROJECT.appspot.com"
+            "$PROJECT.appspot.com" 
+            "artifacts.$PROJECT.appspot.com"
+            "$PROJECT-staging"
+            "$PROJECT-artifacts"
+            "$PROJECT-gcf-artifacts"
+            "$PROJECT-gcf-staging"
+            "$PROJECT-build-cache"
+          )
+        else
+          echo "🎯 Using custom bucket patterns: ${{ inputs.bucket_patterns }}"
+          IFS=',' read -ra BUCKET_PATTERNS <<< "${{ inputs.bucket_patterns }}"
+        fi
+        
+        # Initialize counters
+        TOTAL_FILES_DELETED=0
+        TOTAL_BUCKETS_PROCESSED=0
+        TOTAL_ERRORS=0
+        CLEANUP_SUMMARY=""
+        
+        # Process each bucket
+        for BUCKET_NAME in "${BUCKET_PATTERNS[@]}"; do
+          # Trim whitespace
+          BUCKET_NAME=$(echo "$BUCKET_NAME" | xargs)
+          
+          if [[ -z "$BUCKET_NAME" ]]; then
+            continue
+          fi
+          
+          echo ""
+          echo "🔍 Checking bucket: gs://$BUCKET_NAME"
+          
+          # Check if bucket exists and is accessible
+          if ! gcloud storage buckets describe "gs://$BUCKET_NAME" \
+             --project="$PROJECT" >/dev/null 2>&1; then
+            echo "ℹ️ Bucket gs://$BUCKET_NAME not found or not accessible"
+            CLEANUP_SUMMARY="${CLEANUP_SUMMARY}❌ gs://$BUCKET_NAME: Not found or not accessible\n"
+            continue
+          fi
+          
+          TOTAL_BUCKETS_PROCESSED=$((TOTAL_BUCKETS_PROCESSED + 1))
+          echo "📦 Processing bucket: gs://$BUCKET_NAME"
+          
+          BUCKET_FILES_DELETED=0
+          BUCKET_ERRORS=0
+          
+          # Build the storage list command
+          if [[ "${{ inputs.include_subdirectories }}" == "true" ]]; then
+            STORAGE_PATH="gs://$BUCKET_NAME/$FILE_PATTERN"
+          else
+            STORAGE_PATH="gs://$BUCKET_NAME/$FILE_PATTERN"
+          fi
+          
+          echo "🔧 Listing files: gcloud storage ls -l \"$STORAGE_PATH\""
+          
+          # Process files in the bucket
+          while IFS= read -r line; do
+            # Skip empty lines and headers
+            if [[ -z "$line" || "$line" =~ ^[[:space:]]*TOTAL: || "$line" =~ ^[[:space:]]*gs:// ]]; then
+              continue
+            fi
+            
+            # Parse gcloud storage ls -l output format
+            # Format: size date time filename
+            if [[ $line =~ ^[[:space:]]*([0-9,]+)[[:space:]]+([0-9]{4}-[0-9]{2}-[0-9]{2})T([0-9]{2}:[0-9]{2}:[0-9]{2})[^[:space:]]*[[:space:]]+(gs://.+)$ ]]; then
+              FILE_SIZE="${BASH_REMATCH[1]}"
+              FILE_DATE="${BASH_REMATCH[2]}"
+              FILE_TIME="${BASH_REMATCH[3]}"
+              FILE_PATH="${BASH_REMATCH[4]}"
+              
+              # Convert file date to epoch for comparison
+              FILE_EPOCH=$(date -d "$FILE_DATE $FILE_TIME" +%s 2>/dev/null || echo "0")
+              
+              if [[ $FILE_EPOCH -gt 0 && $FILE_EPOCH -lt $CUTOFF_EPOCH ]]; then
+                FILE_AGE_DAYS=$(( (CUTOFF_EPOCH - FILE_EPOCH) / 86400 + KEEP_DAYS ))
+                
+                if [[ "$DRY_RUN" == "true" ]]; then
+                  echo "🔍 [DRY RUN] Would delete: $FILE_PATH (${FILE_AGE_DAYS} days old, ${FILE_SIZE} bytes)"
+                  BUCKET_FILES_DELETED=$((BUCKET_FILES_DELETED + 1))
+                else
+                  echo "🗑️ Deleting: $FILE_PATH (${FILE_AGE_DAYS} days old, ${FILE_SIZE} bytes)"
+                  
+                  if gcloud storage rm "$FILE_PATH" --project="$PROJECT" 2>/dev/null; then
+                    BUCKET_FILES_DELETED=$((BUCKET_FILES_DELETED + 1))
+                  else
+                    echo "⚠️ Failed to delete: $FILE_PATH"
+                    BUCKET_ERRORS=$((BUCKET_ERRORS + 1))
+                    TOTAL_ERRORS=$((TOTAL_ERRORS + 1))
+                  fi
+                fi
+              fi
+            fi
+          done < <(gcloud storage ls -l "$STORAGE_PATH" --project="$PROJECT" 2>/dev/null || true)
+          
+          # Summary for this bucket
+          if [[ $BUCKET_FILES_DELETED -eq 0 ]]; then
+            echo "✅ No files older than $KEEP_DAYS days found in gs://$BUCKET_NAME"
+            CLEANUP_SUMMARY="${CLEANUP_SUMMARY}✅ gs://$BUCKET_NAME: No old files found\n"
+          else
+            if [[ "$DRY_RUN" == "true" ]]; then
+              echo "📊 [DRY RUN] Would delete $BUCKET_FILES_DELETED files from gs://$BUCKET_NAME"
+              CLEANUP_SUMMARY="${CLEANUP_SUMMARY}🔍 gs://$BUCKET_NAME: $BUCKET_FILES_DELETED files would be deleted (dry run)\n"
+            else
+              echo "📊 Deleted $BUCKET_FILES_DELETED files from gs://$BUCKET_NAME"
+              CLEANUP_SUMMARY="${CLEANUP_SUMMARY}✅ gs://$BUCKET_NAME: $BUCKET_FILES_DELETED files deleted\n"
+            fi
+          fi
+          
+          if [[ $BUCKET_ERRORS -gt 0 ]]; then
+            echo "⚠️ Encountered $BUCKET_ERRORS errors in gs://$BUCKET_NAME"
+            CLEANUP_SUMMARY="${CLEANUP_SUMMARY}⚠️ gs://$BUCKET_NAME: $BUCKET_ERRORS errors encountered\n"
+          fi
+          
+          TOTAL_FILES_DELETED=$((TOTAL_FILES_DELETED + BUCKET_FILES_DELETED))
+        done
+        
+        # Final summary
+        echo ""
+        echo "📊 === CLEANUP SUMMARY ==="
+        if [[ "$DRY_RUN" == "true" ]]; then
+          echo "🔍 [DRY RUN] Would delete $TOTAL_FILES_DELETED files from $TOTAL_BUCKETS_PROCESSED buckets"
+        else
+          echo "✅ Deleted $TOTAL_FILES_DELETED files from $TOTAL_BUCKETS_PROCESSED buckets"
+        fi
+        
+        if [[ $TOTAL_ERRORS -gt 0 ]]; then
+          echo "⚠️ Total errors encountered: $TOTAL_ERRORS"
+        fi
+        
+        echo ""
+        echo "📋 Detailed summary:"
+        echo -e "$CLEANUP_SUMMARY"
+        
+        # Set outputs
+        echo "files_deleted=$TOTAL_FILES_DELETED" >> "$GITHUB_OUTPUT"
+        echo "buckets_processed=$TOTAL_BUCKETS_PROCESSED" >> "$GITHUB_OUTPUT"
+        echo "errors_encountered=$TOTAL_ERRORS" >> "$GITHUB_OUTPUT"
+        
+        # Set multiline summary
+        echo "cleanup_summary<<EOF" >> "$GITHUB_OUTPUT"
+        echo -e "$CLEANUP_SUMMARY" >> "$GITHUB_OUTPUT"
+        echo "EOF" >> "$GITHUB_OUTPUT"
+        
+        echo "🎉 GCS cleanup operation completed successfully!"
+
+branding:
+  icon: 'trash-2'
+  color: 'red'

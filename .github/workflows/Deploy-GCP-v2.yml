@@ -79,10 +79,8 @@ on:
       repo_token:
         required: true
 
-# Note: PROJECT_ID will be resolved from GitHub environment variables (vars.GCP_PROJECT_ID) 
-# in each step that needs it, with fallback to secrets.gcp_project_id
 
-jobs:  
+jobs:
   validate_inputs:
     name: 'Validate Deployment Inputs'
     runs-on: ubuntu-latest
@@ -156,7 +154,7 @@ jobs:
     if: needs.validate_inputs.outputs.validation_passed == 'true'
     timeout-minutes: 20
     outputs:
-      jar_name: ${{ steps.get-jar-path.outputs.jar_name }}
+      jar_name: ${{ steps.get-jar-path.outputs.file_name }}
     steps:
       - name: Checkout repository | Tag ${{ inputs.tag_name }}
         uses: actions/checkout@v4
@@ -166,95 +164,34 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.repo_token }}
     
-      - name: Set up Java
-        uses: actions/setup-java@v4
-        with:
-          java-version: ${{ inputs.java_version }}
-          distribution: 'temurin'
-
-      - name: Cache Maven dependencies
-        uses: actions/cache@v4
-        with:
-          path: ~/.m2/repository
-          key: maven-${{ runner.os }}-java${{ inputs.java_version }}-${{ hashFiles('**/pom.xml') }}
-          restore-keys: |
-            maven-${{ runner.os }}-java${{ inputs.java_version }}-
-            maven-${{ runner.os }}-
-        
       - name: Build with Maven
-        shell: bash
-        timeout-minutes: 15
-        run: |
-          echo "🔨 Building with Maven..."
-          echo "📝 Maven options: ${{ inputs.maven_options }}"
-          
-          mvn clean package ${{ inputs.maven_options }} \
-            -B -V \
-            -Duser.timezone=UTC \
-            || {
-              echo "❌ Maven build failed"
-              echo "📋 Last 50 lines of Maven output:"
-              tail -50 ~/.m2/repository/.metadata/.log 2>/dev/null || echo "No Maven log found"
-              exit 1
-            }
-          
-          echo "✅ Maven build completed successfully"
+        id: maven_build
+        uses: nabarun-ngo/ngo-nabarun-templates/.github/actions/build-java@main
+        with:
+          java_version: ${{ inputs.java_version }}
+          maven_command: 'clean package'
+          maven_options: ${{ inputs.maven_options }}
+          build_timeout_minutes: '15'
+          upload_test_results: 'false'
+          enable_cache: 'true'
+          cache_key_prefix: 'maven'
           
       - name: Validate and Get JAR file path
         id: get-jar-path
-        shell: bash
-        run: |
-          echo "🔍 Looking for JAR file in ${{ inputs.target_folder }}..."
-          
-          # Find the main JAR file (exclude sources, javadoc, tests)
-          JAR_FILES=($(find "${{ inputs.target_folder }}" -name "*.jar" -type f \
-            | grep -v "sources\.jar" \
-            | grep -v "javadoc\.jar" \
-            | grep -v "test\.jar" \
-            | sort))
-          
-          if [[ ${#JAR_FILES[@]} -eq 0 ]]; then
-            echo "❌ No JAR file found in ${{ inputs.target_folder }}"
-            echo "📁 Directory contents:"
-            ls -la "${{ inputs.target_folder }}" || echo "Target folder does not exist"
-            exit 1
-          fi
-          
-          # Use the first JAR file (typically the main one)
-          JAR_PATH="${JAR_FILES[0]}"
-          JAR_NAME=$(basename "$JAR_PATH")
-          
-          if [[ ${#JAR_FILES[@]} -gt 1 ]]; then
-            echo "⚠️ Multiple JAR files found, using: $JAR_PATH"
-            echo "📋 All JARs found:"
-            printf '%s\n' "${JAR_FILES[@]}"
-          fi
-          
-          # Verify JAR file is not empty and is valid
-          if [[ ! -s "$JAR_PATH" ]]; then
-            echo "❌ JAR file is empty: $JAR_PATH"
-            exit 1
-          fi
-          
-          # Basic JAR validation
-          if ! jar tf "$JAR_PATH" >/dev/null 2>&1; then
-            echo "❌ JAR file appears to be corrupted: $JAR_PATH"
-            exit 1
-          fi
-          
-          JAR_SIZE=$(du -h "$JAR_PATH" | cut -f1)
-          echo "✅ Found valid JAR file: $JAR_PATH"
-          echo "📦 JAR size: $JAR_SIZE"
-          echo "📝 JAR name: $JAR_NAME"
-          
-          # Output for next jobs
-          echo "jar_name=$JAR_NAME" >> "$GITHUB_OUTPUT"
+        uses: nabarun-ngo/ngo-nabarun-templates/.github/actions/validate-and-find-file@main
+        with:
+          search_directory: ${{ inputs.target_folder }}
+          file_pattern: '*.jar'
+          exclude_patterns: 'sources,javadoc,test'
+          file_type: 'JAR'
+          selection_strategy: 'first'
+          validate_file: 'true'
           
       - name: Upload JAR artifact
         uses: actions/upload-artifact@v4
         with:
           name: application-jar-${{ inputs.tag_name }}
-          path: ${{ inputs.target_folder }}/${{ steps.get-jar-path.outputs.jar_name }}
+          path: ${{ steps.get-jar-path.outputs.file_path }}
           retention-days: 1
           
       - name: Upload app.yaml artifact
@@ -328,107 +265,25 @@ jobs:
           
       - name: Get deployed version
         id: get_version
-        shell: bash
-        run: |
-          echo "🔍 Getting deployed version information..."
-          
-          PROJECT_ID="${{ secrets.gcp_project_id }}"
-          SERVICE_NAME="${{ inputs.gae_service_name }}"
-          
-          DEPLOYED_VERSION=$(gcloud app versions list \
-            --service="$SERVICE_NAME" \
-            --project="$PROJECT_ID" \
-            --format="value(version.id)" \
-            --limit=1 \
-            --sort-by=~version.createTime)
-          
-          if [[ -z "$DEPLOYED_VERSION" ]]; then
-            echo "❌ Could not determine deployed version"
-            exit 1
-          fi
-          
-          echo "🚀 Deployed version: $DEPLOYED_VERSION"
-          echo "version=$DEPLOYED_VERSION" >> "$GITHUB_OUTPUT"
+        uses: nabarun-ngo/ngo-nabarun-templates/.github/actions/gcp-get-deployed-version@main
+        with:
+          project_id: ${{ secrets.gcp_project_id }}
+          service_name: ${{ inputs.gae_service_name }}
           
       - name: Promote to production
-        shell: bash
+        uses: nabarun-ngo/ngo-nabarun-templates/.github/actions/gcp-promote-gae-traffic@main
         timeout-minutes: 10
-        run: |
-          echo "🚀 Promoting version ${{ steps.get_version.outputs.version }} to production..."
-          
-          PROJECT_ID="${{ secrets.gcp_project_id }}"
-          SERVICE_NAME="${{ inputs.gae_service_name }}"
-          VERSION="${{ steps.get_version.outputs.version }}"
-          
-          echo "🔍 Checking current traffic allocation..."
-          gcloud app versions list \
-            --service="$SERVICE_NAME" \
-            --project="$PROJECT_ID" \
-            --format="table(version.id,traffic_split)"
-          
-          # Try migrate first (works if warmup is enabled)
-          echo "🔄 Attempting traffic migration..."
-          if gcloud app versions migrate "$VERSION" \
-             --service="$SERVICE_NAME" \
-             --project="$PROJECT_ID" \
-             --quiet 2>/dev/null; then
-            echo "✅ Traffic migration successful"
-          else
-            echo "⚠️ Migration failed, trying alternative approach..."
-            echo "🔄 Setting traffic allocation to 100% for new version..."
-            
-            # Alternative: Set traffic allocation directly
-            gcloud app services set-traffic "$SERVICE_NAME" \
-              --splits="$VERSION=1" \
-              --project="$PROJECT_ID" \
-              --quiet
-            
-            echo "✅ Traffic allocation updated successfully"
-          fi
-          
-          echo "📈 Final traffic allocation:"
-          gcloud app versions list \
-            --service="$SERVICE_NAME" \
-            --project="$PROJECT_ID" \
-            --format="table(version.id,traffic_split)" \
-            --filter="traffic_split>0"
-          
-          echo "✅ Version promotion completed successfully"
+        with:
+          project_id: ${{ secrets.gcp_project_id }}
+          service_name: ${{ inputs.gae_service_name }}
+          version: ${{ steps.get_version.outputs.version }}
 
       - name: Health check deployment
         if: inputs.enable_health_check
-        shell: bash
+        uses: nabarun-ngo/ngo-nabarun-templates/.github/actions/gcp-health-check-deployment@main
         timeout-minutes: 5
-        run: |
-          echo "🏥 Performing deployment health check..."
-          
-          if [[ -n "${{ inputs.environment_url }}" ]]; then
-            MAX_ATTEMPTS=10
-            ATTEMPT=1
-            SUCCESS=false
-            
-            while [[ $ATTEMPT -le $MAX_ATTEMPTS ]]; do
-              echo "🔍 Health check attempt $ATTEMPT/$MAX_ATTEMPTS"
-              
-              if curl -f -s --max-time 30 "${{ inputs.environment_url }}/health" >/dev/null 2>&1 || \
-                 curl -f -s --max-time 30 "${{ inputs.environment_url }}" >/dev/null 2>&1; then
-                echo "✅ Health check passed on attempt $ATTEMPT"
-                SUCCESS=true
-                break
-              fi
-              
-              echo "⏳ Health check failed, waiting 15 seconds..."
-              sleep 15
-              ATTEMPT=$((ATTEMPT + 1))
-            done
-            
-            if [[ "$SUCCESS" != "true" ]]; then
-              echo "⚠️ Health check failed after $MAX_ATTEMPTS attempts"
-              echo "🔍 This doesn't necessarily mean deployment failed - the app might still be starting"
-            fi
-          else
-            echo "ℹ️ No environment URL provided, skipping HTTP health check"
-          fi
+        with:
+          environment_url: ${{ inputs.environment_url }}
 
       - name: Update deployment status (success)
         if: success()
@@ -456,6 +311,7 @@ jobs:
     name: 'Clean Up Old GCP Resources'
     runs-on: ubuntu-latest
     needs: [deploy_to_gcp]
+    environment: ${{ inputs.environment_name }}
     # Only run cleanup when deployment succeeds
     if: needs.deploy_to_gcp.result == 'success'
     timeout-minutes: 20
@@ -467,192 +323,23 @@ jobs:
           credentials_json: ${{ secrets.gcp_service_account }}
 
       - name: Clean Artifact Registry repositories
-        shell: bash
+        uses: nabarun-ngo/ngo-nabarun-templates/.github/actions/gcp-clean-artifact-registry@main
         continue-on-error: true
-        run: |
-          echo "🧹 Cleaning up Artifact Registry repositories..."
-          
-          PROJECT="${{ secrets.gcp_project_id }}"
-          
-          # Try to get region from GAE app
-          REGION=$(gcloud app describe --project="$PROJECT" --format="value(locationId)" 2>/dev/null || echo "")
-          
-          if [[ -z "$REGION" ]]; then
-            echo "⚠️ Could not determine region from App Engine"
-            # Try common regions instead of failing
-            REGIONS=("asia-south1" "us-central1" "europe-west1" "asia-northeast1")
-            echo "🔍 Will check common regions: ${REGIONS[*]}"
-          else
-            REGIONS=("$REGION")
-            echo "📍 Using App Engine region: $REGION"
-          fi
-          
-          TOTAL_DELETED=0
-          
-          for REGION in "${REGIONS[@]}"; do
-            echo "🔍 Checking region: $REGION"
-            
-            # List repositories with error handling
-            REPOS=$(gcloud artifacts repositories list \
-              --location="$REGION" \
-              --project="$PROJECT" \
-              --format="value(name)" 2>/dev/null || echo "")
-            
-            if [[ -n "$REPOS" ]]; then
-              echo "📋 Found repositories in $REGION:"
-              echo "$REPOS"
-              
-              for REPO in $REPOS; do
-                echo "🗑️ Deleting repository: $REPO"
-                if gcloud artifacts repositories delete "$REPO" \
-                   --location="$REGION" \
-                   --project="$PROJECT" \
-                   --quiet 2>/dev/null; then
-                  echo "✅ Successfully deleted $REPO"
-                  TOTAL_DELETED=$((TOTAL_DELETED + 1))
-                else
-                  echo "⚠️ Failed to delete $REPO (may not exist or no permissions)"
-                fi
-              done
-            else
-              echo "ℹ️ No repositories found in $REGION"
-            fi
-          done
-          
-          echo "📊 Cleanup summary: $TOTAL_DELETED repositories deleted"
+        with:
+          project_id: ${{ secrets.gcp_project_id }}
 
       - name: Clean old GAE versions
-        shell: bash
-        run: |
-          echo "🧹 Cleaning old GAE versions..."
-          
-          PROJECT="${{ secrets.gcp_project_id }}"
-          SERVICE="${{ inputs.gae_service_name }}"
-          KEEP=${{ inputs.keep_gae_versions }}
-          
-          echo "📊 Configuration: Keep $KEEP versions for service '$SERVICE'"
-          
-          # Get all versions sorted by creation time (newest first)
-          VERSIONS=$(gcloud app versions list \
-            --service="$SERVICE" \
-            --project="$PROJECT" \
-            --format="value(version.id)" \
-            --sort-by=~version.createTime 2>/dev/null || echo "")
-          
-          if [[ -z "$VERSIONS" ]]; then
-            echo "ℹ️ No versions found for service $SERVICE"
-            exit 0
-          fi
-          
-          # Count total versions
-          VERSION_ARRAY=($VERSIONS)
-          VERSION_COUNT=${#VERSION_ARRAY[@]}
-          
-          echo "📈 Total versions found: $VERSION_COUNT"
-          echo "📋 All versions: ${VERSION_ARRAY[*]}"
-          
-          if [[ $VERSION_COUNT -le $KEEP ]]; then
-            echo "✅ No cleanup needed (keeping $KEEP, found $VERSION_COUNT)"
-            exit 0
-          fi
-          
-          # Calculate versions to delete
-          DELETE_COUNT=$((VERSION_COUNT - KEEP))
-          echo "🗑️ Will delete $DELETE_COUNT old versions"
-          
-          # Delete old versions (skip the first KEEP versions)
-          DELETED_COUNT=0
-          for ((i=$KEEP; i<$VERSION_COUNT; i++)); do
-            VERSION="${VERSION_ARRAY[$i]}"
-            echo "🗑️ Deleting version: $VERSION"
-            
-            if gcloud app versions delete "$VERSION" \
-               --service="$SERVICE" \
-               --project="$PROJECT" \
-               --quiet 2>/dev/null; then
-              echo "✅ Successfully deleted $VERSION"
-              DELETED_COUNT=$((DELETED_COUNT + 1))
-            else
-              echo "⚠️ Failed to delete $VERSION (may be serving traffic)"
-            fi
-          done
-          
-          echo "📊 Cleanup summary: $DELETED_COUNT/$DELETE_COUNT versions deleted"
+        uses: nabarun-ngo/ngo-nabarun-templates/.github/actions/gcp-clean-gae-versions@main
+        with:
+          project_id: ${{ secrets.gcp_project_id }}
+          service_name: ${{ inputs.gae_service_name }}
+          keep_versions: ${{ inputs.keep_gae_versions }}
 
       - name: Clean old GCS files
-        shell: bash
+        uses: nabarun-ngo/ngo-nabarun-templates/.github/actions/gcp-clean-gcs-files@main
         continue-on-error: true
-        timeout-minutes: 10
-        run: |
-          echo "🧹 Cleaning old files from GCS buckets..."
-          
-          PROJECT="${{ secrets.gcp_project_id }}"
-          KEEP_DAYS=${{ inputs.gcs_keep_days }}
-          
-          echo "🗓️ Deleting files older than $KEEP_DAYS days"
-          
-          # Common GCS bucket patterns for GAE
-          BUCKET_PATTERNS=(
-            "staging.$PROJECT.appspot.com"
-            "$PROJECT.appspot.com" 
-            "artifacts.$PROJECT.appspot.com"
-            "$PROJECT-staging"
-            "$PROJECT-artifacts"
-          )
-          
-          TOTAL_FILES_DELETED=0
-          
-          for BUCKET_NAME in "${BUCKET_PATTERNS[@]}"; do
-            echo "🔍 Checking bucket: gs://$BUCKET_NAME"
-            
-            # Check if bucket exists and is accessible
-            if ! gcloud storage buckets describe "gs://$BUCKET_NAME" \
-               --project="$PROJECT" >/dev/null 2>&1; then
-              echo "ℹ️ Bucket gs://$BUCKET_NAME not found or not accessible"
-              continue
-            fi
-            
-            echo "📦 Processing bucket: gs://$BUCKET_NAME"
-            
-            # Calculate cutoff date in epoch format
-            CUTOFF_EPOCH=$(date -d "$KEEP_DAYS days ago" +%s)
-            echo "📅 Cutoff date: $(date -d "$KEEP_DAYS days ago")"
-            
-            # Use more efficient approach with gsutil
-            OLD_FILES_COUNT=0
-            
-            # List files with creation time and filter old ones
-            gcloud storage ls -l "gs://$BUCKET_NAME/**" \
-              --project="$PROJECT" 2>/dev/null | \
-            while IFS= read -r line; do
-              # Parse gsutil ls -l output: size date time filename
-              if [[ $line =~ ^[[:space:]]*[0-9]+[[:space:]]+([0-9]{4}-[0-9]{2}-[0-9]{2})T([0-9]{2}:[0-9]{2}:[0-9]{2}).*[[:space:]](gs://.+)$ ]]; then
-                FILE_DATE="${BASH_REMATCH[1]}"
-                FILE_TIME="${BASH_REMATCH[2]}"
-                FILE_PATH="${BASH_REMATCH[3]}"
-                
-                # Convert file date to epoch
-                FILE_EPOCH=$(date -d "$FILE_DATE $FILE_TIME" +%s 2>/dev/null || echo "0")
-                
-                if [[ $FILE_EPOCH -gt 0 && $FILE_EPOCH -lt $CUTOFF_EPOCH ]]; then
-                  echo "🗑️ Deleting old file: $FILE_PATH ($(date -d "@$FILE_EPOCH"))"
-                  
-                  if gcloud storage rm "$FILE_PATH" --project="$PROJECT" 2>/dev/null; then
-                    OLD_FILES_COUNT=$((OLD_FILES_COUNT + 1))
-                  else
-                    echo "⚠️ Failed to delete $FILE_PATH"
-                  fi
-                fi
-              fi
-            done
-            
-            TOTAL_FILES_DELETED=$((TOTAL_FILES_DELETED + OLD_FILES_COUNT))
-            
-            if [[ $OLD_FILES_COUNT -eq 0 ]]; then
-              echo "✅ No files older than $KEEP_DAYS days in gs://$BUCKET_NAME"
-            else
-              echo "📊 Deleted $OLD_FILES_COUNT old files from gs://$BUCKET_NAME"
-            fi
-          done
-          
-          echo "📊 Total cleanup summary: $TOTAL_FILES_DELETED files deleted from all buckets"
+        with:
+          project_id: ${{ secrets.gcp_project_id }}
+          keep_days: ${{ inputs.gcs_keep_days }}
+          bucket_patterns: 'auto'
+          timeout_minutes: '10'

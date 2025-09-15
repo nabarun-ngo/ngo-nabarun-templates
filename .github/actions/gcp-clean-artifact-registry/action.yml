@@ -1,0 +1,77 @@
+name: GCP Clean Artifact Registry
+description: Cleans up Artifact Registry repositories created during GAE deployments
+
+inputs:
+  project_id:
+    description: 'GCP Project ID'
+    required: true
+
+outputs:
+  repositories_deleted:
+    description: 'Number of repositories deleted'
+    value: ${{ steps.cleanup.outputs.repositories_deleted }}
+  regions_checked:
+    description: 'Number of regions checked'
+    value: ${{ steps.cleanup.outputs.regions_checked }}
+
+runs:
+  using: composite
+  steps:
+    - id: cleanup
+      name: Clean Artifact Registry repositories
+      shell: bash
+      run: |
+        echo "🧹 Cleaning up Artifact Registry repositories..."
+        
+        PROJECT="${{ inputs.project_id }}"
+        
+        # Try to get region from GAE app
+        REGION=$(gcloud app describe --project="$PROJECT" --format="value(locationId)" 2>/dev/null || echo "")
+        
+        if [[ -z "$REGION" ]]; then
+          echo "⚠️ Could not determine region from App Engine"
+          # Try common regions instead of failing
+          REGIONS=("asia-south1" "us-central1" "europe-west1" "asia-northeast1")
+          echo "🔍 Will check common regions: ${REGIONS[*]}"
+        else
+          REGIONS=("$REGION")
+          echo "📍 Using App Engine region: $REGION"
+        fi
+        
+        TOTAL_DELETED=0
+        REGIONS_CHECKED=0
+        
+        for REGION in "${REGIONS[@]}"; do
+          echo "🔍 Checking region: $REGION"
+          REGIONS_CHECKED=$((REGIONS_CHECKED + 1))
+          
+          # List repositories with error handling
+          REPOS=$(gcloud artifacts repositories list \
+            --location="$REGION" \
+            --project="$PROJECT" \
+            --format="value(name)" 2>/dev/null || echo "")
+          
+          if [[ -n "$REPOS" ]]; then
+            echo "📋 Found repositories in $REGION:"
+            echo "$REPOS"
+            
+            for REPO in $REPOS; do
+              echo "🗑️ Deleting repository: $REPO"
+              if gcloud artifacts repositories delete "$REPO" \
+                 --location="$REGION" \
+                 --project="$PROJECT" \
+                 --quiet 2>/dev/null; then
+                echo "✅ Successfully deleted $REPO"
+                TOTAL_DELETED=$((TOTAL_DELETED + 1))
+              else
+                echo "⚠️ Failed to delete $REPO (may not exist or no permissions)"
+              fi
+            done
+          else
+            echo "ℹ️ No repositories found in $REGION"
+          fi
+        done
+        
+        echo "📊 Cleanup summary: $TOTAL_DELETED repositories deleted from $REGIONS_CHECKED regions"
+        echo "repositories_deleted=$TOTAL_DELETED" >> "$GITHUB_OUTPUT"
+        echo "regions_checked=$REGIONS_CHECKED" >> "$GITHUB_OUTPUT"
