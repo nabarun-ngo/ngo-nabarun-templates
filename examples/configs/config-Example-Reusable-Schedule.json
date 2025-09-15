@@ -1,0 +1,17 @@
+{
+  "0 3 * * *": {
+    "environment": "dev",
+    "service_name": "reusable-daily-service",
+    "task_type": "dev_sync",
+    "auto_deploy": true,
+    "notification_channels": ["slack"]
+  },
+  "0 18 * * 6": {
+    "environment": "prod",
+    "service_name": "reusable-weekend-service",
+    "task_type": "weekend_backup",
+    "auto_deploy": false,
+    "notification_channels": ["email", "slack"],
+    "backup_retention_days": 30
+  }
+}

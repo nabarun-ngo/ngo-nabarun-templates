@@ -1,0 +1,35 @@
+name: Example Direct Schedule
+on:
+  schedule:
+    - cron: '0 2 * * *'  # Daily at 2 AM
+    - cron: '0 14 * * 5' # Friday at 2 PM
+  workflow_dispatch:
+
+jobs:
+  test_config:
+    name: Test Configuration Detection
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Determine Schedule Configuration
+        id: config
+        uses: ./.github/actions/determine-schedule-config
+
+      - name: Resolve Inputs
+        id: resolve
+        uses: ./.github/actions/resolve-inputs
+        with:
+          schedule_config_file: ${{ steps.config.outputs.config_file }}
+
+      - name: Show Results
+        run: |
+          echo "=== Configuration Detection Results ==="
+          echo "Config file: ${{ steps.config.outputs.config_file }}"
+          echo "Config found: ${{ steps.config.outputs.config_found }}"
+          echo "Schedule cron: ${{ steps.config.outputs.schedule_cron }}"
+          echo "Workflow filename: ${{ steps.config.outputs.workflow_filename }}"
+          echo ""
+          echo "=== Resolved Variables ==="
+          echo '${{ steps.resolve.outputs.variables }}' | jq .

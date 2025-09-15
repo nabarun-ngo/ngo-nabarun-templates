@@ -1,0 +1,17 @@
+{
+  "0 2 * * *": {
+    "environment": "staging",
+    "service_name": "direct-daily-service",
+    "task_type": "daily_maintenance",
+    "debug_enabled": true,
+    "timeout_minutes": 30
+  },
+  "0 14 * * 5": {
+    "environment": "prod",
+    "service_name": "direct-weekly-service", 
+    "task_type": "weekly_report",
+    "debug_enabled": false,
+    "timeout_minutes": 60,
+    "recipients": ["admin@example.com", "team@example.com"]
+  }
+}

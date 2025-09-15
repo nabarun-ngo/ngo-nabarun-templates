@@ -70,8 +70,25 @@ runs:
               config_file="${{ inputs.schedule_config_file }}"
               if [[ -f "$config_file" ]]; then
                 echo "📄 Reading schedule config from: $config_file"
-                final_data=$(cat "$config_file" | jq -c '.')
-                echo "✅ Using schedule config file"
+                
+                # Get the current schedule cron from github.event.schedule
+                current_schedule="${{ github.event.schedule }}"
+                echo "📅 Current schedule: $current_schedule"
+                
+                # Extract config for the current schedule from JSON
+                schedule_config=$(cat "$config_file" | jq -c --arg schedule "$current_schedule" '.[$schedule] // {}')
+                
+                if [[ "$schedule_config" != "{}" ]]; then
+                  final_data="$schedule_config"
+                  echo "✅ Found config for schedule '$current_schedule'"
+                else
+                  echo "⚠️ No config found for schedule '$current_schedule' in $config_file"
+                  echo "Available schedules in config:"
+                  cat "$config_file" | jq -r 'keys[]' | while read -r key; do
+                    echo "  - \"$key\""
+                  done
+                  echo "Using empty config for schedule trigger"
+                fi
               else
                 echo "❌ Schedule config file not found: $config_file"
                 echo "Using empty config for schedule trigger"

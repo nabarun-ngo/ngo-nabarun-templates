@@ -1,0 +1,141 @@
+name: Determine Schedule Configuration
+description: Determines configuration for scheduled workflows using github.event.schedule and workflow filename
+
+inputs:
+  config_base_path:
+    description: Base path for configuration files (default: config)
+    required: false
+    default: 'config'
+  fallback_config:
+    description: Fallback configuration file if no specific config is found
+    required: false
+    default: 'config/scheduled-config.json'
+
+outputs:
+  config_file:
+    description: Path to the configuration file to use
+    value: ${{ steps.determine.outputs.config_file }}
+  config_found:
+    description: Whether a configuration file was found (true/false)
+    value: ${{ steps.determine.outputs.config_found }}
+  schedule_cron:
+    description: The cron expression from github.event.schedule
+    value: ${{ steps.determine.outputs.schedule_cron }}
+  workflow_filename:
+    description: The workflow filename without extension
+    value: ${{ steps.determine.outputs.workflow_filename }}
+
+runs:
+  using: composite
+  steps:
+    - id: determine
+      name: Determine configuration file
+      shell: bash
+      run: |
+        set -euo pipefail
+        
+        echo "🕐 Determining configuration file for scheduled workflow..."
+        
+        # Get the cron expression from github.event.schedule
+        schedule_cron="${{ github.event.schedule }}"
+        config_base="${{ inputs.config_base_path }}"
+        
+        echo "📅 Schedule cron: $schedule_cron"
+        
+        # Determine the actual workflow filename
+        # For reusable workflows: use github.workflow_ref
+        # For normal workflows: detect from GITHUB_WORKFLOW_REF or find the workflow file
+        
+        calling_workflow="${{ github.workflow_ref }}"
+        workflow_filename=""
+        
+        if [[ -n "$calling_workflow" && "$calling_workflow" != "" ]]; then
+          # Called from reusable workflow - extract from workflow_ref
+          echo "🔄 Detected reusable workflow call"
+          workflow_file=$(echo "$calling_workflow" | sed 's|.*/.github/workflows/||' | sed 's|@.*||')
+          workflow_filename=$(echo "$workflow_file" | sed 's|\.[^.]*$||')
+          echo "Workflow file from workflow_ref: $workflow_file"
+        else
+          # Direct workflow execution - need to find the actual workflow file
+          echo "⚙️ Detected direct workflow execution"
+          workflow_name="${{ github.workflow }}"
+          
+          # Try to find the workflow file by matching workflow name
+          if [[ -d ".github/workflows" ]]; then
+            echo "🔍 Searching for workflow file matching name: $workflow_name"
+            
+            # Look for workflow files that match the workflow name
+            possible_files=(
+              ".github/workflows/${workflow_name}.yml"
+              ".github/workflows/${workflow_name}.yaml"
+              ".github/workflows/${workflow_name// /-}.yml"     # spaces to hyphens
+              ".github/workflows/${workflow_name// /-}.yaml"
+              ".github/workflows/${workflow_name// /_}.yml"     # spaces to underscores
+              ".github/workflows/${workflow_name// /_}.yaml"
+            )
+            
+            # Also search by grepping for the workflow name in all workflow files
+            found_by_name=false
+            for possible_file in "${possible_files[@]}"; do
+              if [[ -f "$possible_file" ]]; then
+                # Verify this file contains our workflow name
+                if grep -q "name: *['\"]\?${workflow_name}['\"]\?" "$possible_file" 2>/dev/null; then
+                  workflow_filename=$(basename "$possible_file" | sed 's|\.[^.]*$||')
+                  echo "✅ Found workflow file: $possible_file"
+                  found_by_name=true
+                  break
+                fi
+              fi
+            done
+            
+            # If not found by name matching, search all workflow files for the name
+            if [[ "$found_by_name" == "false" ]]; then
+              echo "🔍 Searching all workflow files for name: $workflow_name"
+              while IFS= read -r -d '' workflow_file; do
+                if grep -q "name: *['\"]\?${workflow_name}['\"]\?" "$workflow_file" 2>/dev/null; then
+                  workflow_filename=$(basename "$workflow_file" | sed 's|\.[^.]*$||')
+                  echo "✅ Found workflow by name search: $workflow_file"
+                  found_by_name=true
+                  break
+                fi
+              done < <(find .github/workflows -name '*.yml' -o -name '*.yaml' -print0 2>/dev/null)
+            fi
+          fi
+          
+          # Final fallback: use the workflow name directly
+          if [[ -z "$workflow_filename" ]]; then
+            echo "⚠️ Could not find workflow file, using workflow name as filename"
+            workflow_filename="$workflow_name"
+          fi
+        fi
+        
+        echo "📄 Workflow filename: $workflow_filename"
+        
+        # Construct config file path: config/config-${WORKFLOW_FILE}.json
+        config_file="$config_base/config-${workflow_filename}.json"
+        
+        echo "🔍 Looking for config file: $config_file"
+        
+        # Check if config file exists
+        config_found="false"
+        if [[ -f "$config_file" ]]; then
+          config_found="true"
+          echo "✅ Found configuration file: $config_file"
+        else
+          echo "❌ Configuration file not found: $config_file"
+          echo "📝 Create the file with structure: {\"$schedule_cron\": {...config data...}}"
+          
+          # Try fallback config
+          fallback_config="${{ inputs.fallback_config }}"
+          if [[ -f "$fallback_config" ]]; then
+            config_file="$fallback_config"
+            config_found="true"
+            echo "ℹ️ Using fallback config: $fallback_config"
+          fi
+        fi
+        
+        # Set outputs
+        echo "config_file=$config_file" >> "$GITHUB_OUTPUT"
+        echo "config_found=$config_found" >> "$GITHUB_OUTPUT"
+        echo "schedule_cron=$schedule_cron" >> "$GITHUB_OUTPUT"
+        echo "workflow_filename=$workflow_filename" >> "$GITHUB_OUTPUT"
