@@ -40,6 +40,13 @@ jobs:
         if: ${{ github.event_name == 'schedule' }}
         uses: ./.github/actions/determine-schedule-config
 
+      - name: Resolve and Export Inputs
+        uses: nabarun-ngo/ngo-nabarun-templates/.github/actions/resolve-inputs@main
+        with:
+          inputs: ${{ inputs.inputs }}
+          client_payload: ${{ inputs.client_payload }}
+          schedule_config_file: ${{ steps.determine_config.outputs.config_file }}
+
       - name: Print all environment variables
         shell: bash
         run: |
