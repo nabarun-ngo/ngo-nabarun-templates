@@ -81,77 +81,10 @@ on:
 
 
 jobs:
-  validate_inputs:
-    name: 'Validate Deployment Inputs'
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    outputs:
-      validation_passed: ${{ steps.validate.outputs.validation_passed }}
-    steps:
-      - name: Checkout repository for validation
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ inputs.tag_name }}
-          repository: '${{ inputs.repo_owner_name }}/${{ inputs.repo_name }}'
-          fetch-depth: 0
-          token: ${{ secrets.repo_token }}
-
-      - name: Validate deployment inputs
-        id: validate
-        shell: bash
-        run: |
-          echo "🔍 Validating deployment inputs..."
-          VALIDATION_ERRORS=0
-          
-          # Validate tag format
-          if [[ ! "${{ inputs.tag_name }}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9\.-]+)?$ ]]; then
-            echo "⚠️ Warning: Tag '${{ inputs.tag_name }}' doesn't match semantic versioning (v1.2.3)"
-          fi
-          
-          # Validate required files exist
-          if [[ ! -f "${{ inputs.gae_app_yaml_path }}" ]]; then
-            echo "❌ ERROR: App YAML file not found: ${{ inputs.gae_app_yaml_path }}"
-            VALIDATION_ERRORS=$((VALIDATION_ERRORS + 1))
-          else
-            echo "✅ App YAML found: ${{ inputs.gae_app_yaml_path }}"
-          fi
-          
-          # Target folder validation removed - will be validated during build
-          
-          # Look for pom.xml to ensure it's a Maven project
-          if [[ ! -f "pom.xml" ]]; then
-            echo "❌ ERROR: pom.xml not found in repository root"
-            VALIDATION_ERRORS=$((VALIDATION_ERRORS + 1))
-          else
-            echo "✅ Maven project detected (pom.xml found)"
-          fi
-          
-          # Validate numeric inputs
-          if [[ ${{ inputs.keep_gae_versions }} -lt 1 ]]; then
-            echo "❌ ERROR: keep_gae_versions must be >= 1"
-            VALIDATION_ERRORS=$((VALIDATION_ERRORS + 1))
-          fi
-          
-          if [[ ${{ inputs.gcs_keep_days }} -lt 1 ]]; then
-            echo "❌ ERROR: gcs_keep_days must be >= 1"
-            VALIDATION_ERRORS=$((VALIDATION_ERRORS + 1))
-          fi
-          
-          # Final validation result
-          if [[ $VALIDATION_ERRORS -eq 0 ]]; then
-            echo "✅ All input validation checks passed"
-            echo "validation_passed=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "❌ Validation failed with $VALIDATION_ERRORS errors"
-            echo "validation_passed=false" >> "$GITHUB_OUTPUT"
-            exit 1
-          fi
 
   build_application:
     name: 'Build Application'
     runs-on: ubuntu-latest
-    needs: [validate_inputs]
-    if: needs.validate_inputs.outputs.validation_passed == 'true'
     timeout-minutes: 20
     outputs:
       jar_name: ${{ steps.get-jar-path.outputs.file_name }}
@@ -203,10 +136,9 @@ jobs:
   deploy_to_gcp:
     name: 'Deploy to GCP App Engine'
     runs-on: ubuntu-latest
-    needs: [validate_inputs, build_application]
+    needs: [build_application]
     if: |
       always() &&
-      needs.validate_inputs.outputs.validation_passed == 'true' &&
       needs.build_application.result == 'success'
     environment: ${{ inputs.environment_name }}
     timeout-minutes: ${{ inputs.deployment_timeout }}
