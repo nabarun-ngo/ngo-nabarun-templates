@@ -71,4 +71,3 @@ jobs:
           maven_options: ${{ inputs.maven_options }}
           enable_cache: 'true'
           upload_test_results: 'true'
-          build_timeout_minutes: '20'

@@ -171,7 +171,6 @@ jobs:
           java_version: ${{ inputs.java_version }}
           maven_command: 'clean package'
           maven_options: ${{ inputs.maven_options }}
-          build_timeout_minutes: '15'
           upload_test_results: 'false'
           enable_cache: 'true'
           cache_key_prefix: 'maven'

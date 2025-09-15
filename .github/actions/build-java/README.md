@@ -11,7 +11,7 @@ This action provides a complete solution for building Java Maven projects in Git
 - ☕ **Java Setup**: Automatic Java environment setup with configurable versions
 - 🔧 **Smart Caching**: Intelligent Maven dependency caching with customizable keys
 - 🚀 **Flexible Commands**: Support for any Maven command (package, test, install, etc.)
-- ⏱️ **Timeout Control**: Configurable build timeouts to prevent hanging builds
+- ⏱️ **Duration Tracking**: Build time measurement and reporting
 - 📊 **Test Results**: Optional upload of test results as artifacts
 - 🛠️ **Error Handling**: Comprehensive error reporting and debugging information
 - 📈 **Build Metrics**: Build duration tracking and status reporting
@@ -44,7 +44,6 @@ This action provides a complete solution for building Java Maven projects in Git
     java_version: '11'
     maven_command: 'clean test package'
     maven_options: '-Dspring.profiles.active=test -DskipITs=false'
-    build_timeout_minutes: '20'
     upload_test_results: 'true'
     test_results_artifact_name: 'junit-results'
     enable_cache: 'true'
@@ -61,7 +60,6 @@ This action provides a complete solution for building Java Maven projects in Git
     java_version: ${{ inputs.java_version }}
     maven_command: 'clean package'
     maven_options: ${{ inputs.maven_options }}
-    build_timeout_minutes: '15'
     upload_test_results: 'false'
     enable_cache: 'true'
     cache_key_prefix: 'maven'
@@ -75,17 +73,15 @@ This action provides a complete solution for building Java Maven projects in Git
 | `working_directory` | Directory where the Maven project resides | ❌ No | `.` |
 | `maven_command` | Maven command to run | ❌ No | `clean package` |
 | `maven_options` | Additional Maven options/flags | ❌ No | `-Dmaven.test.skip=true -Dmaven.javadoc.skip=true` |
-| `build_timeout_minutes` | Timeout for the build step in minutes | ❌ No | `15` |
-| `upload_test_results` | Whether to upload test results as artifacts | ❌ No | `true` |
-| `test_results_artifact_name` | Name for the test results artifact | ❌ No | `java-test-results` |
-| `enable_cache` | Whether to enable Maven dependency caching | ❌ No | `true` |
-| `cache_key_prefix` | Prefix for Maven cache key | ❌ No | `maven` |
+|| `upload_test_results` | Whether to upload test results as artifacts | ❌ No | `true` |
+|| `test_results_artifact_name` | Name for the test results artifact | ❌ No | `java-test-results` |
+|| `enable_cache` | Whether to enable Maven dependency caching | ❌ No | `true` |
+|| `cache_key_prefix` | Prefix for Maven cache key | ❌ No | `maven` |
 
 ### Input Details
 
 - **`maven_command`**: Any valid Maven command (e.g., `clean test`, `clean package`, `clean install`)
 - **`maven_options`**: Maven flags and properties (e.g., `-DskipTests`, `-Dmaven.compiler.source=11`)
-- **`build_timeout_minutes`**: Prevents builds from hanging indefinitely
 - **`cache_key_prefix`**: Useful for distinguishing different cache contexts
 
 ## Outputs
@@ -173,7 +169,6 @@ jobs:
           java_version: '21'
           maven_command: 'clean compile test-compile package'
           maven_options: '-Dmaven.compiler.release=21 -Dproject.build.sourceEncoding=UTF-8'
-          build_timeout_minutes: '25'
 ```
 
 ## Error Handling
@@ -193,9 +188,6 @@ The action provides comprehensive error handling and debugging:
 - Project structure validation (pom.xml presence)
 - Working directory validation
 
-### Timeout Handling
-- Configurable timeouts prevent infinite builds
-- Clear timeout messages with duration information
 
 ## Caching Strategy
 
@@ -226,12 +218,6 @@ The action implements intelligent caching:
 4. **Optimize Test Execution**: Use `-Dmaven.test.failure.ignore=true` to continue on test failures
 
 ## Common Issues
-
-### Build Timeout
-```
-Error: The operation was canceled.
-```
-**Solution**: Increase `build_timeout_minutes` or optimize build performance.
 
 ### Maven Not Found
 ```

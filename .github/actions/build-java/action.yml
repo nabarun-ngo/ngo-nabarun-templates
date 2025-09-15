@@ -19,10 +19,6 @@ inputs:
     description: 'Additional Maven options/flags'
     required: false
     default: '-Dmaven.test.skip=true -Dmaven.javadoc.skip=true'
-  build_timeout_minutes:
-    description: 'Timeout for the build step in minutes'
-    required: false
-    default: '15'
   upload_test_results:
     description: 'Whether to upload test results as artifacts'
     required: false
@@ -124,7 +120,6 @@ runs:
     - name: Build with Maven
       id: build
       shell: bash
-      timeout-minutes: ${{ fromJSON(inputs.build_timeout_minutes) }}
       working-directory: ${{ inputs.working_directory }}
       run: |
         echo "🔨 Building with Maven..."
@@ -145,7 +140,7 @@ runs:
         
         echo "🔧 Executing: $MVN_CMD"
         
-        # Run Maven with error handling
+        # Run Maven build
         if eval "$MVN_CMD"; then
           BUILD_END=$(date +%s)
           BUILD_DURATION=$((BUILD_END - BUILD_START))
