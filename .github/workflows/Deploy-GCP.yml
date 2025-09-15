@@ -20,9 +20,6 @@ on:
       target_folder:
         required: true
         type: string
-      gcp_project_id:
-        required: true
-        type: string
       gae_app_yaml_path:
         required: false
         type: string
@@ -52,6 +49,8 @@ on:
         type: number
         default: 5
     secrets:
+      gcp_project_id:
+        required: true
       gcp_service_account:
         required: true
       app_doppler_service_token:
@@ -110,7 +109,7 @@ jobs:
       - name: Setup Google Cloud CLI
         uses: google-github-actions/auth@v2
         with:
-          project_id: ${{ inputs.gcp_project_id }}
+          project_id: ${{ secrets.gcp_project_id }}
           credentials_json: ${{ secrets.gcp_service_account }}
         
       - name: Setup Application Variables
@@ -127,7 +126,7 @@ jobs:
       - name: Deploy to Google App Engine
         uses: google-github-actions/deploy-appengine@v2
         with:
-          project_id: ${{ inputs.gcp_project_id }}
+          project_id: ${{ secrets.gcp_project_id }}
           deliverables: ${{ steps.get-jar-path.outputs.jar_path }}
           flags: '--appyaml=${{ inputs.gae_app_yaml_path }}'
      
@@ -163,13 +162,13 @@ jobs:
       - name: Setup Google Cloud CLI
         uses: google-github-actions/auth@v2
         with:
-          project_id: ${{ inputs.gcp_project_id }}
+          project_id: ${{ secrets.gcp_project_id }}
           credentials_json: ${{ secrets.gcp_service_account }}
 
       - name: List and delete Artifact Registry repositories
         run: |
           # Try to fetch region from GAE app location
-          PROJECT="${{ inputs.gcp_project_id }}"
+          PROJECT="${{ secrets.gcp_project_id }}"
           REGION=$(gcloud app describe --project="$PROJECT" --format="value(locationId)")
           if [ -z "$REGION" ]; then
             echo "Could not determine region from App Engine. Using default: asia-south1"
@@ -192,7 +191,7 @@ jobs:
       - name: Delete all GAE versions
         run: |
           SERVICE="${{ inputs.gae_service_name }}"
-          PROJECT="${{ inputs.gcp_project_id }}"
+          PROJECT="${{ secrets.gcp_project_id }}"
           KEEP=${{ inputs.keep_gae_versions }}
           VERSIONS=$(gcloud app versions list --service="$SERVICE" --project="$PROJECT" --format="value(version.id)" --sort-by=~version.createTime)
           COUNT=$(echo "$VERSIONS" | wc -l)
@@ -208,9 +207,9 @@ jobs:
 
       - name: Clean old files from GCS bucket
         run: |
-            BUCKET="staging.${{ inputs.gcp_project_id }}.appspot.com"
+            BUCKET="staging.${{ secrets.gcp_project_id }}.appspot.com"
             KEEP_DAYS=${{ inputs.gcs_keep_days }}
-            PROJECT="${{ inputs.gcp_project_id }}"
+            PROJECT="${{ secrets.gcp_project_id }}"
             echo "Cleaning files older than $KEEP_DAYS days from bucket: $BUCKET"
             NOW_EPOCH=$(date +%s)
             FILES=$(gcloud storage ls --project="$PROJECT" "gs://$BUCKET/**" | while read FILE; do
