@@ -69,182 +69,115 @@ on:
         required: true
       qmetry_open_api_key:
         required: true
+    outputs:
+      test_execution_url:
+        description: "QMetry test execution URL"
+        value: ${{ jobs.upload_test_result.outputs.execution_url }}
+      test_cycle:
+        description: "QMetry test cycle key"
+        value: ${{ jobs.upload_test_result.outputs.test_cycle }}
+      test_results_uploaded:
+        description: "Whether test results were uploaded to QMetry"
+        value: ${{ inputs.upload_result && jobs.upload_test_result.result == 'success' }}
         
 jobs:
   run_test:
     name: 'Run Test'
     runs-on: ubuntu-latest
-    steps:   
-      - name: Checkout repository | Branch ${{ inputs.branch_name }}
-        uses: actions/checkout@v4
+    steps:
+      - name: Setup test environment
+        uses: nabarun-ngo/ngo-nabarun-templates/.github/actions/test-setup@main
         with:
-          repository: ${{ inputs.repository_name }}
-          ref: ${{ inputs.branch_name }}
-
-      - name: Set up Java
-        uses: actions/setup-java@v2
-        with:
-          java-version: ${{ inputs.java_version }} 
-          distribution: 'adopt'
-
-      - name: Cache Maven dependencies
-        uses: actions/cache@v3
-        with:
-          path: ~/.m2/repository
-          key: maven-${{ hashFiles('**/pom.xml') }}
-          restore-keys: |
-            maven-   
+          java_version: ${{ inputs.java_version }}
+          test_repository: ${{ inputs.repository_name }}
+          test_branch: ${{ inputs.branch_name }}
 
       - name: Run Cucumber Tests
-        run: |
-          echo "Run Id : ${{ github.run_id }}"
-          echo "Running tests with tags: ${{ inputs.test_cucumber_tags }}"
-          mvn clean test -Dcucumber.filter.tags="${{ inputs.test_cucumber_tags }}" -DENVIRONMENT=${{ inputs.test_env }} -DCONFIG_SOURCE=doppler -DDOPPLER_PROJECT_NAME=${{ inputs.test_doppler_project_name }} -DDOPPLER_SERVICE_TOKEN=${{ secrets.test_doppler_service_token }} -Dheadless=Y || TEST_FAILED=true
-
-          if [ "$TEST_FAILED" = "true" ]; then
-            echo "TEST_STATUS=FAILED" >> $GITHUB_ENV
-          else
-            echo "TEST_STATUS=SUCCESS" >> $GITHUB_ENV
-          fi
+        id: run_tests
+        uses: nabarun-ngo/ngo-nabarun-templates/.github/actions/cucumber-run-tests@main
+        with:
+          scenarios: ${{ inputs.test_cucumber_tags }}
+          job_index: 0
+          test_environment: ${{ inputs.test_env }}
+          doppler_project_name: ${{ inputs.test_doppler_project_name }}
+          doppler_service_token: ${{ secrets.test_doppler_service_token }}
+          max_rerun_attempts: 1
         continue-on-error: true
-        
+
       - name: Upload Test Results
         uses: actions/upload-artifact@v4
         with:
           name: test-results
-          path: target/cucumber.json
+          path: test/target/cucumber-0.json
       
-      - name: Tests Result
+      - name: Show Tests Result
+        shell: bash
         run: |
+          TEST_STATUS="${{ steps.run_tests.outputs.test_status }}"
           echo "Test Status: $TEST_STATUS"
+          echo "Exit Code: ${{ steps.run_tests.outputs.exit_code }}"
           if [ "$TEST_STATUS" = "FAILED" ]; then
+            echo "❌ Test execution failed"
             exit 1
+          else
+            echo "✅ Test execution completed successfully"
           fi
           
   upload_test_result:
     name: 'Upload Test Results'
     if: ${{ inputs.upload_result == true &&  needs.run_test.result != 'cancelled' && always() }}
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     needs: run_test
+    outputs:
+      execution_url: ${{ steps.result_linker.outputs.execution_url }}
+      test_cycle: ${{ steps.result_linker.outputs.test_cycle }}
     steps:
-      - name: Download artifact
-        uses: actions/download-artifact@v4
+      - name: Consolidate Test Results
+        id: consolidate
+        uses: nabarun-ngo/ngo-nabarun-templates/.github/actions/test-results-consolidation@main
         with:
-          name: test-results
-      
-      - name: Generate Test Cycle Summary
-        id: testCycle
-        run: |
-          echo "test_cycle_summary=Automated Test Cycle - ${{ inputs.test_type }} | Run Id : ${{ github.run_id }}" >> $GITHUB_OUTPUT  
-      
-      - name: Restore Cached Variables
-        uses: actions/cache@v4
-        with:
-          path: variables.env
-          key: cache-variables-${{ github.run_id }}
-          restore-keys: |
-            cache-variables-${{ github.run_id }}
+          templates_repository: nabarun-ngo/ngo-nabarun-templates
+          artifact_download_path: all-results
+          merged_output_path: merged
+          merged_artifact_name: merged-cucumber-json
 
-      - name: Load Variables
-        run: |
-          if [ -f variables.env ]; then
-            cat variables.env >> $GITHUB_ENV
-            echo "✅ Variables restored successfully!"
-          else
-            echo "❌ No cache found (first run)."
-          fi
-          echo "test_cycle=${{ env.test_cycle }}"
+      - name: Manage Test Cycle Cache
+        id: cache_manager
+        uses: nabarun-ngo/ngo-nabarun-templates/.github/actions/test-cycle-cache-manager@main
+        with:
+          workflow_name: ${{ github.workflow }}
+          run_id: ${{ github.run_id }}
+          run_attempt: ${{ github.run_attempt }}
+          test_type: ${{ inputs.test_type }}
 
-      - name: Generate Upload URL
-        id: generate_url
-        uses: fjogeleit/http-request-action@v1
+      - name: Upload to QMetry
+        id: qmetry_upload
+        uses: nabarun-ngo/ngo-nabarun-templates/.github/actions/qmetry-upload-manager@main
         with:
-          url: 'https://qtmcloud.qmetry.com/rest/api/automation/importresult'
-          method: POST
-          customHeaders: '{"Content-Type": "application/json","apiKey":"${{ secrets.qmetry_api_key }}"}'
-          data: |
-           {
-              "format": "cucumber",
-              "testCycleToReuse": "${{ env.test_cycle }}",
-              "attachFile": true,
-              "isZip": false,
-              "environment": "${{ inputs.test_env }}",
-              "matchTestSteps": true,
-              "fields": {
-                "testCycle": {
-                  "folderId": ${{ inputs.test_cycle_folder }},
-                  "summary": "${{ steps.testCycle.outputs.test_cycle_summary }}"
-                },
-                "testCase": {
-                  "priority": "High",
-                  "folderId": ${{ inputs.test_case_folder }}
-                },
-                "testCaseExecution": {
-                  "customFields": [
-                    {
-                      "name": "Run Id",
-                      "value": "${{ github.run_id }}-${{ github.run_attempt }}"
-                    },
-                    {
-                      "name": "Server Version",
-                      "value": "${{ inputs.app_server_version }}"
-                    },
-                    {
-                      "name": "UI Version",
-                      "value": "${{ inputs.app_ui_version }}"
-                    },
-                    {
-                      "name": "Test Type",
-                      "value": "${{ inputs.test_type }}"
-                    }
-                  ]
-                }
-              }
-            }
-      - name: Upload file using PUT request
-        run: |
-          curl -X PUT \
-            -H "Content-Type: multipart/form-data" \
-            -H "User-Agent: PostmanRuntime/7.43.0" \
-            -d @cucumber.json \
-            '${{ fromJson(steps.generate_url.outputs.response).url }}'
-      
-      - name: Sleep for 60 seconds
-        run: sleep 60s
-        shell: bash
-        
-      - name: Retrieve Test Cycles 
-        id: retrieve_tc
-        uses: fjogeleit/http-request-action@v1
-        with:
-          url: 'https://qtmcloud.qmetry.com/rest/api/latest/testcycles/search/?fields=key'
-          method: POST
-          customHeaders: '{"Content-Type": "application/json","apiKey":"${{ secrets.qmetry_open_api_key }}"}'
-          data: |
-            {
-              "filter": {
-                "summary": "${{ steps.testCycle.outputs.test_cycle_summary }}",
-                "projectId": "${{ inputs.qmetry_project_id }}",
-                "isAutomated": true
-              }
-            }
-      
-      - name: Generate Execution URL
-        id: gen_exec_url
-        run: |
-          execution_id=${{ fromJson(steps.retrieve_tc.outputs.response).data[0].id }}
-          test_cycle=${{ fromJson(steps.retrieve_tc.outputs.response).data[0].key }} 
-          execution_url=${{ inputs.jira_url }}/plugins/servlet/ac/com.infostretch.QmetryTestManager/qtm4j-test-management?project.id=${{ inputs.qmetry_project_id }}#!/executionPage/$execution_id
-          echo "execution_url=$execution_url" >> $GITHUB_OUTPUT  
-          echo "execution_id=$execution_id" >> variables.env
-          echo "test_cycle=$test_cycle" >> variables.env
-          echo "JIRA Qmetry Test Cycle : $test_cycle"
-          echo "JIRA Qmetry Execution URL : $execution_url"
+          qmetry_api_key: ${{ secrets.qmetry_api_key }}
+          test_environment: ${{ inputs.test_env }}
+          test_cycle_summary: ${{ steps.cache_manager.outputs.test_cycle_summary }}
+          test_cycle_folder: ${{ inputs.test_cycle_folder }}
+          test_case_folder: ${{ inputs.test_case_folder }}
+          app_server_version: ${{ inputs.app_server_version }}
+          app_ui_version: ${{ inputs.app_ui_version }}
+          test_type: ${{ inputs.test_type }}
+          run_id: ${{ github.run_id }}
+          run_attempt: ${{ github.run_attempt }}
+          results_file_path: ${{ steps.consolidate.outputs.merged_file_path }}
+          cached_test_cycle: ${{ steps.cache_manager.outputs.cached_test_cycle }}
 
-      - name: Cache Variables by `run_id` ${{ github.run_id }}
-        uses: actions/cache@v4
+      - name: Generate Result Links
+        id: result_linker
+        uses: nabarun-ngo/ngo-nabarun-templates/.github/actions/qmetry-result-linker@main
         with:
-          path: variables.env
-          key: cache-variables-${{ github.run_id }}
+          qmetry_open_api_key: ${{ secrets.qmetry_open_api_key }}
+          qmetry_project_id: ${{ inputs.qmetry_project_id }}
+          jira_url: ${{ inputs.jira_url }}
+          test_cycle_summary: ${{ steps.cache_manager.outputs.test_cycle_summary }}
+          workflow_name: ${{ github.workflow }}
+          run_id: ${{ github.run_id }}
+          cache_file_path: variables.env
       
       
