@@ -36,7 +36,7 @@ on:
         description: 'Maximum number of log entries to retrieve'
         required: false
         type: string
-        default: '1000'
+        default: '10000'
       include_metadata:
         description: 'Include log metadata in output'
         required: false
