@@ -141,3 +141,22 @@ jobs:
             echo "❌ Failed to clear Redis keys"
             exit 1
           fi
+
+      - name: List Redis Keys
+        id: list-keys
+        run: |
+          echo "Fetching all Redis keys..."
+          keys_output=$(redis-cli -h ${{ secrets.redis_host }} -p ${{ secrets.redis_port }} -a ${{ secrets.redis_password }} KEYS "*" 2>/dev/null)
+          keys_count=$(echo "$keys_output" | wc -l)
+          
+          if [ -z "$keys_output" ] || [ "$keys_output" = "" ]; then
+            keys_count=0
+            echo "count=0" >> $GITHUB_OUTPUT
+            echo "result=ℹ️ No keys found in Redis" >> $GITHUB_OUTPUT
+            echo "ℹ️ No keys found in Redis"
+          else
+            echo "count=$keys_count" >> $GITHUB_OUTPUT
+            echo "result=✅ Found $keys_count keys in Redis" >> $GITHUB_OUTPUT
+            echo "✅ Found $keys_count keys in Redis:"
+            echo "$keys_output"
+          fi

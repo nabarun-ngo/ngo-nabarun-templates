@@ -11,10 +11,6 @@ on:
         description: 'Environment (staging, prod)'
         required: true
         type: string
-      project_id:
-        description: 'GCP Project ID'
-        required: true
-        type: string
       # Download logs specific inputs
       log_filter:
         description: 'Log filter query (e.g., textPayload:"uuid-value")'
@@ -124,6 +120,9 @@ on:
         description: 'Summary of resources cleaned (for cleanup-gcp-resources)'
         value: ${{ jobs.cleanup-gcp-resources.outputs.resources_cleaned }}
     secrets:
+      project_id:
+        description: 'GCP Project ID'
+        required: true
       gcp_sa_key:
         description: 'Google Cloud service account JSON key'
         required: true
@@ -155,7 +154,7 @@ jobs:
         id: download
         uses: nabarun-ngo/ngo-nabarun-templates/.github/actions/gcp-download-logs@main
         with:
-          project_id: ${{ inputs.project_id }}
+          project_id: ${{ secrets.project_id }}
           filter: ${{ inputs.log_filter }}
           output_format: ${{ inputs.output_format }}
           output_filename: ${{ inputs.output_filename }}
@@ -212,7 +211,7 @@ jobs:
         id: restart
         uses: nabarun-ngo/ngo-nabarun-templates/.github/actions/gcp-restart-app-engine@main
         with:
-          project_id: ${{ inputs.project_id }}
+          project_id: ${{ secrets.project_id }}
           service_name: ${{ inputs.service_name }}
           version_id: ${{ inputs.version_id }}
           confirm_restart: ${{ inputs.confirm_restart }}
@@ -252,7 +251,7 @@ jobs:
         id: init-cleanup
         run: |
           echo "📋 Starting GCP resources cleanup..."
-          echo "Project: ${{ inputs.project_id }}"
+          echo "Project: ${{ secrets.project_id }}"
           echo "Service: ${{ inputs.service_name }}"
           echo "Keep GAE versions: ${{ inputs.keep_gae_versions }}"
           echo "GCS keep days: ${{ inputs.gcs_keep_days }}"
@@ -269,7 +268,7 @@ jobs:
         uses: nabarun-ngo/ngo-nabarun-templates/.github/actions/gcp-clean-artifact-registry@main
         continue-on-error: true
         with:
-          project_id: ${{ inputs.project_id }}
+          project_id: ${{ secrets.project_id }}
 
       - name: Record Artifact Registry result
         run: |
@@ -288,7 +287,7 @@ jobs:
         uses: nabarun-ngo/ngo-nabarun-templates/.github/actions/gcp-clean-gae-versions@main
         continue-on-error: true
         with:
-          project_id: ${{ inputs.project_id }}
+          project_id: ${{ secrets.project_id }}
           service_name: ${{ inputs.service_name }}
           keep_versions: ${{ inputs.keep_gae_versions }}
 
@@ -309,7 +308,7 @@ jobs:
         uses: nabarun-ngo/ngo-nabarun-templates/.github/actions/gcp-clean-gcs-files@main
         continue-on-error: true
         with:
-          project_id: ${{ inputs.project_id }}
+          project_id: ${{ secrets.project_id }}
           keep_days: ${{ inputs.gcs_keep_days }}
           bucket_patterns: ${{ inputs.gcs_bucket_patterns }}
           timeout_minutes: ${{ inputs.cleanup_timeout_minutes }}
@@ -353,7 +352,7 @@ jobs:
       - name: Create cleanup summary
         run: |
           echo "# 🗑️ GCP Resources Cleanup Summary" >> $GITHUB_STEP_SUMMARY
-          echo "- Project: ${{ inputs.project_id }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Project: ${{ secrets.project_id }}" >> $GITHUB_STEP_SUMMARY
           echo "- Service: ${{ inputs.service_name }}" >> $GITHUB_STEP_SUMMARY
           echo "- Keep GAE versions: ${{ inputs.keep_gae_versions }}" >> $GITHUB_STEP_SUMMARY
           echo "- GCS keep days: ${{ inputs.gcs_keep_days }}" >> $GITHUB_STEP_SUMMARY

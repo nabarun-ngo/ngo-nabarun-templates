@@ -24,95 +24,56 @@ on:
         description: 'GCP Project ID'
         required: true
         type: string
-      # Download logs specific inputs
-      log_filter:
-        description: 'Log filter query (e.g., textPayload:"your-uuid-here")'
-        required: false
-        type: string
-        default: 'textPayload:"sample-filter"'
-      output_format:
-        description: 'Output format for logs'
-        required: false
-        type: choice
-        options:
-          - txt
-          - csv
-          - html
-          - json
-        default: txt
-      output_filename:
-        description: 'Custom filename (without extension, leave empty for auto-generated)'
-        required: false
-        type: string
-        default: ''
-      time_range:
-        description: 'Time range filter (e.g., timestamp>="2024-01-01T00:00:00Z")'
-        required: false
-        type: string
-        default: ''
-      limit:
-        description: 'Maximum number of log entries to retrieve'
-        required: false
-        type: string
-        default: '1000'
-      include_metadata:
-        description: 'Include metadata in output'
-        required: false
-        type: choice
-        options:
-          - 'true'
-          - 'false'
-        default: 'true'
-      # Restart App Engine specific inputs
       service_name:
-        description: 'App Engine service name'
+        description: 'App Engine service name (for restart/cleanup operations)'
         required: false
         type: string
         default: 'default'
-      version_id:
-        description: 'Specific version ID (leave empty for all versions)'
+      # For download-logs: log filter query
+      # For restart-app-engine: version ID to restart (empty = all)
+      # For cleanup-gcp-resources: GAE versions to keep
+      primary_param:
+        description: 'Primary parameter: Log filter | Version ID | GAE versions to keep (1-10)'
+        required: false
+        type: string
+        default: 'textPayload:"sample-filter"'
+      # For download-logs: output format (txt/csv/html/json)
+      # For restart-app-engine: dry run (true/false)
+      # For cleanup-gcp-resources: GCS keep days (1-365)
+      secondary_param:
+        description: 'Secondary parameter: Output format | Dry run | GCS keep days'
+        required: false
+        type: string
+        default: 'txt'
+      # For download-logs: time range filter
+      # For restart-app-engine: wait timeout in seconds
+      # For cleanup-gcp-resources: cleanup timeout in minutes
+      tertiary_param:
+        description: 'Tertiary parameter: Time range | Wait timeout (sec) | Cleanup timeout (min)'
         required: false
         type: string
         default: ''
-      confirm_restart:
-        description: 'DANGER: Type "yes" to confirm App Engine restart (deletes all instances!)'
+      # For download-logs: max log entries (default 1000)
+      # For restart-app-engine: confirmation (must be "yes" to proceed)
+      # For cleanup-gcp-resources: GCS bucket patterns
+      quaternary_param:
+        description: 'Quaternary parameter: Max entries | Confirmation ("yes") | Bucket patterns'
         required: false
         type: string
-        default: 'no'
-      dry_run:
-        description: 'Perform dry run (no actual changes)'
-        required: false
-        type: choice
-        options:
-          - 'false'
-          - 'true'
-        default: 'false'
-      wait_timeout:
-        description: 'Wait timeout for instance recreation (seconds)'
+        default: '1000'
+      # For download-logs: include metadata (true/false)
+      # For restart-app-engine: not used
+      # For cleanup-gcp-resources: not used
+      quinary_param:
+        description: 'Fifth parameter: Include metadata (true/false) | Not used | Not used'
         required: false
         type: string
-        default: '300'
-      # Cleanup GCP resources specific inputs
-      keep_gae_versions:
-        description: 'Number of GAE versions to keep'
+        default: 'true'
+      output_filename:
+        description: 'Custom output filename (download-logs only, without extension)'
         required: false
         type: string
-        default: '1'
-      gcs_keep_days:
-        description: 'Number of days to keep GCS files'
-        required: false
-        type: string
-        default: '5'
-      gcs_bucket_patterns:
-        description: 'GCS bucket patterns (comma-separated or "auto")'
-        required: false
-        type: string
-        default: 'auto'
-      cleanup_timeout_minutes:
-        description: 'Timeout for cleanup operations (minutes)'
-        required: false
-        type: string
-        default: '10'
+        default: ''
 
 jobs:
   gcp-operations:
