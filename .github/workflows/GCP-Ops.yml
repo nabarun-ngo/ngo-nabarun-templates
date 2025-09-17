@@ -134,7 +134,7 @@ jobs:
     if: ${{ inputs.operation == 'download-logs' }}
     environment: ${{ inputs.environment }}
     outputs:
-      operation_result: ${{ steps.download.outputs.result }}
+      operation_result: ${{ steps.set-result.outputs.result }}
       output_path: ${{ steps.download.outputs.output_path }}
       log_count: ${{ steps.download.outputs.log_count }}
       execution_time: ${{ steps.download.outputs.execution_time }}
@@ -163,6 +163,7 @@ jobs:
           include_metadata: ${{ inputs.include_metadata }}
 
       - name: Set operation result
+        id: set-result
         run: |
           LOG_COUNT="${{ steps.download.outputs.log_count }}"
           OUTPUT_PATH="${{ steps.download.outputs.output_path }}"
