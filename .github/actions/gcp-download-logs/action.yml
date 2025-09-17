@@ -22,13 +22,13 @@ inputs:
     required: false
     default: ''
   order_by:
-    description: 'Field to order results by (default: timestamp desc)'
+    description: 'Field to order results by (default: desc)'
     required: false
-    default: 'timestamp desc'
+    default: 'desc'
   limit:
     description: 'Maximum number of log entries to retrieve'
     required: false
-    default: '1000'
+    default: '10000'
   include_metadata:
     description: 'Include log metadata in output (severity, timestamp, etc.)'
     required: false
@@ -109,7 +109,7 @@ runs:
         GCLOUD_CMD="$GCLOUD_CMD --project=\"${{ inputs.project_id }}\""
         GCLOUD_CMD="$GCLOUD_CMD --format=json"
         GCLOUD_CMD="$GCLOUD_CMD --limit=${{ inputs.limit }}"
-        GCLOUD_CMD="$GCLOUD_CMD --order-by=\"${{ inputs.order_by }}\""
+        GCLOUD_CMD="$GCLOUD_CMD --order=\"${{ inputs.order_by }}\""
         
         echo "🔧 Executing command: $GCLOUD_CMD"
         
