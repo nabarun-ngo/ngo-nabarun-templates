@@ -1,0 +1,335 @@
+name: 'GCP Restart App Engine'
+description: 'Restart Google App Engine service by deleting all existing instances to force recreation'
+author: 'Nabarun NGO'
+
+inputs:
+  project_id:
+    description: 'GCP Project ID where the App Engine service is deployed'
+    required: true
+  service_name:
+    description: 'Name of the App Engine service to restart'
+    required: false
+    default: 'default'
+  version_id:
+    description: 'Specific version ID to restart (leave empty to restart all versions)'
+    required: false
+    default: ''
+  confirm_restart:
+    description: 'Confirmation flag to proceed with restart (must be "yes" to execute)'
+    required: true
+  dry_run:
+    description: 'Perform a dry run without actually deleting instances'
+    required: false
+    default: 'false'
+  wait_timeout:
+    description: 'Maximum time to wait for instances to be recreated (in seconds)'
+    required: false
+    default: '300'
+
+outputs:
+  restart_result:
+    description: 'Result of the restart operation'
+    value: ${{ steps.perform-restart.outputs.result }}
+  instances_deleted:
+    description: 'Number of instances that were deleted'
+    value: ${{ steps.perform-restart.outputs.instances_deleted }}
+  instances_recreated:
+    description: 'Number of instances that were recreated'
+    value: ${{ steps.verify-restart.outputs.instances_recreated }}
+  execution_time:
+    description: 'Total time taken for the restart operation'
+    value: ${{ steps.verify-restart.outputs.execution_time }}
+  service_status:
+    description: 'Final status of the service after restart'
+    value: ${{ steps.verify-restart.outputs.service_status }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Validate inputs and environment
+      shell: bash
+      run: |
+        echo "🔍 Validating GCP App Engine restart inputs..."
+        echo "📝 Project ID: ${{ inputs.project_id }}"
+        echo "🚀 Service: ${{ inputs.service_name }}"
+        echo "📊 Version: ${{ inputs.version_id || 'All versions' }}"
+        echo "🔧 Dry Run: ${{ inputs.dry_run }}"
+        echo "⏱️ Timeout: ${{ inputs.wait_timeout }}s"
+        
+        # Validate required gcloud CLI is available
+        if ! command -v gcloud >/dev/null 2>&1; then
+          echo "❌ gcloud CLI not found. Please ensure Google Cloud CLI is installed and authenticated."
+          exit 1
+        fi
+        
+        # Validate confirmation
+        if [[ "${{ inputs.confirm_restart }}" != "yes" ]]; then
+          echo "❌ Restart not confirmed. Set confirm_restart to 'yes' to proceed."
+          echo "⚠️ This operation will delete all App Engine instances for service '${{ inputs.service_name }}'!"
+          exit 1
+        fi
+        
+        # Validate timeout is a number
+        if ! [[ "${{ inputs.wait_timeout }}" =~ ^[0-9]+$ ]]; then
+          echo "❌ Invalid timeout value: ${{ inputs.wait_timeout }}. Must be a positive integer."
+          exit 1
+        fi
+        
+        echo "✅ Input validation completed successfully"
+        if [[ "${{ inputs.dry_run }}" == "true" ]]; then
+          echo "🔄 Running in DRY RUN mode - no actual changes will be made"
+        else
+          echo "⚠️ LIVE MODE - instances will actually be deleted and recreated"
+        fi
+
+    - name: Get current service information
+      id: get-service-info
+      shell: bash
+      run: |
+        echo "📋 Getting current service information..."
+        
+        # Check if service exists
+        if ! gcloud app services describe "${{ inputs.service_name }}" \
+             --project="${{ inputs.project_id }}" >/dev/null 2>&1; then
+          echo "❌ Service '${{ inputs.service_name }}' not found in project '${{ inputs.project_id }}'"
+          echo "📋 Available services:"
+          gcloud app services list --project="${{ inputs.project_id }}" --format="value(id)" 2>/dev/null || echo "   Could not list services"
+          exit 1
+        fi
+        
+        # Get service details
+        SERVICE_INFO=$(gcloud app services describe "${{ inputs.service_name }}" \
+          --project="${{ inputs.project_id }}" \
+          --format="json" 2>/dev/null || echo "{}")
+        
+        echo "✅ Service '${{ inputs.service_name }}' found"
+        
+        # Get versions information
+        if [[ -n "${{ inputs.version_id }}" ]]; then
+          echo "🔍 Getting information for specific version: ${{ inputs.version_id }}"
+          VERSIONS_INFO=$(gcloud app versions list \
+            --service="${{ inputs.service_name }}" \
+            --project="${{ inputs.project_id }}" \
+            --filter="version.id:${{ inputs.version_id }}" \
+            --format="json" 2>/dev/null || echo "[]")
+        else
+          echo "🔍 Getting information for all versions"
+          VERSIONS_INFO=$(gcloud app versions list \
+            --service="${{ inputs.service_name }}" \
+            --project="${{ inputs.project_id }}" \
+            --format="json" 2>/dev/null || echo "[]")
+        fi
+        
+        VERSION_COUNT=$(echo "$VERSIONS_INFO" | jq length 2>/dev/null || echo "0")
+        echo "📊 Found $VERSION_COUNT version(s) for service '${{ inputs.service_name }}'"
+        
+        if [[ "$VERSION_COUNT" -eq 0 ]]; then
+          echo "❌ No versions found for the specified criteria"
+          exit 1
+        fi
+        
+        # Set outputs for use in next steps
+        echo "service_info<<EOF" >> "$GITHUB_OUTPUT"
+        echo "$SERVICE_INFO" >> "$GITHUB_OUTPUT"
+        echo "EOF" >> "$GITHUB_OUTPUT"
+        
+        echo "versions_info<<EOF" >> "$GITHUB_OUTPUT"
+        echo "$VERSIONS_INFO" >> "$GITHUB_OUTPUT"
+        echo "EOF" >> "$GITHUB_OUTPUT"
+        
+        echo "version_count=$VERSION_COUNT" >> "$GITHUB_OUTPUT"
+
+    - name: Get current instances
+      id: get-instances
+      shell: bash
+      run: |
+        echo "🔍 Getting current App Engine instances..."
+        
+        # Build instances list command
+        INSTANCES_CMD="gcloud app instances list --project=\"${{ inputs.project_id }}\" --service=\"${{ inputs.service_name }}\""
+        
+        if [[ -n "${{ inputs.version_id }}" ]]; then
+          INSTANCES_CMD="$INSTANCES_CMD --version=\"${{ inputs.version_id }}\""
+        fi
+        
+        INSTANCES_CMD="$INSTANCES_CMD --format=\"json\""
+        
+        echo "🔧 Executing: $INSTANCES_CMD"
+        INSTANCES_INFO=$(eval "$INSTANCES_CMD" 2>/dev/null || echo "[]")
+        
+        INSTANCE_COUNT=$(echo "$INSTANCES_INFO" | jq length 2>/dev/null || echo "0")
+        echo "📊 Found $INSTANCE_COUNT instance(s) currently running"
+        
+        if [[ "$INSTANCE_COUNT" -eq 0 ]]; then
+          echo "ℹ️ No instances currently running for the specified service/version"
+          echo "🔄 This might mean the service is auto-scaled to zero or not receiving traffic"
+        else
+          echo "📋 Current instances:"
+          echo "$INSTANCES_INFO" | jq -r '.[] | "   - Instance: \(.id) | Version: \(.version) | Status: \(.vmStatus // "N/A") | VM: \(.vmName // "N/A")"' 2>/dev/null || echo "   Could not parse instance details"
+        fi
+        
+        # Set outputs
+        echo "instances_info<<EOF" >> "$GITHUB_OUTPUT"
+        echo "$INSTANCES_INFO" >> "$GITHUB_OUTPUT"
+        echo "EOF" >> "$GITHUB_OUTPUT"
+        
+        echo "instance_count=$INSTANCE_COUNT" >> "$GITHUB_OUTPUT"
+
+    - name: Perform restart operation
+      id: perform-restart
+      shell: bash
+      run: |
+        echo "🔄 Starting App Engine restart operation..."
+        START_TIME=$(date +%s)
+        
+        INSTANCE_COUNT=${{ steps.get-instances.outputs.instance_count }}
+        
+        if [[ "$INSTANCE_COUNT" -eq 0 ]]; then
+          echo "ℹ️ No instances to delete. Triggering service refresh instead..."
+          
+          if [[ "${{ inputs.dry_run }}" == "true" ]]; then
+            echo "🔄 [DRY RUN] Would trigger service refresh by making a dummy configuration update"
+            echo "result=✅ [DRY RUN] Service refresh simulated - no instances were running" >> "$GITHUB_OUTPUT"
+          else
+            echo "🔄 Triggering service refresh by updating traffic allocation..."
+            # This forces App Engine to refresh the service configuration
+            gcloud app services set-traffic "${{ inputs.service_name }}" \
+              --splits="$(gcloud app services describe "${{ inputs.service_name }}" --project="${{ inputs.project_id }}" --format="value(split.allocations)" | head -1)" \
+              --project="${{ inputs.project_id }}" \
+              --quiet 2>/dev/null || true
+            
+            echo "result=✅ Service refresh completed - no instances were running to delete" >> "$GITHUB_OUTPUT"
+          fi
+          echo "instances_deleted=0" >> "$GITHUB_OUTPUT"
+          return 0
+        fi
+        
+        echo "🔥 Preparing to delete $INSTANCE_COUNT instance(s)..."
+        
+        if [[ "${{ inputs.dry_run }}" == "true" ]]; then
+          echo "🔄 [DRY RUN] Would delete the following instances:"
+          echo '${{ steps.get-instances.outputs.instances_info }}' | jq -r '.[] | "   - \(.id) (\(.version))"' 2>/dev/null || echo "   Instance list parsing failed"
+          echo "instances_deleted=$INSTANCE_COUNT" >> "$GITHUB_OUTPUT"
+          echo "result=✅ [DRY RUN] Would have deleted $INSTANCE_COUNT instance(s)" >> "$GITHUB_OUTPUT"
+          return 0
+        fi
+        
+        # Actual deletion
+        echo "⚠️ DELETING INSTANCES - This will cause temporary service downtime!"
+        DELETED_COUNT=0
+        FAILED_COUNT=0
+        
+        # Get instance IDs for deletion
+        INSTANCE_IDS=$(echo '${{ steps.get-instances.outputs.instances_info }}' | jq -r '.[].id' 2>/dev/null || echo "")
+        
+        if [[ -z "$INSTANCE_IDS" ]]; then
+          echo "❌ Could not extract instance IDs"
+          echo "result=❌ Failed to extract instance IDs for deletion" >> "$GITHUB_OUTPUT"
+          exit 1
+        fi
+        
+        echo "$INSTANCE_IDS" | while read -r INSTANCE_ID; do
+          if [[ -n "$INSTANCE_ID" ]]; then
+            echo "🔥 Deleting instance: $INSTANCE_ID"
+            
+            if gcloud app instances delete "$INSTANCE_ID" \
+                 --service="${{ inputs.service_name }}" \
+                 --version="${{ inputs.version_id }}" \
+                 --project="${{ inputs.project_id }}" \
+                 --quiet 2>/dev/null; then
+              echo "✅ Successfully deleted instance: $INSTANCE_ID"
+              ((DELETED_COUNT++)) || true
+            else
+              echo "❌ Failed to delete instance: $INSTANCE_ID"
+              ((FAILED_COUNT++)) || true
+            fi
+          fi
+        done
+        
+        echo "📊 Deletion summary:"
+        echo "   - Deleted: $DELETED_COUNT instances"
+        echo "   - Failed: $FAILED_COUNT instances"
+        
+        if [[ $FAILED_COUNT -gt 0 ]]; then
+          echo "result=⚠️ Partially completed: $DELETED_COUNT deleted, $FAILED_COUNT failed" >> "$GITHUB_OUTPUT"
+        else
+          echo "result=✅ Successfully deleted $DELETED_COUNT instance(s)" >> "$GITHUB_OUTPUT"
+        fi
+        
+        echo "instances_deleted=$DELETED_COUNT" >> "$GITHUB_OUTPUT"
+
+    - name: Wait for service recovery
+      id: wait-recovery
+      if: ${{ inputs.dry_run != 'true' }}
+      shell: bash
+      run: |
+        echo "⏳ Waiting for App Engine service to recover..."
+        echo "🔄 New instances should be created automatically when traffic arrives"
+        
+        WAIT_TIME=30
+        echo "⏱️ Waiting ${WAIT_TIME} seconds for service stabilization..."
+        sleep $WAIT_TIME
+        
+        echo "✅ Wait period completed"
+
+    - name: Verify restart completion
+      id: verify-restart
+      shell: bash
+      run: |
+        echo "🔍 Verifying restart operation completion..."
+        START_TIME_VERIFY=$(date +%s)
+        
+        if [[ "${{ inputs.dry_run }}" == "true" ]]; then
+          echo "✅ [DRY RUN] Verification skipped"
+          echo "instances_recreated=0" >> "$GITHUB_OUTPUT"
+          echo "service_status=DRY_RUN" >> "$GITHUB_OUTPUT"
+          echo "execution_time=0s" >> "$GITHUB_OUTPUT"
+          return 0
+        fi
+        
+        # Check service status
+        echo "📊 Checking service status..."
+        if SERVICE_STATUS=$(gcloud app services describe "${{ inputs.service_name }}" \
+                           --project="${{ inputs.project_id }}" \
+                           --format="value(id)" 2>/dev/null); then
+          echo "✅ Service '${{ inputs.service_name }}' is accessible"
+        else
+          echo "⚠️ Service status check failed"
+          SERVICE_STATUS="UNKNOWN"
+        fi
+        
+        # Check for new instances (they may not appear immediately if no traffic)
+        echo "🔍 Checking for new instances..."
+        NEW_INSTANCES_CMD="gcloud app instances list --project=\"${{ inputs.project_id }}\" --service=\"${{ inputs.service_name }}\""
+        if [[ -n "${{ inputs.version_id }}" ]]; then
+          NEW_INSTANCES_CMD="$NEW_INSTANCES_CMD --version=\"${{ inputs.version_id }}\""
+        fi
+        NEW_INSTANCES_CMD="$NEW_INSTANCES_CMD --format=\"json\""
+        
+        NEW_INSTANCES_INFO=$(eval "$NEW_INSTANCES_CMD" 2>/dev/null || echo "[]")
+        NEW_INSTANCE_COUNT=$(echo "$NEW_INSTANCES_INFO" | jq length 2>/dev/null || echo "0")
+        
+        echo "📊 Current instances after restart: $NEW_INSTANCE_COUNT"
+        
+        if [[ "$NEW_INSTANCE_COUNT" -eq 0 ]]; then
+          echo "ℹ️ No instances currently running (normal for auto-scaled services with no traffic)"
+          echo "🔄 New instances will be created automatically when traffic arrives"
+        else
+          echo "📋 New instances:"
+          echo "$NEW_INSTANCES_INFO" | jq -r '.[] | "   - Instance: \(.id) | Version: \(.version) | Status: \(.vmStatus // "N/A")"' 2>/dev/null || echo "   Could not parse new instance details"
+        fi
+        
+        # Calculate total execution time
+        END_TIME=$(date +%s)
+        TOTAL_TIME=$((END_TIME - START_TIME_VERIFY))
+        
+        echo "instances_recreated=$NEW_INSTANCE_COUNT" >> "$GITHUB_OUTPUT"
+        echo "service_status=$SERVICE_STATUS" >> "$GITHUB_OUTPUT"
+        echo "execution_time=${TOTAL_TIME}s" >> "$GITHUB_OUTPUT"
+        
+        echo "✅ Restart verification completed"
+        echo "⏱️ Total operation time: ${TOTAL_TIME}s"
+
+branding:
+  icon: 'refresh-cw'
+  color: 'orange'

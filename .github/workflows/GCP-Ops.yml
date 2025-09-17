@@ -1,0 +1,363 @@
+name: 'GCP Operations'
+
+on:
+  workflow_call:
+    inputs:
+      operation:
+        description: 'Operation to perform (download-logs, restart-app-engine, cleanup-gcp-resources)'
+        required: true
+        type: string
+      environment:
+        description: 'Environment (staging, prod)'
+        required: true
+        type: string
+      project_id:
+        description: 'GCP Project ID'
+        required: true
+        type: string
+      # Download logs specific inputs
+      log_filter:
+        description: 'Log filter query (e.g., textPayload:"uuid-value")'
+        required: false
+        type: string
+        default: ''
+      output_format:
+        description: 'Output format for logs (txt, csv, html, json)'
+        required: false
+        type: string
+        default: 'txt'
+      output_filename:
+        description: 'Custom filename for output (without extension)'
+        required: false
+        type: string
+        default: ''
+      time_range:
+        description: 'Time range for log query'
+        required: false
+        type: string
+        default: ''
+      limit:
+        description: 'Maximum number of log entries to retrieve'
+        required: false
+        type: string
+        default: '1000'
+      include_metadata:
+        description: 'Include log metadata in output'
+        required: false
+        type: string
+        default: 'true'
+      # Restart App Engine specific inputs
+      service_name:
+        description: 'Name of the App Engine service to restart'
+        required: false
+        type: string
+        default: 'default'
+      version_id:
+        description: 'Specific version ID to restart (leave empty for all versions)'
+        required: false
+        type: string
+        default: ''
+      confirm_restart:
+        description: 'Confirmation flag to proceed with restart (must be "yes")'
+        required: false
+        type: string
+        default: 'no'
+      dry_run:
+        description: 'Perform a dry run without actually deleting instances'
+        required: false
+        type: string
+        default: 'false'
+      wait_timeout:
+        description: 'Maximum time to wait for instances to be recreated'
+        required: false
+        type: string
+        default: '300'
+      # Cleanup GCP resources specific inputs
+      keep_gae_versions:
+        description: 'Number of GAE versions to keep'
+        required: false
+        type: string
+        default: '1'
+      gcs_keep_days:
+        description: 'Number of days to keep files in GCS bucket'
+        required: false
+        type: string
+        default: '5'
+      gcs_bucket_patterns:
+        description: 'GCS bucket patterns to clean (comma-separated or "auto")'
+        required: false
+        type: string
+        default: 'auto'
+      cleanup_timeout_minutes:
+        description: 'Timeout for individual cleanup operations (minutes)'
+        required: false
+        type: string
+        default: '10'
+    outputs:
+      operation_result:
+        description: 'GCP operation result'
+        value: ${{ jobs.download-logs.outputs.operation_result || jobs.restart-app-engine.outputs.operation_result }}
+      output_path:
+        description: 'Path to generated file (if applicable)'
+        value: ${{ jobs.download-logs.outputs.output_path }}
+      log_count:
+        description: 'Number of log entries (for download-logs operation)'
+        value: ${{ jobs.download-logs.outputs.log_count }}
+      execution_time:
+        description: 'Time taken to execute the operation'
+        value: ${{ jobs.download-logs.outputs.execution_time || jobs.restart-app-engine.outputs.execution_time }}
+      # Restart App Engine specific outputs
+      instances_deleted:
+        description: 'Number of instances deleted (for restart-app-engine)'
+        value: ${{ jobs.restart-app-engine.outputs.instances_deleted }}
+      instances_recreated:
+        description: 'Number of instances recreated (for restart-app-engine)'
+        value: ${{ jobs.restart-app-engine.outputs.instances_recreated }}
+      service_status:
+        description: 'Final service status (for restart-app-engine)'
+        value: ${{ jobs.restart-app-engine.outputs.service_status }}
+      # Cleanup GCP resources specific outputs
+      cleanup_result:
+        description: 'Overall cleanup result (for cleanup-gcp-resources)'
+        value: ${{ jobs.cleanup-gcp-resources.outputs.cleanup_result }}
+      resources_cleaned:
+        description: 'Summary of resources cleaned (for cleanup-gcp-resources)'
+        value: ${{ jobs.cleanup-gcp-resources.outputs.resources_cleaned }}
+    secrets:
+      gcp_sa_key:
+        description: 'Google Cloud service account JSON key'
+        required: true
+
+jobs:
+  download-logs:
+    name: 'Download GCP Logs'
+    runs-on: ubuntu-latest
+    if: ${{ inputs.operation == 'download-logs' }}
+    environment: ${{ inputs.environment }}
+    outputs:
+      operation_result: ${{ steps.download.outputs.result }}
+      output_path: ${{ steps.download.outputs.output_path }}
+      log_count: ${{ steps.download.outputs.log_count }}
+      execution_time: ${{ steps.download.outputs.execution_time }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Authenticate with Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.gcp_sa_key }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Download logs using composite action
+        id: download
+        uses: nabarun-ngo/ngo-nabarun-templates/.github/actions/gcp-download-logs@main
+        with:
+          project_id: ${{ inputs.project_id }}
+          filter: ${{ inputs.log_filter }}
+          output_format: ${{ inputs.output_format }}
+          output_filename: ${{ inputs.output_filename }}
+          time_range: ${{ inputs.time_range }}
+          limit: ${{ inputs.limit }}
+          include_metadata: ${{ inputs.include_metadata }}
+
+      - name: Set operation result
+        run: |
+          LOG_COUNT="${{ steps.download.outputs.log_count }}"
+          OUTPUT_PATH="${{ steps.download.outputs.output_path }}"
+          EXECUTION_TIME="${{ steps.download.outputs.execution_time }}"
+          
+          if [[ -f "$OUTPUT_PATH" && "$LOG_COUNT" -ge 0 ]]; then
+            echo "result=✅ Successfully downloaded $LOG_COUNT log entries to $OUTPUT_PATH (${EXECUTION_TIME})" >> "$GITHUB_OUTPUT"
+          else
+            echo "result=❌ Failed to download logs" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+
+      - name: Upload logs as artifact
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gcp-logs-${{ inputs.environment }}-${{ github.run_id }}
+          path: ${{ steps.download.outputs.output_path }}
+          retention-days: 30
+          compression-level: 6
+
+  restart-app-engine:
+    name: 'Restart App Engine (Delete Instances)'
+    runs-on: ubuntu-latest
+    if: ${{ inputs.operation == 'restart-app-engine' }}
+    environment: ${{ inputs.environment }}
+    outputs:
+      operation_result: ${{ steps.restart.outputs.restart_result }}
+      instances_deleted: ${{ steps.restart.outputs.instances_deleted }}
+      instances_recreated: ${{ steps.restart.outputs.instances_recreated }}
+      execution_time: ${{ steps.restart.outputs.execution_time }}
+      service_status: ${{ steps.restart.outputs.service_status }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Authenticate with Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.gcp_sa_key }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Restart App Engine service (delete instances)
+        id: restart
+        uses: nabarun-ngo/ngo-nabarun-templates/.github/actions/gcp-restart-app-engine@main
+        with:
+          project_id: ${{ inputs.project_id }}
+          service_name: ${{ inputs.service_name }}
+          version_id: ${{ inputs.version_id }}
+          confirm_restart: ${{ inputs.confirm_restart }}
+          dry_run: ${{ inputs.dry_run }}
+          wait_timeout: ${{ inputs.wait_timeout }}
+
+      - name: Summarize restart operation
+        run: |
+          echo "# 🔁 App Engine Restart Summary" >> $GITHUB_STEP_SUMMARY
+          echo "- Service: ${{ inputs.service_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Version: ${{ inputs.version_id || 'All versions' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Instances deleted: ${{ steps.restart.outputs.instances_deleted }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Instances (now) running: ${{ steps.restart.outputs.instances_recreated }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Final service status: ${{ steps.restart.outputs.service_status }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Execution time: ${{ steps.restart.outputs.execution_time }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Result: ${{ steps.restart.outputs.restart_result }}" >> $GITHUB_STEP_SUMMARY
+
+  cleanup-gcp-resources:
+    name: 'Clean Up Old GCP Resources'
+    runs-on: ubuntu-latest
+    if: ${{ inputs.operation == 'cleanup-gcp-resources' }}
+    environment: ${{ inputs.environment }}
+    timeout-minutes: ${{ fromJson(inputs.cleanup_timeout_minutes) }}
+    outputs:
+      cleanup_result: ${{ steps.summarize-cleanup.outputs.result }}
+      resources_cleaned: ${{ steps.summarize-cleanup.outputs.resources_cleaned }}
+    steps:
+      - name: Authenticate with Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.gcp_sa_key }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Initialize cleanup tracking
+        id: init-cleanup
+        run: |
+          echo "📋 Starting GCP resources cleanup..."
+          echo "Project: ${{ inputs.project_id }}"
+          echo "Service: ${{ inputs.service_name }}"
+          echo "Keep GAE versions: ${{ inputs.keep_gae_versions }}"
+          echo "GCS keep days: ${{ inputs.gcs_keep_days }}"
+          echo "GCS bucket patterns: ${{ inputs.gcs_bucket_patterns }}"
+          
+          # Initialize counters
+          echo "CLEANUP_SUCCESS=0" >> $GITHUB_ENV
+          echo "CLEANUP_FAILED=0" >> $GITHUB_ENV
+          echo "CLEANUP_TOTAL=3" >> $GITHUB_ENV
+          echo "RESOURCES_CLEANED=" >> $GITHUB_ENV
+
+      - name: Clean Artifact Registry repositories
+        id: cleanup-artifact-registry
+        uses: nabarun-ngo/ngo-nabarun-templates/.github/actions/gcp-clean-artifact-registry@main
+        continue-on-error: true
+        with:
+          project_id: ${{ inputs.project_id }}
+
+      - name: Record Artifact Registry result
+        run: |
+          if [ "${{ steps.cleanup-artifact-registry.outcome }}" = "success" ]; then
+            echo "✅ Artifact Registry cleanup: SUCCESS"
+            echo "CLEANUP_SUCCESS=$((CLEANUP_SUCCESS + 1))" >> $GITHUB_ENV
+            echo "RESOURCES_CLEANED=✅ Artifact Registry, $RESOURCES_CLEANED" >> $GITHUB_ENV
+          else
+            echo "❌ Artifact Registry cleanup: FAILED"
+            echo "CLEANUP_FAILED=$((CLEANUP_FAILED + 1))" >> $GITHUB_ENV
+            echo "RESOURCES_CLEANED=❌ Artifact Registry, $RESOURCES_CLEANED" >> $GITHUB_ENV
+          fi
+
+      - name: Clean old GAE versions
+        id: cleanup-gae-versions
+        uses: nabarun-ngo/ngo-nabarun-templates/.github/actions/gcp-clean-gae-versions@main
+        continue-on-error: true
+        with:
+          project_id: ${{ inputs.project_id }}
+          service_name: ${{ inputs.service_name }}
+          keep_versions: ${{ inputs.keep_gae_versions }}
+
+      - name: Record GAE versions result
+        run: |
+          if [ "${{ steps.cleanup-gae-versions.outcome }}" = "success" ]; then
+            echo "✅ GAE versions cleanup: SUCCESS"
+            echo "CLEANUP_SUCCESS=$((CLEANUP_SUCCESS + 1))" >> $GITHUB_ENV
+            echo "RESOURCES_CLEANED=✅ GAE Versions, $RESOURCES_CLEANED" >> $GITHUB_ENV
+          else
+            echo "❌ GAE versions cleanup: FAILED"
+            echo "CLEANUP_FAILED=$((CLEANUP_FAILED + 1))" >> $GITHUB_ENV
+            echo "RESOURCES_CLEANED=❌ GAE Versions, $RESOURCES_CLEANED" >> $GITHUB_ENV
+          fi
+
+      - name: Clean old GCS files
+        id: cleanup-gcs-files
+        uses: nabarun-ngo/ngo-nabarun-templates/.github/actions/gcp-clean-gcs-files@main
+        continue-on-error: true
+        with:
+          project_id: ${{ inputs.project_id }}
+          keep_days: ${{ inputs.gcs_keep_days }}
+          bucket_patterns: ${{ inputs.gcs_bucket_patterns }}
+          timeout_minutes: ${{ inputs.cleanup_timeout_minutes }}
+
+      - name: Record GCS files result
+        run: |
+          if [ "${{ steps.cleanup-gcs-files.outcome }}" = "success" ]; then
+            echo "✅ GCS files cleanup: SUCCESS"
+            echo "CLEANUP_SUCCESS=$((CLEANUP_SUCCESS + 1))" >> $GITHUB_ENV
+            echo "RESOURCES_CLEANED=✅ GCS Files, $RESOURCES_CLEANED" >> $GITHUB_ENV
+          else
+            echo "❌ GCS files cleanup: FAILED"
+            echo "CLEANUP_FAILED=$((CLEANUP_FAILED + 1))" >> $GITHUB_ENV
+            echo "RESOURCES_CLEANED=❌ GCS Files, $RESOURCES_CLEANED" >> $GITHUB_ENV
+          fi
+
+      - name: Summarize cleanup results
+        id: summarize-cleanup
+        run: |
+          echo "📋 Cleanup Summary:"
+          echo "   Total operations: $CLEANUP_TOTAL"
+          echo "   Successful: $CLEANUP_SUCCESS"
+          echo "   Failed: $CLEANUP_FAILED"
+          
+          # Clean up resources list (remove trailing comma)
+          RESOURCES_LIST=$(echo "$RESOURCES_CLEANED" | sed 's/, $//')
+          
+          if [ $CLEANUP_FAILED -eq 0 ]; then
+            OVERALL_RESULT="✅ All cleanup operations completed successfully ($CLEANUP_SUCCESS/$CLEANUP_TOTAL)"
+          elif [ $CLEANUP_SUCCESS -gt 0 ]; then
+            OVERALL_RESULT="⚠️ Partial success: $CLEANUP_SUCCESS succeeded, $CLEANUP_FAILED failed out of $CLEANUP_TOTAL operations"
+          else
+            OVERALL_RESULT="❌ All cleanup operations failed ($CLEANUP_FAILED/$CLEANUP_TOTAL)"
+          fi
+          
+          echo "result=$OVERALL_RESULT" >> $GITHUB_OUTPUT
+          echo "resources_cleaned=$RESOURCES_LIST" >> $GITHUB_OUTPUT
+          
+          echo "$OVERALL_RESULT"
+
+      - name: Create cleanup summary
+        run: |
+          echo "# 🗑️ GCP Resources Cleanup Summary" >> $GITHUB_STEP_SUMMARY
+          echo "- Project: ${{ inputs.project_id }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Service: ${{ inputs.service_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Keep GAE versions: ${{ inputs.keep_gae_versions }}" >> $GITHUB_STEP_SUMMARY
+          echo "- GCS keep days: ${{ inputs.gcs_keep_days }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Operations completed: $CLEANUP_SUCCESS/$CLEANUP_TOTAL" >> $GITHUB_STEP_SUMMARY
+          echo "- Resources processed: ${{ steps.summarize-cleanup.outputs.resources_cleaned }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Result: ${{ steps.summarize-cleanup.outputs.result }}" >> $GITHUB_STEP_SUMMARY
+

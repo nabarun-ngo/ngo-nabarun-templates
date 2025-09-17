@@ -1,0 +1,425 @@
+name: 'GCP Download Logs'
+description: 'Download logs from Google Cloud Logging with textPayload filter and multiple output format support'
+author: 'Nabarun NGO'
+
+inputs:
+  project_id:
+    description: 'GCP Project ID to query logs from'
+    required: true
+  filter:
+    description: 'Log filter query (e.g., textPayload:"uuid-value")'
+    required: true
+  output_format:
+    description: 'Output format for the logs'
+    required: false
+    default: 'txt'
+  output_filename:
+    description: 'Custom filename for output (without extension)'
+    required: false
+    default: ''
+  time_range:
+    description: 'Time range for log query (e.g., "timestamp>=\"2024-01-01T00:00:00Z\"")'
+    required: false
+    default: ''
+  order_by:
+    description: 'Field to order results by (default: timestamp desc)'
+    required: false
+    default: 'timestamp desc'
+  limit:
+    description: 'Maximum number of log entries to retrieve'
+    required: false
+    default: '1000'
+  include_metadata:
+    description: 'Include log metadata in output (severity, timestamp, etc.)'
+    required: false
+    default: 'true'
+
+outputs:
+  output_path:
+    description: 'Path to the generated log file'
+    value: ${{ steps.generate-filename.outputs.output_file }}
+  log_count:
+    description: 'Number of log entries retrieved'
+    value: ${{ steps.fetch-logs.outputs.log_count }}
+  query_summary:
+    description: 'Summary of the executed query'
+    value: ${{ steps.fetch-logs.outputs.query_summary }}
+  execution_time:
+    description: 'Time taken to execute the query'
+    value: ${{ steps.fetch-logs.outputs.execution_time }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Validate inputs and environment
+      shell: bash
+      run: |
+        echo "🔍 Validating GCP download logs inputs..."
+        echo "📝 Project ID: ${{ inputs.project_id }}"
+        echo "🔍 Filter: ${{ inputs.filter }}"
+        echo "📄 Output Format: ${{ inputs.output_format }}"
+        echo "📊 Limit: ${{ inputs.limit }}"
+        
+        # Validate required gcloud CLI is available
+        if ! command -v gcloud >/dev/null 2>&1; then
+          echo "❌ gcloud CLI not found. Please ensure Google Cloud CLI is installed and authenticated."
+          exit 1
+        fi
+        
+        # Validate jq is available for JSON processing
+        if ! command -v jq >/dev/null 2>&1; then
+          echo "❌ jq not found. Please ensure jq is installed for JSON processing."
+          exit 1
+        fi
+        
+        # Validate output format
+        case "${{ inputs.output_format }}" in
+          txt|csv|html|json)
+            echo "✅ Valid output format: ${{ inputs.output_format }}"
+            ;;
+          *)
+            echo "❌ Invalid output format: ${{ inputs.output_format }}"
+            echo "   Supported formats: txt, csv, html, json"
+            exit 1
+            ;;
+        esac
+        
+        echo "✅ Input validation completed successfully"
+
+    - name: Fetch logs from GCP
+      id: fetch-logs
+      shell: bash
+      run: |
+        echo "📥 Fetching logs from Google Cloud Logging..."
+        START_TIME=$(date +%s)
+        
+        # Build the gcloud logging read command
+        GCLOUD_CMD="gcloud logging read"
+        
+        # Add the main filter
+        GCLOUD_CMD="$GCLOUD_CMD \"${{ inputs.filter }}\""
+        
+        # Add time range filter if provided
+        if [[ -n "${{ inputs.time_range }}" ]]; then
+          echo "⏰ Adding time range filter: ${{ inputs.time_range }}"
+          GCLOUD_CMD="$GCLOUD_CMD AND ${{ inputs.time_range }}"
+        fi
+        
+        # Add project, format, limit and order
+        GCLOUD_CMD="$GCLOUD_CMD --project=\"${{ inputs.project_id }}\""
+        GCLOUD_CMD="$GCLOUD_CMD --format=json"
+        GCLOUD_CMD="$GCLOUD_CMD --limit=${{ inputs.limit }}"
+        GCLOUD_CMD="$GCLOUD_CMD --order-by=\"${{ inputs.order_by }}\""
+        
+        echo "🔧 Executing command: $GCLOUD_CMD"
+        
+        # Execute the command and save raw logs
+        if ! eval "$GCLOUD_CMD" > raw_logs.json 2>error.log; then
+          echo "❌ Failed to fetch logs from GCP"
+          echo "Error details:"
+          cat error.log || echo "No error details available"
+          exit 1
+        fi
+        
+        # Calculate execution time
+        END_TIME=$(date +%s)
+        EXECUTION_TIME=$((END_TIME - START_TIME))
+        
+        # Count log entries
+        LOG_COUNT=$(jq length raw_logs.json 2>/dev/null || echo "0")
+        
+        echo "📊 Query Results:"
+        echo "   - Log entries found: $LOG_COUNT"
+        echo "   - Execution time: ${EXECUTION_TIME}s"
+        
+        # Create query summary
+        QUERY_SUMMARY="Project: ${{ inputs.project_id }} | Filter: ${{ inputs.filter }} | Count: $LOG_COUNT | Time: ${EXECUTION_TIME}s"
+        
+        # Set outputs
+        echo "log_count=$LOG_COUNT" >> "$GITHUB_OUTPUT"
+        echo "execution_time=${EXECUTION_TIME}s" >> "$GITHUB_OUTPUT"
+        echo "query_summary=$QUERY_SUMMARY" >> "$GITHUB_OUTPUT"
+        
+        if [[ "$LOG_COUNT" -eq 0 ]]; then
+          echo "⚠️ No log entries found matching the filter criteria"
+        else
+          echo "✅ Successfully fetched $LOG_COUNT log entries"
+        fi
+
+    - name: Generate output filename
+      id: generate-filename
+      shell: bash
+      run: |
+        echo "📝 Generating output filename..."
+        
+        # Determine output filename
+        if [[ -n "${{ inputs.output_filename }}" ]]; then
+          BASE_FILENAME="${{ inputs.output_filename }}"
+        else
+          # Create filename from filter (sanitized)
+          FILTER_CLEAN=$(echo "${{ inputs.filter }}" | sed 's/[^a-zA-Z0-9-]/_/g' | cut -c1-50)
+          BASE_FILENAME="gcp_logs_${FILTER_CLEAN}_$(date +%Y%m%d_%H%M%S)"
+        fi
+        
+        OUTPUT_FILE="${BASE_FILENAME}.${{ inputs.output_format }}"
+        echo "📁 Output filename: $OUTPUT_FILE"
+        echo "output_file=$OUTPUT_FILE" >> "$GITHUB_OUTPUT"
+
+    - name: Create TXT output
+      if: ${{ inputs.output_format == 'txt' }}
+      shell: bash
+      env:
+        OUTPUT_FILE: ${{ steps.generate-filename.outputs.output_file }}
+      run: |
+        echo "📄 Creating TXT output file: $OUTPUT_FILE"
+        
+        if [[ "${{ inputs.include_metadata }}" == "true" ]]; then
+          echo "🔧 Including metadata in TXT output"
+          jq -r '.[] | "\(.timestamp) [\(.severity // "INFO")] \(.textPayload // .jsonPayload // "No message")"' raw_logs.json > "$OUTPUT_FILE"
+        else
+          echo "🔧 Text-only output (no metadata)"
+          jq -r '.[] | .textPayload // .jsonPayload // "No message"' raw_logs.json > "$OUTPUT_FILE"
+        fi
+        
+        # Verify file creation and get size
+        if [[ -f "$OUTPUT_FILE" ]]; then
+          FILE_SIZE=$(stat -f%z "$OUTPUT_FILE" 2>/dev/null || stat -c%s "$OUTPUT_FILE" 2>/dev/null || echo "unknown")
+          echo "✅ TXT file created successfully: $OUTPUT_FILE (${FILE_SIZE} bytes)"
+        else
+          echo "❌ Failed to create TXT file"
+          exit 1
+        fi
+
+    - name: Create CSV output
+      if: ${{ inputs.output_format == 'csv' }}
+      shell: bash
+      env:
+        OUTPUT_FILE: ${{ steps.generate-filename.outputs.output_file }}
+      run: |
+        echo "📊 Creating CSV output file: $OUTPUT_FILE"
+        
+        if [[ "${{ inputs.include_metadata }}" == "true" ]]; then
+          echo "🔧 Creating CSV with metadata columns"
+          echo "Timestamp,Severity,Message,Resource,Labels" > "$OUTPUT_FILE"
+          jq -r '.[] | [.timestamp, (.severity // "INFO"), (.textPayload // .jsonPayload // "No message"), (.resource.type // ""), (.labels | tostring // "")] | @csv' raw_logs.json >> "$OUTPUT_FILE"
+        else
+          echo "🔧 Creating CSV with message only"
+          echo "Message" > "$OUTPUT_FILE"
+          jq -r '.[] | [(.textPayload // .jsonPayload // "No message")] | @csv' raw_logs.json >> "$OUTPUT_FILE"
+        fi
+        
+        # Verify file creation and get size
+        if [[ -f "$OUTPUT_FILE" ]]; then
+          FILE_SIZE=$(stat -f%z "$OUTPUT_FILE" 2>/dev/null || stat -c%s "$OUTPUT_FILE" 2>/dev/null || echo "unknown")
+          LINES=$(wc -l < "$OUTPUT_FILE" 2>/dev/null || echo "unknown")
+          echo "✅ CSV file created successfully: $OUTPUT_FILE (${FILE_SIZE} bytes, ${LINES} lines)"
+        else
+          echo "❌ Failed to create CSV file"
+          exit 1
+        fi
+
+    - name: Create HTML output
+      if: ${{ inputs.output_format == 'html' }}
+      shell: bash
+      env:
+        OUTPUT_FILE: ${{ steps.generate-filename.outputs.output_file }}
+      run: |
+        echo "🌐 Creating HTML output file: $OUTPUT_FILE"
+        
+        # Create HTML header
+        cat > "$OUTPUT_FILE" << EOF
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>GCP Logs Report</title>
+    <style>
+        body { 
+          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif; 
+          margin: 20px; 
+          background-color: #f5f5f5; 
+        }
+        .header { 
+          background: linear-gradient(135deg, #4285f4, #34a853); 
+          color: white; 
+          padding: 20px; 
+          border-radius: 8px; 
+          margin-bottom: 20px; 
+          box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+        }
+        .stats {
+          background: white;
+          padding: 15px;
+          border-radius: 8px;
+          margin-bottom: 20px;
+          box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+          display: flex;
+          gap: 20px;
+        }
+        .stat-item {
+          text-align: center;
+          flex: 1;
+        }
+        .stat-value {
+          font-size: 1.5em;
+          font-weight: bold;
+          color: #4285f4;
+        }
+        .log-entry { 
+          background: white; 
+          margin: 10px 0; 
+          padding: 15px; 
+          border-left: 4px solid #4285f4; 
+          border-radius: 4px; 
+          box-shadow: 0 2px 4px rgba(0,0,0,0.1); 
+        }
+        .timestamp { 
+          color: #666; 
+          font-size: 0.9em; 
+          margin-bottom: 5px;
+        }
+        .severity { 
+          font-weight: bold; 
+          padding: 2px 8px; 
+          border-radius: 12px; 
+          font-size: 0.8em; 
+          display: inline-block;
+          margin-bottom: 8px;
+        }
+        .severity.INFO { background: #e8f0fe; color: #1967d2; }
+        .severity.WARNING { background: #fef7e0; color: #f29900; }
+        .severity.ERROR { background: #fce8e6; color: #d93025; }
+        .severity.DEBUG { background: #e6f4ea; color: #137333; }
+        .severity.CRITICAL { background: #fce8e6; color: #d93025; font-weight: bold; }
+        .message { 
+          margin-top: 8px; 
+          white-space: pre-wrap; 
+          font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', monospace;
+          background: #f8f9fa;
+          padding: 10px;
+          border-radius: 4px;
+        }
+        .metadata { 
+          margin-top: 10px; 
+          font-size: 0.85em; 
+          color: #666; 
+          background: #f8f9fa;
+          padding: 8px;
+          border-radius: 4px;
+        }
+        .no-logs {
+          text-align: center;
+          padding: 40px;
+          color: #666;
+          font-style: italic;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🔍 GCP Logs Report</h1>
+        <p><strong>Project:</strong> ${{ inputs.project_id }}</p>
+        <p><strong>Filter:</strong> ${{ inputs.filter }}</p>
+        <p><strong>Generated:</strong> $(date)</p>
+    </div>
+    <div class="stats">
+        <div class="stat-item">
+            <div class="stat-value">$(jq length raw_logs.json)</div>
+            <div>Log Entries</div>
+        </div>
+        <div class="stat-item">
+            <div class="stat-value">${{ inputs.limit }}</div>
+            <div>Max Limit</div>
+        </div>
+        <div class="stat-item">
+            <div class="stat-value">${{ inputs.output_format }}</div>
+            <div>Format</div>
+        </div>
+    </div>
+EOF
+
+        # Add log entries
+        LOG_COUNT=$(jq length raw_logs.json)
+        if [[ "$LOG_COUNT" -gt 0 ]]; then
+          if [[ "${{ inputs.include_metadata }}" == "true" ]]; then
+            echo "🔧 Creating HTML with full metadata"
+            jq -r '.[] | "<div class=\"log-entry\"><div class=\"timestamp\">📅 \(.timestamp)</div><span class=\"severity \(.severity // "INFO")\">🏷️ \(.severity // "INFO")</span><div class=\"message\">\(.textPayload // (.jsonPayload | tostring) // "No message")</div><div class=\"metadata\">📋 <strong>Resource:</strong> \(.resource.type // "N/A") | <strong>Labels:</strong> \(if .labels then (.labels | to_entries | map("\(.key): \(.value)") | join(", ")) else "None" end)</div></div>"' raw_logs.json >> "$OUTPUT_FILE"
+          else
+            echo "🔧 Creating HTML with messages only"
+            jq -r '.[] | "<div class=\"log-entry\"><div class=\"message\">\(.textPayload // (.jsonPayload | tostring) // "No message")</div></div>"' raw_logs.json >> "$OUTPUT_FILE"
+          fi
+        else
+          echo '<div class="no-logs">📭 No log entries found matching the specified criteria.</div>' >> "$OUTPUT_FILE"
+        fi
+        
+        # Close HTML
+        echo "</body></html>" >> "$OUTPUT_FILE"
+        
+        # Verify file creation and get size
+        if [[ -f "$OUTPUT_FILE" ]]; then
+          FILE_SIZE=$(stat -f%z "$OUTPUT_FILE" 2>/dev/null || stat -c%s "$OUTPUT_FILE" 2>/dev/null || echo "unknown")
+          echo "✅ HTML file created successfully: $OUTPUT_FILE (${FILE_SIZE} bytes)"
+        else
+          echo "❌ Failed to create HTML file"
+          exit 1
+        fi
+
+    - name: Create JSON output
+      if: ${{ inputs.output_format == 'json' }}
+      shell: bash
+      env:
+        OUTPUT_FILE: ${{ steps.generate-filename.outputs.output_file }}
+      run: |
+        echo "🔧 Creating JSON output file: $OUTPUT_FILE"
+        
+        if [[ "${{ inputs.include_metadata }}" == "true" ]]; then
+          echo "🔧 Creating JSON with full metadata"
+          jq '.' raw_logs.json > "$OUTPUT_FILE"
+        else
+          echo "🔧 Creating JSON with messages only"
+          jq '[.[] | {
+            message: (.textPayload // .jsonPayload // "No message"),
+            timestamp: .timestamp
+          }]' raw_logs.json > "$OUTPUT_FILE"
+        fi
+        
+        # Verify file creation and get size
+        if [[ -f "$OUTPUT_FILE" ]]; then
+          FILE_SIZE=$(stat -f%z "$OUTPUT_FILE" 2>/dev/null || stat -c%s "$OUTPUT_FILE" 2>/dev/null || echo "unknown")
+          ENTRIES=$(jq length "$OUTPUT_FILE" 2>/dev/null || echo "unknown")
+          echo "✅ JSON file created successfully: $OUTPUT_FILE (${FILE_SIZE} bytes, ${ENTRIES} entries)"
+        else
+          echo "❌ Failed to create JSON file"
+          exit 1
+        fi
+
+    - name: Verify output and cleanup
+      shell: bash
+      env:
+        OUTPUT_FILE: ${{ steps.generate-filename.outputs.output_file }}
+      run: |
+        echo "🧹 Performing final verification and cleanup..."
+        
+        # Final verification of output file
+        if [[ ! -f "$OUTPUT_FILE" ]]; then
+          echo "❌ Output file not found: $OUTPUT_FILE"
+          exit 1
+        fi
+        
+        # Get final file stats
+        FILE_SIZE=$(stat -f%z "$OUTPUT_FILE" 2>/dev/null || stat -c%s "$OUTPUT_FILE" 2>/dev/null || echo "unknown")
+        
+        echo "📋 Final Output Summary:"
+        echo "   📁 File: $OUTPUT_FILE"
+        echo "   📊 Size: ${FILE_SIZE} bytes"
+        echo "   📄 Format: ${{ inputs.output_format }}"
+        echo "   🔍 Filter: ${{ inputs.filter }}"
+        
+        # Cleanup temporary files
+        rm -f raw_logs.json error.log 2>/dev/null || true
+        
+        echo "✅ Log download and conversion completed successfully!"
+
+branding:
+  icon: 'download-cloud'
+  color: 'blue'

@@ -1,0 +1,143 @@
+name: 'Redis Operations'
+
+on:
+  workflow_call:
+    inputs:
+      operation:
+        description: 'Operation to perform (view-keys,delete-keys)'
+        required: true
+        type: string  
+      environment:
+        description: 'Environment (staging, prod)'
+        required: true
+        type: string
+      key:
+        description: "Specify Redis key to delete (only for delete action)"
+        required: false
+        type: string
+        default: ""
+    outputs:
+      ping_result:
+        description: 'Redis ping test result'
+        value: ${{ jobs.redis-ping.outputs.ping_result }}
+      operation_result:
+        description: 'Redis operation result'
+        value: ${{ jobs.view-redis-keys.outputs.keys_result || jobs.delete-redis-key.outputs.delete_result }}
+      keys_count:
+        description: 'Number of keys found/affected'
+        value: ${{ jobs.view-redis-keys.outputs.keys_count || jobs.delete-redis-key.outputs.affected_count }}
+    secrets:
+      redis_host:
+        description: 'Redis Host'
+        required: true
+      redis_port:
+        description: 'Redis Port'
+        required: true
+      redis_password:
+        description: 'Redis Password'
+        required: true
+
+jobs:
+  redis-ping:
+    name: 'Ping Redis Server'
+    runs-on: ubuntu-latest
+    outputs:
+      ping_result: ${{ steps.ping-test.outputs.result }}
+    steps:
+      - name: Install Redis CLI
+        run: sudo apt-get update && sudo apt-get install -y redis-tools
+
+      - name: Ping Redis Server
+        id: ping-test
+        run: |
+          response=$(redis-cli -h ${{ secrets.redis_host }} -p ${{ secrets.redis_port }} -a ${{ secrets.redis_password }} PING 2>/dev/null)
+          echo "Redis response: $response"
+          if [ "$response" = "PONG" ]; then
+            echo "result=✅ Redis server is responding correctly" >> $GITHUB_OUTPUT
+            echo "✅ Redis ping successful!"
+          else
+            echo "result=❌ Redis server did not respond with PONG (got: $response)" >> $GITHUB_OUTPUT
+            echo "❌ Redis did not respond with PONG"
+            exit 1
+          fi
+      
+  view-redis-keys:
+    name: 'View Redis Keys'
+    runs-on: ubuntu-latest
+    needs: redis-ping
+    if: ${{ inputs.operation == 'view-keys' }}
+    environment: ${{ inputs.environment }}
+    outputs:
+      keys_result: ${{ steps.list-keys.outputs.result }}
+      keys_count: ${{ steps.list-keys.outputs.count }}
+    steps:
+      - name: Install Redis CLI
+        run: sudo apt-get update && sudo apt-get install -y redis-tools
+
+      - name: List Redis Keys
+        id: list-keys
+        run: |
+          echo "Fetching all Redis keys..."
+          keys_output=$(redis-cli -h ${{ secrets.redis_host }} -p ${{ secrets.redis_port }} -a ${{ secrets.redis_password }} KEYS "*" 2>/dev/null)
+          keys_count=$(echo "$keys_output" | wc -l)
+          
+          if [ -z "$keys_output" ] || [ "$keys_output" = "" ]; then
+            keys_count=0
+            echo "count=0" >> $GITHUB_OUTPUT
+            echo "result=ℹ️ No keys found in Redis" >> $GITHUB_OUTPUT
+            echo "ℹ️ No keys found in Redis"
+          else
+            echo "count=$keys_count" >> $GITHUB_OUTPUT
+            echo "result=✅ Found $keys_count keys in Redis" >> $GITHUB_OUTPUT
+            echo "✅ Found $keys_count keys in Redis:"
+            echo "$keys_output"
+          fi
+
+  delete-redis-key:
+    name: 'Delete Redis Key(s)'
+    runs-on: ubuntu-latest
+    needs: redis-ping
+    if: ${{ inputs.operation == 'delete-keys' }}
+    environment: ${{ inputs.environment }}
+    outputs:
+      delete_result: ${{ steps.delete-specific.outputs.result || steps.flush-all.outputs.result }}
+      affected_count: ${{ steps.delete-specific.outputs.count || steps.flush-all.outputs.count }}
+    steps:
+      - name: Install Redis CLI
+        run: sudo apt-get update && sudo apt-get install -y redis-tools
+
+      - name: Delete Specific Redis Key
+        id: delete-specific
+        if: ${{ inputs.key != '' }}
+        run: |
+          echo "Deleting specific key: ${{ inputs.key }}"
+          deleted_count=$(redis-cli -h ${{ secrets.redis_host }} -p ${{ secrets.redis_port }} -a ${{ secrets.redis_password }} DEL "${{ inputs.key }}" 2>/dev/null)
+          echo "count=$deleted_count" >> $GITHUB_OUTPUT
+          if [ "$deleted_count" -eq "1" ]; then
+            echo "result=✅ Successfully deleted key: ${{ inputs.key }}" >> $GITHUB_OUTPUT
+            echo "✅ Successfully deleted key: ${{ inputs.key }}"
+          else
+            echo "result=ℹ️ Key '${{ inputs.key }}' was not found or already deleted" >> $GITHUB_OUTPUT
+            echo "ℹ️ Key '${{ inputs.key }}' was not found or already deleted"
+          fi
+
+      - name: Clear Redis Cache (All Keys)
+        id: flush-all
+        if: ${{ inputs.key == '' }}
+        run: |
+          echo "Getting current key count before flush..."
+          key_count=$(redis-cli -h ${{ secrets.redis_host }} -p ${{ secrets.redis_port }} -a ${{ secrets.redis_password }} DBSIZE 2>/dev/null)
+          echo "Found $key_count keys before flush"
+          
+          echo "Executing FLUSHALL..."
+          result=$(redis-cli -h ${{ secrets.redis_host }} -p ${{ secrets.redis_port }} -a ${{ secrets.redis_password }} FLUSHALL 2>/dev/null)
+          echo "count=$key_count" >> $GITHUB_OUTPUT
+          
+          if [ "$result" = "OK" ]; then
+            echo "result=✅ Successfully cleared all Redis keys ($key_count keys deleted)" >> $GITHUB_OUTPUT
+            echo "✅ Successfully cleared all Redis keys ($key_count keys deleted)"
+          else
+            echo "result=❌ Failed to clear Redis keys" >> $GITHUB_OUTPUT
+            echo "❌ Failed to clear Redis keys"
+            exit 1
+          fi
