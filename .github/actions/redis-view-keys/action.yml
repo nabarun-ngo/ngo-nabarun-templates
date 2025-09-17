@@ -4,8 +4,11 @@ runs:
   using: "composite"
   steps:
     - name: Install Redis CLI
+      shell: bash
       run: sudo apt-get update && sudo apt-get install -y redis-tools
+      
     - name: List Redis Keys
+      shell: bash
       run: redis-cli -h ${{ inputs.redis_host }} -p ${{ inputs.redis_port }} -a ${{ inputs.redis_password }} KEYS "*"
 inputs:
   redis_host:
