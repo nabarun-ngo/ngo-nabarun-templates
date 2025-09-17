@@ -4,8 +4,11 @@ runs:
   using: "composite"
   steps:
     - name: Install Redis CLI
+      shell: bash
       run: sudo apt-get update && sudo apt-get install -y redis-tools
+      
     - name: Ping Redis Server
+      shell: bash
       run: |
         response=$(redis-cli -h ${{ inputs.redis_host }} -p ${{ inputs.redis_port }} -a ${{ inputs.redis_password }} PING)
         echo "Redis response: $response"
