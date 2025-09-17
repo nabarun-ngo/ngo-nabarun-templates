@@ -4,13 +4,19 @@ runs:
   using: "composite"
   steps:
     - name: Install Redis CLI
+      shell: bash
       run: sudo apt-get update && sudo apt-get install -y redis-tools
+      
     - name: Delete Specific Redis Key
+      shell: bash
       if: ${{ inputs.key != '' }}
       run: redis-cli -h ${{ inputs.redis_host }} -p ${{ inputs.redis_port }} -a ${{ inputs.redis_password }} DEL "${{ inputs.key }}"
+      
     - name: Clear Redis Cache (All Keys)
       if: ${{ inputs.key == '' }}
+      shell: bash
       run: redis-cli -h ${{ inputs.redis_host }} -p ${{ inputs.redis_port }} -a ${{ inputs.redis_password }} FLUSHALL
+      
 inputs:
   key:
     description: "Specify a Redis key to delete (leave empty to delete all)"
