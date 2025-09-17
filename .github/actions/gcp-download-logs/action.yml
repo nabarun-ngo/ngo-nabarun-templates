@@ -226,134 +226,81 @@ runs:
       run: |
         echo "🌐 Creating HTML output file: $OUTPUT_FILE"
         
-        # Create HTML header
-        cat > "$OUTPUT_FILE" << EOF
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="UTF-8">
-    <title>GCP Logs Report</title>
-    <style>
-        body { 
-          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif; 
-          margin: 20px; 
-          background-color: #f5f5f5; 
-        }
-        .header { 
-          background: linear-gradient(135deg, #4285f4, #34a853); 
-          color: white; 
-          padding: 20px; 
-          border-radius: 8px; 
-          margin-bottom: 20px; 
-          box-shadow: 0 2px 8px rgba(0,0,0,0.15);
-        }
-        .stats {
-          background: white;
-          padding: 15px;
-          border-radius: 8px;
-          margin-bottom: 20px;
-          box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-          display: flex;
-          gap: 20px;
-        }
-        .stat-item {
-          text-align: center;
-          flex: 1;
-        }
-        .stat-value {
-          font-size: 1.5em;
-          font-weight: bold;
-          color: #4285f4;
-        }
-        .log-entry { 
-          background: white; 
-          margin: 10px 0; 
-          padding: 15px; 
-          border-left: 4px solid #4285f4; 
-          border-radius: 4px; 
-          box-shadow: 0 2px 4px rgba(0,0,0,0.1); 
-        }
-        .timestamp { 
-          color: #666; 
-          font-size: 0.9em; 
-          margin-bottom: 5px;
-        }
-        .severity { 
-          font-weight: bold; 
-          padding: 2px 8px; 
-          border-radius: 12px; 
-          font-size: 0.8em; 
-          display: inline-block;
-          margin-bottom: 8px;
-        }
-        .severity.INFO { background: #e8f0fe; color: #1967d2; }
-        .severity.WARNING { background: #fef7e0; color: #f29900; }
-        .severity.ERROR { background: #fce8e6; color: #d93025; }
-        .severity.DEBUG { background: #e6f4ea; color: #137333; }
-        .severity.CRITICAL { background: #fce8e6; color: #d93025; font-weight: bold; }
-        .message { 
-          margin-top: 8px; 
-          white-space: pre-wrap; 
-          font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', monospace;
-          background: #f8f9fa;
-          padding: 10px;
-          border-radius: 4px;
-        }
-        .metadata { 
-          margin-top: 10px; 
-          font-size: 0.85em; 
-          color: #666; 
-          background: #f8f9fa;
-          padding: 8px;
-          border-radius: 4px;
-        }
-        .no-logs {
-          text-align: center;
-          padding: 40px;
-          color: #666;
-          font-style: italic;
-        }
-    </style>
-</head>
-<body>
-    <div class="header">
-        <h1>🔍 GCP Logs Report</h1>
-        <p><strong>Project:</strong> ${{ inputs.project_id }}</p>
-        <p><strong>Filter:</strong> ${{ inputs.filter }}</p>
-        <p><strong>Generated:</strong> $(date)</p>
-    </div>
-    <div class="stats">
-        <div class="stat-item">
-            <div class="stat-value">$(jq length raw_logs.json)</div>
-            <div>Log Entries</div>
-        </div>
-        <div class="stat-item">
-            <div class="stat-value">${{ inputs.limit }}</div>
-            <div>Max Limit</div>
-        </div>
-        <div class="stat-item">
-            <div class="stat-value">${{ inputs.output_format }}</div>
-            <div>Format</div>
-        </div>
-    </div>
-EOF
-
-        # Add log entries
+        # Create HTML structure step by step to avoid heredoc issues
+        echo '<!DOCTYPE html>' > "$OUTPUT_FILE"
+        echo '<html>' >> "$OUTPUT_FILE"
+        echo '<head>' >> "$OUTPUT_FILE"
+        echo '    <meta charset="UTF-8">' >> "$OUTPUT_FILE"
+        echo '    <title>GCP Logs Report</title>' >> "$OUTPUT_FILE"
+        echo '    <style>' >> "$OUTPUT_FILE"
+        echo '        body { font-family: Arial, sans-serif; margin: 20px; background-color: #f5f5f5; }' >> "$OUTPUT_FILE"
+        echo '        .header { background: #4285f4; color: white; padding: 20px; border-radius: 8px; margin-bottom: 20px; }' >> "$OUTPUT_FILE"
+        echo '        .stats { background: white; padding: 15px; border-radius: 8px; margin-bottom: 20px; display: flex; gap: 20px; }' >> "$OUTPUT_FILE"
+        echo '        .stat-item { text-align: center; flex: 1; }' >> "$OUTPUT_FILE"
+        echo '        .stat-value { font-size: 1.5em; font-weight: bold; color: #4285f4; }' >> "$OUTPUT_FILE"
+        echo '        .log-entry { background: white; margin: 10px 0; padding: 15px; border-left: 4px solid #4285f4; border-radius: 4px; }' >> "$OUTPUT_FILE"
+        echo '        .timestamp { color: #666; font-size: 0.9em; margin-bottom: 5px; }' >> "$OUTPUT_FILE"
+        echo '        .severity { font-weight: bold; padding: 2px 8px; border-radius: 12px; font-size: 0.8em; display: inline-block; margin-bottom: 8px; }' >> "$OUTPUT_FILE"
+        echo '        .severity.INFO { background: #e8f0fe; color: #1967d2; }' >> "$OUTPUT_FILE"
+        echo '        .severity.WARNING { background: #fef7e0; color: #f29900; }' >> "$OUTPUT_FILE"
+        echo '        .severity.ERROR { background: #fce8e6; color: #d93025; }' >> "$OUTPUT_FILE"
+        echo '        .message { margin-top: 8px; white-space: pre-wrap; font-family: monospace; background: #f8f9fa; padding: 10px; border-radius: 4px; }' >> "$OUTPUT_FILE"
+        echo '        .metadata { margin-top: 10px; font-size: 0.85em; color: #666; background: #f8f9fa; padding: 8px; border-radius: 4px; }' >> "$OUTPUT_FILE"
+        echo '        .no-logs { text-align: center; padding: 40px; color: #666; font-style: italic; }' >> "$OUTPUT_FILE"
+        echo '    </style>' >> "$OUTPUT_FILE"
+        echo '</head>' >> "$OUTPUT_FILE"
+        echo '<body>' >> "$OUTPUT_FILE"
+        
+        # Add header with project info
+        echo '    <div class="header">' >> "$OUTPUT_FILE"
+        echo '        <h1>🔍 GCP Logs Report</h1>' >> "$OUTPUT_FILE"
+        echo "        <p><strong>Project:</strong> ${{ inputs.project_id }}</p>" >> "$OUTPUT_FILE"
+        echo "        <p><strong>Filter:</strong> ${{ inputs.filter }}</p>" >> "$OUTPUT_FILE"
+        echo "        <p><strong>Generated:</strong> $(date)</p>" >> "$OUTPUT_FILE"
+        echo '    </div>' >> "$OUTPUT_FILE"
+        
+        # Add stats section
         LOG_COUNT=$(jq length raw_logs.json)
+        echo '    <div class="stats">' >> "$OUTPUT_FILE"
+        echo '        <div class="stat-item">' >> "$OUTPUT_FILE"
+        echo "            <div class=\"stat-value\">$LOG_COUNT</div>" >> "$OUTPUT_FILE"
+        echo '            <div>Log Entries</div>' >> "$OUTPUT_FILE"
+        echo '        </div>' >> "$OUTPUT_FILE"
+        echo '        <div class="stat-item">' >> "$OUTPUT_FILE"
+        echo "            <div class=\"stat-value\">${{ inputs.limit }}</div>" >> "$OUTPUT_FILE"
+        echo '            <div>Max Limit</div>' >> "$OUTPUT_FILE"
+        echo '        </div>' >> "$OUTPUT_FILE"
+        echo '        <div class="stat-item">' >> "$OUTPUT_FILE"
+        echo "            <div class=\"stat-value\">${{ inputs.output_format }}</div>" >> "$OUTPUT_FILE"
+        echo '            <div>Format</div>' >> "$OUTPUT_FILE"
+        echo '        </div>' >> "$OUTPUT_FILE"
+        echo '    </div>' >> "$OUTPUT_FILE"
+        
+        # Add log entries
         if [[ "$LOG_COUNT" -gt 0 ]]; then
-          if [[ "${{ inputs.include_metadata }}" == "true" ]]; then
-            echo "🔧 Creating HTML with full metadata"
-            jq -r '.[] | "<div class=\"log-entry\"><div class=\"timestamp\">📅 \(.timestamp)</div><span class=\"severity \(.severity // "INFO")\">🏷️ \(.severity // "INFO")</span><div class=\"message\">\(.textPayload // (.jsonPayload | tostring) // "No message")</div><div class=\"metadata\">📋 <strong>Resource:</strong> \(.resource.type // "N/A") | <strong>Labels:</strong> \(if .labels then (.labels | to_entries | map("\(.key): \(.value)") | join(", ")) else "None" end)</div></div>"' raw_logs.json >> "$OUTPUT_FILE"
-          else
-            echo "🔧 Creating HTML with messages only"
-            jq -r '.[] | "<div class=\"log-entry\"><div class=\"message\">\(.textPayload // (.jsonPayload | tostring) // "No message")</div></div>"' raw_logs.json >> "$OUTPUT_FILE"
-          fi
+          echo "🔧 Adding log entries to HTML"
+          
+          # Process each log entry individually to avoid complex escaping
+          jq -c '.[]' raw_logs.json | while read -r entry; do
+            TIMESTAMP=$(echo "$entry" | jq -r '.timestamp // "Unknown"')
+            SEVERITY=$(echo "$entry" | jq -r '.severity // "INFO"')
+            MESSAGE=$(echo "$entry" | jq -r '.textPayload // .jsonPayload // "No message"' | sed 's/</\&lt;/g; s/>/\&gt;/g')
+            
+            echo '    <div class="log-entry">' >> "$OUTPUT_FILE"
+            if [[ "${{ inputs.include_metadata }}" == "true" ]]; then
+              echo "        <div class=\"timestamp\">$TIMESTAMP</div>" >> "$OUTPUT_FILE"
+              echo "        <span class=\"severity $SEVERITY\">$SEVERITY</span>" >> "$OUTPUT_FILE"
+            fi
+            echo "        <div class=\"message\">$MESSAGE</div>" >> "$OUTPUT_FILE"
+            echo '    </div>' >> "$OUTPUT_FILE"
+          done
         else
-          echo '<div class="no-logs">📭 No log entries found matching the specified criteria.</div>' >> "$OUTPUT_FILE"
+          echo '    <div class="no-logs">📭 No log entries found matching the specified criteria.</div>' >> "$OUTPUT_FILE"
         fi
         
         # Close HTML
-        echo "</body></html>" >> "$OUTPUT_FILE"
+        echo '</body>' >> "$OUTPUT_FILE"
+        echo '</html>' >> "$OUTPUT_FILE"
         
         # Verify file creation and get size
         if [[ -f "$OUTPUT_FILE" ]]; then
