@@ -1,5 +1,5 @@
 name: 'GCP Restart App Engine'
-description: 'Restart Google App Engine service by deleting all existing instances to force recreation'
+description: 'Restart Google App Engine service by automatically detecting the serving version and deleting its instances to force recreation'
 author: 'Nabarun NGO'
 
 inputs:
@@ -10,10 +10,6 @@ inputs:
     description: 'Name of the App Engine service to restart'
     required: false
     default: 'default'
-  version_id:
-    description: 'Specific version ID to restart (leave empty to restart all versions)'
-    required: false
-    default: ''
   confirm_restart:
     description: 'Confirmation flag to proceed with restart (must be "yes" to execute)'
     required: true
@@ -27,6 +23,9 @@ inputs:
     default: '300'
 
 outputs:
+  detected_version:
+    description: 'The version that was automatically detected and restarted'
+    value: ${{ steps.get-service-info.outputs.detected_version }}
   restart_result:
     description: 'Result of the restart operation'
     value: ${{ steps.perform-restart.outputs.result }}
@@ -52,7 +51,7 @@ runs:
         echo "🔍 Validating GCP App Engine restart inputs..."
         echo "📝 Project ID: ${{ inputs.project_id }}"
         echo "🚀 Service: ${{ inputs.service_name }}"
-        echo "📊 Version: ${{ inputs.version_id || 'All versions' }}"
+        echo "📊 Version: Auto-detected"
         echo "🔧 Dry Run: ${{ inputs.dry_run }}"
         echo "⏱️ Timeout: ${{ inputs.wait_timeout }}s"
         
@@ -104,21 +103,25 @@ runs:
         
         echo "✅ Service '${{ inputs.service_name }}' found"
         
-        # Get versions information
-        if [[ -n "${{ inputs.version_id }}" ]]; then
-          echo "🔍 Getting information for specific version: ${{ inputs.version_id }}"
-          VERSIONS_INFO=$(gcloud app versions list \
-            --service="${{ inputs.service_name }}" \
-            --project="${{ inputs.project_id }}" \
-            --filter="version.id:${{ inputs.version_id }}" \
-            --format="json" 2>/dev/null || echo "[]")
-        else
-          echo "🔍 Getting information for all versions"
-          VERSIONS_INFO=$(gcloud app versions list \
-            --service="${{ inputs.service_name }}" \
-            --project="${{ inputs.project_id }}" \
-            --format="json" 2>/dev/null || echo "[]")
+        # Get currently serving version (traffic-receiving version)
+        echo "🔍 Detecting currently serving version..."
+        CURRENT_VERSION=$(gcloud app services describe "${{ inputs.service_name }}" \
+          --project="${{ inputs.project_id }}" \
+          --format="value(split.allocations.keys()[0])" 2>/dev/null || echo "")
+        
+        if [[ -z "$CURRENT_VERSION" ]]; then
+          echo "❌ Could not detect currently serving version"
+          exit 1
         fi
+        
+        echo "✅ Detected currently serving version: $CURRENT_VERSION"
+        
+        # Get information for the detected version
+        VERSIONS_INFO=$(gcloud app versions list \
+          --service="${{ inputs.service_name }}" \
+          --project="${{ inputs.project_id }}" \
+          --filter="version.id:$CURRENT_VERSION" \
+          --format="json" 2>/dev/null || echo "[]")
         
         VERSION_COUNT=$(echo "$VERSIONS_INFO" | jq length 2>/dev/null || echo "0")
         echo "📊 Found $VERSION_COUNT version(s) for service '${{ inputs.service_name }}'"
@@ -138,6 +141,7 @@ runs:
         echo "EOF" >> "$GITHUB_OUTPUT"
         
         echo "version_count=$VERSION_COUNT" >> "$GITHUB_OUTPUT"
+        echo "detected_version=$CURRENT_VERSION" >> "$GITHUB_OUTPUT"
 
     - name: Get current instances
       id: get-instances
@@ -145,14 +149,12 @@ runs:
       run: |
         echo "🔍 Getting current App Engine instances..."
         
+        # Get the detected version from previous step
+        DETECTED_VERSION="${{ steps.get-service-info.outputs.detected_version }}"
+        echo "🔍 Using detected version: $DETECTED_VERSION"
+        
         # Build instances list command
-        INSTANCES_CMD="gcloud app instances list --project=\"${{ inputs.project_id }}\" --service=\"${{ inputs.service_name }}\""
-        
-        if [[ -n "${{ inputs.version_id }}" ]]; then
-          INSTANCES_CMD="$INSTANCES_CMD --version=\"${{ inputs.version_id }}\""
-        fi
-        
-        INSTANCES_CMD="$INSTANCES_CMD --format=\"json\""
+        INSTANCES_CMD="gcloud app instances list --project=\"${{ inputs.project_id }}\" --service=\"${{ inputs.service_name }}\" --version=\"$DETECTED_VERSION\" --format=\"json\""
         
         echo "🔧 Executing: $INSTANCES_CMD"
         INSTANCES_INFO=$(eval "$INSTANCES_CMD" 2>/dev/null || echo "[]")
@@ -234,7 +236,7 @@ runs:
             
             if gcloud app instances delete "$INSTANCE_ID" \
                  --service="${{ inputs.service_name }}" \
-                 --version="${{ inputs.version_id }}" \
+                 --version="${{ steps.get-service-info.outputs.detected_version }}" \
                  --project="${{ inputs.project_id }}" \
                  --quiet 2>/dev/null; then
               echo "✅ Successfully deleted instance: $INSTANCE_ID"
@@ -300,11 +302,8 @@ runs:
         
         # Check for new instances (they may not appear immediately if no traffic)
         echo "🔍 Checking for new instances..."
-        NEW_INSTANCES_CMD="gcloud app instances list --project=\"${{ inputs.project_id }}\" --service=\"${{ inputs.service_name }}\""
-        if [[ -n "${{ inputs.version_id }}" ]]; then
-          NEW_INSTANCES_CMD="$NEW_INSTANCES_CMD --version=\"${{ inputs.version_id }}\""
-        fi
-        NEW_INSTANCES_CMD="$NEW_INSTANCES_CMD --format=\"json\""
+        DETECTED_VERSION="${{ steps.get-service-info.outputs.detected_version }}"
+        NEW_INSTANCES_CMD="gcloud app instances list --project=\"${{ inputs.project_id }}\" --service=\"${{ inputs.service_name }}\" --version=\"$DETECTED_VERSION\" --format=\"json\""
         
         NEW_INSTANCES_INFO=$(eval "$NEW_INSTANCES_CMD" 2>/dev/null || echo "[]")
         NEW_INSTANCE_COUNT=$(echo "$NEW_INSTANCES_INFO" | jq length 2>/dev/null || echo "0")
