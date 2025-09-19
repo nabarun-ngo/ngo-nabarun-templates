@@ -19,6 +19,31 @@ on:
         type: string
         default : 'main'
       
+    outputs:
+      # Auth0 sync outputs
+      auth0_sync_status:
+        description: 'Status of Auth0 data synchronization'
+        value: ${{ jobs.sync_data_auth0.result }}
+      auth0_sync_enabled:
+        description: 'Whether Auth0 sync was enabled'
+        value: ${{ inputs.sync_auth0 }}
+      # Firebase sync outputs
+      firebase_sync_status:
+        description: 'Status of Firebase data synchronization'
+        value: ${{ jobs.sync_data_firebase.result }}
+      firebase_sync_enabled:
+        description: 'Whether Firebase sync was enabled'
+        value: ${{ inputs.sync_firebaseRC }}
+      # Summary outputs
+      overall_status:
+        description: 'Overall synchronization status'
+        value: ${{ (inputs.sync_auth0 == false || jobs.sync_data_auth0.result == 'success') && (inputs.sync_firebaseRC == false || jobs.sync_data_firebase.result == 'success') && 'success' || 'failure' }}
+      sync_summary:
+        description: 'Synchronization summary information'
+        value: 'Auth0: ${{ inputs.sync_auth0}} | Firebase: ${{ inputs.sync_firebaseRC }} | Source Env: ${{ inputs.auth0_target_env }} | Target Env: ${{ inputs.firebase_target_env }} | Branch: ${{ inputs.branch_name }}'
+      operations_performed:
+        description: 'List of operations that were performed'
+        value: "${{ inputs.sync_auth0 && 'Auth0 Data Sync' || '' }}${{ inputs.sync_auth0 && inputs.sync_firebaseRC && ', ' || '' }}${{ inputs.sync_firebaseRC && 'Firebase Remote Config Sync' || '' }}"
     secrets:
       firebase_source_project:
         required: false
@@ -40,6 +65,11 @@ jobs:
     runs-on: ubuntu-latest
     if: ${{ inputs.sync_auth0 }}
     environment: ${{ inputs.auth0_target_env }}
+    outputs:
+      export_status: ${{ steps.export-auth0.outputs.status }}
+      process_status: ${{ steps.process-auth0.outputs.status }}
+      import_status: ${{ steps.import-auth0.outputs.status }}
+      files_exported: ${{ steps.export-auth0.outputs.files_count }}
     steps:
     - name: Checkout repository | Branch ${{ inputs.branch_name }}
       uses: actions/checkout@v4
@@ -65,11 +95,24 @@ jobs:
         echo '${{ secrets.auth0_dest_config }}' > auth0-target.json
     
     - name: Export from Source Tenant
+      id: export-auth0
       shell: bash
       run: |
-        a0deploy export -c auth0-source.json -f yaml -o ./exported
-        echo "Files in the './exported' directory and subdirectories:"
-        find ./exported -type f -print
+        echo "📤 Exporting Auth0 configuration from source tenant..."
+        if a0deploy export -c auth0-source.json -f yaml -o ./exported; then
+          echo "✅ Auth0 export successful"
+          FILES_COUNT=$(find ./exported -type f | wc -l)
+          echo "📁 Exported $FILES_COUNT file(s)"
+          echo "Files in the './exported' directory:"
+          find ./exported -type f -print
+          echo "status=success" >> $GITHUB_OUTPUT
+          echo "files_count=$FILES_COUNT" >> $GITHUB_OUTPUT
+        else
+          echo "❌ Auth0 export failed"
+          echo "status=failure" >> $GITHUB_OUTPUT
+          echo "files_count=0" >> $GITHUB_OUTPUT
+          exit 1
+        fi
     
     - name: Upload Raw Tenant File
       uses: actions/upload-artifact@v4
@@ -78,8 +121,18 @@ jobs:
         path: ./exported
         
     - name: Run Python script to process Auth0 data
+      id: process-auth0
       shell: bash
-      run: python scripts/auth0/process_auth0_v2.py auth0-source.json ./exported/tenant.yaml
+      run: |
+        echo "🐍 Processing Auth0 data with Python script..."
+        if python scripts/auth0/process_auth0_v2.py auth0-source.json ./exported/tenant.yaml; then
+          echo "✅ Auth0 data processing successful"
+          echo "status=success" >> $GITHUB_OUTPUT
+        else
+          echo "❌ Auth0 data processing failed"
+          echo "status=failure" >> $GITHUB_OUTPUT
+          exit 1
+        fi
     
     - name: Upload Processed Tenant File
       uses: actions/upload-artifact@v4
@@ -88,17 +141,31 @@ jobs:
         path: ./exported/tenant.yaml
         
     - name: Deploy to Target Tenant
+      id: import-auth0
       shell: bash
       run: |
-        echo "Files in the './exported' directory and subdirectories:"
+        echo "🚀 Importing Auth0 configuration to target tenant..."
+        echo "Files in the './exported' directory:"
         find ./exported -type f -print
-        a0deploy import -c auth0-target.json -f yaml -i ./exported/tenant.yaml
+        if a0deploy import -c auth0-target.json -f yaml -i ./exported/tenant.yaml; then
+          echo "✅ Auth0 import to target tenant successful"
+          echo "status=success" >> $GITHUB_OUTPUT
+        else
+          echo "❌ Auth0 import to target tenant failed"
+          echo "status=failure" >> $GITHUB_OUTPUT
+          exit 1
+        fi
 
   sync_data_firebase:
     name: 'Sync Firebase Data'
     runs-on: ubuntu-latest
     if: ${{ inputs.sync_firebaseRC }}
     environment: ${{ inputs.firebase_target_env }}
+    outputs:
+      export_status: ${{ steps.export-firebase.outputs.status }}
+      import_status: ${{ steps.import-firebase.outputs.status }}
+      source_etag: ${{ steps.export-firebase.outputs.source_etag }}
+      target_etag: ${{ steps.import-firebase.outputs.target_etag }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -119,7 +186,9 @@ jobs:
           echo "ACCESS_TOKEN=$ACCESS_TOKEN" >> $GITHUB_ENV
 
       - name: Export Remote Config from Source
+        id: export-firebase
         run: |
+          echo "📤 Exporting Firebase Remote Config from source project..."
           HTTP_STATUS=$(curl -w "%{http_code}" -o remote-config.json -D headers_source.txt -X GET \
             -H "Authorization: Bearer $ACCESS_TOKEN" \
             -H "Accept: application/json" \
@@ -127,11 +196,16 @@ jobs:
 
           if [[ $HTTP_STATUS -ge 400 ]]; then
             echo "❌ ERROR: Failed to export Remote Config from source (HTTP $HTTP_STATUS)"
+            echo "status=failure" >> $GITHUB_OUTPUT
             exit 1
           fi
 
           ETAG=$(grep -Fi "etag:" headers_source.txt | awk '{print $2}' | tr -d '\r')
           echo "SOURCE_ETAG=$ETAG" >> $GITHUB_ENV
+          echo "✅ Firebase Remote Config export successful"
+          echo "🏷️ Source ETag: $ETAG"
+          echo "status=success" >> $GITHUB_OUTPUT
+          echo "source_etag=$ETAG" >> $GITHUB_OUTPUT
 
       - name: Upload Remote Config as Artifact
         uses: actions/upload-artifact@v4
@@ -169,7 +243,9 @@ jobs:
           echo "TARGET_ETAG=$ETAG" >> $GITHUB_ENV
 
       - name: Import Remote Config to Target and Print New ETag
+        id: import-firebase
         run: |
+          echo "🚀 Importing Firebase Remote Config to target project..."
           HTTP_RESPONSE=$(mktemp)
           HTTP_STATUS=$(curl -w "%{http_code}" -o $HTTP_RESPONSE -D headers_response.txt -X PUT \
             -H "Authorization: Bearer $ACCESS_TOKEN" \
@@ -181,12 +257,15 @@ jobs:
           if [[ $HTTP_STATUS -ge 400 ]]; then
             echo "❌ ERROR: Failed to update Remote Config on target (HTTP $HTTP_STATUS)"
             cat $HTTP_RESPONSE
+            echo "status=failure" >> $GITHUB_OUTPUT
             exit 1
           fi
 
           NEW_ETAG=$(grep -Fi "etag:" headers_response.txt | awk '{print $2}' | tr -d '\r')
           echo "✅ Successfully updated Remote Config!"
-          echo "📌 New ETag: $NEW_ETAG"
+          echo "📌 New Target ETag: $NEW_ETAG"
+          echo "status=success" >> $GITHUB_OUTPUT
+          echo "target_etag=$NEW_ETAG" >> $GITHUB_OUTPUT
 
       
     

@@ -78,6 +78,21 @@ on:
       qmetry_open_api_key:
         required: true
     outputs:
+      # Discovery outputs
+      discovery_status:
+        description: 'Status of test discovery process'
+        value: ${{ jobs.discover-scenarios.result }}
+      scenario_count:
+        description: 'Total number of scenarios discovered'
+        value: ${{ jobs.discover-scenarios.outputs.scenario_count }}
+      # Execution outputs
+      test_execution_status:
+        description: 'Status of test execution process'
+        value: ${{ jobs.run_test.result }}
+      # Upload outputs
+      upload_status:
+        description: 'Status of test results upload process'
+        value: ${{ jobs.upload_test_result.result }}
       test_execution_url:
         description: "QMetry test execution URL"
         value: ${{ jobs.upload_test_result.outputs.execution_url }}
@@ -87,6 +102,13 @@ on:
       test_results_uploaded:
         description: "Whether test results were uploaded to QMetry"
         value: ${{ inputs.upload_result && jobs.upload_test_result.result == 'success' }}
+      # Summary outputs
+      overall_status:
+        description: 'Overall workflow execution status'
+        value: ${{ (jobs.discover-scenarios.result == 'success' && (jobs.run_test.result == 'success' || jobs.run_test.result == 'failure') && (inputs.upload_result == false || jobs.upload_test_result.result == 'success')) && 'completed' || 'failed' }}
+      test_summary:
+        description: 'Test execution summary information'
+        value: 'Environment: ${{ inputs.test_env }} | Type: ${{ inputs.test_type }} | Tags: ${{ inputs.test_cucumber_tags }} | Scenarios: ${{ jobs.discover-scenarios.outputs.scenario_count }} | UI Version: ${{ inputs.app_ui_version }} | Server Version: ${{ inputs.app_server_version }}'
         
 jobs:
   discover-scenarios:

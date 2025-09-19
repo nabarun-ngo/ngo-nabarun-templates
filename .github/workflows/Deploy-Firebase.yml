@@ -54,12 +54,33 @@ on:
       repo_token:
         required: true
     outputs:
+      # Build outputs
+      build_status:
+        description: 'Status of the build process'
+        value: ${{ jobs.build_application.result }}
+      build_successful:
+        description: 'Whether the build was successful'
+        value: ${{ jobs.build_application.outputs.build_successful }}
+      # Deployment outputs
+      deployment_status:
+        description: 'Status of the deployment process'
+        value: ${{ jobs.deploy_to_firebase.result }}
       firebase_url:
         description: "The URL of the deployed Firebase app"
         value: ${{ jobs.deploy_to_firebase.outputs.firebase_url }}
       firebase_channel:
         description: "The Firebase channel where the app was deployed"
         value: ${{ inputs.firebase_channel }}
+      deployment_id:
+        description: 'GitHub deployment ID'
+        value: ${{ jobs.deploy_to_firebase.outputs.deployment_id }}
+      # Summary outputs
+      overall_status:
+        description: 'Overall workflow execution status'
+        value: ${{ (jobs.build_application.result == 'success' && jobs.deploy_to_firebase.result == 'success') && 'success' || 'failure' }}
+      deployment_summary:
+        description: 'Deployment summary information'
+        value: 'Tag: ${{ inputs.tag_name }} | Channel: ${{ inputs.firebase_channel }} | Environment: ${{ inputs.environment_name }} | Node: ${{ inputs.node_version }} | Manager: ${{ inputs.package_manager }}'
      
 jobs:
   build_application:

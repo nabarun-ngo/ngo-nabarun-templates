@@ -1,0 +1,211 @@
+# Example Caller Workflow - Sync Data with Summary
+name: 'Sync Auth0 and Firebase Data with Summary'
+
+on:
+  workflow_dispatch:
+    inputs:
+      sync_auth0:
+        description: 'Sync Auth0 configuration'
+        required: true
+        type: boolean
+        default: true
+      sync_firebase:
+        description: 'Sync Firebase Remote Config'
+        required: true
+        type: boolean
+        default: true
+      auth0_environment:
+        description: 'Auth0 target environment'
+        required: true
+        type: choice
+        options:
+          - staging
+          - production
+        default: staging
+      firebase_environment:
+        description: 'Firebase target environment'
+        required: true
+        type: choice
+        options:
+          - staging
+          - production
+        default: staging
+      branch:
+        description: 'Branch to sync from'
+        required: false
+        type: string
+        default: 'main'
+
+jobs:
+  sync-data:
+    name: 'Execute Data Synchronization'
+    uses: ngo-nabarun-templates/.github/workflows/Sync-Data.yml@main
+    with:
+      auth0_target_env: ${{ inputs.auth0_environment }}
+      firebase_target_env: ${{ inputs.firebase_environment }}
+      sync_auth0: ${{ inputs.sync_auth0 }}
+      sync_firebaseRC: ${{ inputs.sync_firebase }}
+      branch_name: ${{ inputs.branch }}
+    secrets:
+      firebase_source_project: ${{ secrets.FIREBASE_SOURCE_PROJECT }}
+      firebase_target_project: ${{ secrets.FIREBASE_TARGET_PROJECT }}
+      auth0_source_config: ${{ secrets.AUTH0_SOURCE_CONFIG }}
+      auth0_dest_config: ${{ secrets.AUTH0_DEST_CONFIG }}
+      firebase_service_account_source: ${{ secrets.FIREBASE_SA_SOURCE }}
+      firebase_service_account_target: ${{ secrets.FIREBASE_SA_TARGET }}
+
+  generate-sync-summary:
+    name: 'Generate Synchronization Summary'
+    runs-on: ubuntu-latest
+    needs: sync-data
+    if: always()
+    steps:
+      - name: Create Synchronization Report
+        run: |
+          echo "# 🔄 Data Synchronization Report" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Synchronization Details
+          echo "## 📋 Synchronization Details" >> $GITHUB_STEP_SUMMARY
+          echo "| Field | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| **Auth0 Sync** | ${{ inputs.sync_auth0 && '✅ Enabled' || '⏭️ Disabled' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Firebase Sync** | ${{ inputs.sync_firebase && '✅ Enabled' || '⏭️ Disabled' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Auth0 Environment** | \`${{ inputs.auth0_environment }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Firebase Environment** | \`${{ inputs.firebase_environment }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Source Branch** | \`${{ inputs.branch }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Repository** | \`${{ github.repository }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Workflow Run** | [\`${{ github.run_id }}\`](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Triggered By** | @${{ github.actor }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Timestamp** | $(date -u '+%Y-%m-%d %H:%M:%S UTC') |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Overall Status
+          OVERALL_STATUS="${{ needs.sync-data.outputs.overall_status }}"
+          if [ "$OVERALL_STATUS" = "success" ]; then
+            echo "## ✅ Synchronization Successful" >> $GITHUB_STEP_SUMMARY
+            echo "All enabled synchronization operations completed successfully!" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "## ❌ Synchronization Failed" >> $GITHUB_STEP_SUMMARY
+            echo "One or more synchronization operations encountered errors." >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Auth0 Synchronization Status
+          if [ "${{ inputs.sync_auth0 }}" = "true" ]; then
+            echo "## 🔐 Auth0 Synchronization" >> $GITHUB_STEP_SUMMARY
+            AUTH0_STATUS="${{ needs.sync-data.outputs.auth0_sync_status }}"
+            
+            if [ "$AUTH0_STATUS" = "success" ]; then
+              echo "✅ **Status:** Auth0 synchronization completed successfully" >> $GITHUB_STEP_SUMMARY
+              echo "📤 **Export:** Configuration exported from source tenant" >> $GITHUB_STEP_SUMMARY
+              echo "🐍 **Processing:** Data processed with Python transformation script" >> $GITHUB_STEP_SUMMARY
+              echo "📥 **Import:** Configuration imported to target tenant" >> $GITHUB_STEP_SUMMARY
+            elif [ "$AUTH0_STATUS" = "failure" ]; then
+              echo "❌ **Status:** Auth0 synchronization failed" >> $GITHUB_STEP_SUMMARY
+              echo "🔍 **Action Required:** Check workflow logs for Auth0 sync errors" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "⏭️ **Status:** Auth0 synchronization was skipped" >> $GITHUB_STEP_SUMMARY
+            fi
+          else
+            echo "## 🔐 Auth0 Synchronization" >> $GITHUB_STEP_SUMMARY
+            echo "⏭️ **Status:** Auth0 synchronization was disabled" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Firebase Synchronization Status
+          if [ "${{ inputs.sync_firebase }}" = "true" ]; then
+            echo "## 🔥 Firebase Synchronization" >> $GITHUB_STEP_SUMMARY
+            FIREBASE_STATUS="${{ needs.sync-data.outputs.firebase_sync_status }}"
+            
+            if [ "$FIREBASE_STATUS" = "success" ]; then
+              echo "✅ **Status:** Firebase Remote Config synchronization completed successfully" >> $GITHUB_STEP_SUMMARY
+              echo "📤 **Export:** Remote Config exported from source project" >> $GITHUB_STEP_SUMMARY
+              echo "📥 **Import:** Remote Config imported to target project" >> $GITHUB_STEP_SUMMARY
+              echo "🏷️ **ETag Management:** Configuration versioning handled automatically" >> $GITHUB_STEP_SUMMARY
+            elif [ "$FIREBASE_STATUS" = "failure" ]; then
+              echo "❌ **Status:** Firebase Remote Config synchronization failed" >> $GITHUB_STEP_SUMMARY
+              echo "🔍 **Action Required:** Check workflow logs for Firebase sync errors" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "⏭️ **Status:** Firebase synchronization was skipped" >> $GITHUB_STEP_SUMMARY
+            fi
+          else
+            echo "## 🔥 Firebase Synchronization" >> $GITHUB_STEP_SUMMARY
+            echo "⏭️ **Status:** Firebase synchronization was disabled" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Operations Performed
+          echo "## 📊 Operations Summary" >> $GITHUB_STEP_SUMMARY
+          OPERATIONS="${{ needs.sync-data.outputs.operations_performed }}"
+          if [ -n "$OPERATIONS" ]; then
+            echo "**Operations Performed:** $OPERATIONS" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "**Operations Performed:** None (all synchronization was disabled)" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Summary:** ${{ needs.sync-data.outputs.sync_summary }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Artifacts and Downloads
+          echo "## 📦 Artifacts" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ inputs.sync_auth0 }}" = "true" ]; then
+            echo "- 📁 **Raw Auth0 Tenant Data:** Available in workflow artifacts" >> $GITHUB_STEP_SUMMARY
+            echo "- 📝 **Processed Auth0 Tenant File:** Available in workflow artifacts" >> $GITHUB_STEP_SUMMARY
+          fi
+          if [ "${{ inputs.sync_firebase }}" = "true" ]; then
+            echo "- 🔥 **Firebase Remote Config:** Available in workflow artifacts" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Next Steps
+          echo "## 🎯 Next Steps" >> $GITHUB_STEP_SUMMARY
+          if [ "$OVERALL_STATUS" = "success" ]; then
+            echo "- 🧪 **Test Configurations:** Verify that synchronized configurations work correctly in target environments" >> $GITHUB_STEP_SUMMARY
+            echo "- 📊 **Monitor Applications:** Check that applications using the synchronized data are functioning properly" >> $GITHUB_STEP_SUMMARY
+            echo "- 📢 **Notify Teams:** Inform relevant teams about the configuration updates" >> $GITHUB_STEP_SUMMARY
+            
+            if [ "${{ inputs.sync_auth0 }}" = "true" ]; then
+              echo "- 🔐 **Auth0 Verification:** Test authentication flows in the target environment" >> $GITHUB_STEP_SUMMARY
+            fi
+            
+            if [ "${{ inputs.sync_firebase }}" = "true" ]; then
+              echo "- 🔥 **Firebase Verification:** Check that Remote Config values are properly applied" >> $GITHUB_STEP_SUMMARY
+            fi
+          else
+            echo "- 🔍 **Investigate Failures:** Review workflow logs to identify the cause of synchronization failures" >> $GITHUB_STEP_SUMMARY
+            echo "- 🔧 **Fix Issues:** Address any configuration, authentication, or network issues" >> $GITHUB_STEP_SUMMARY
+            echo "- 🔄 **Retry Synchronization:** Re-run the workflow after resolving issues" >> $GITHUB_STEP_SUMMARY
+            echo "- 📞 **Contact Support:** Reach out to Auth0/Firebase support if issues persist" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Security Notes
+          echo "## 🔒 Security Notes" >> $GITHUB_STEP_SUMMARY
+          echo "- 🔑 **Credentials:** All service account keys and configurations are handled securely via GitHub Secrets" >> $GITHUB_STEP_SUMMARY
+          echo "- 🗂️ **Artifacts:** Configuration files in artifacts are automatically cleaned up after retention period" >> $GITHUB_STEP_SUMMARY
+          echo "- 🌍 **Environments:** Changes were applied to the specified target environments only" >> $GITHUB_STEP_SUMMARY
+          echo "- 📝 **Audit Trail:** This workflow run provides a complete audit trail of synchronization operations" >> $GITHUB_STEP_SUMMARY
+
+  notify-on-failure:
+    name: 'Notify on Synchronization Failure'
+    runs-on: ubuntu-latest
+    needs: [sync-data, generate-sync-summary]
+    if: always() && needs.sync-data.outputs.overall_status == 'failure'
+    steps:
+      - name: Create Failure Notification
+        run: |
+          echo "🚨 Data synchronization failed!" >> $GITHUB_STEP_SUMMARY
+          echo "**Auth0 Sync:** ${{ inputs.sync_auth0 && 'Enabled' || 'Disabled' }} (Status: ${{ needs.sync-data.outputs.auth0_sync_status }})" >> $GITHUB_STEP_SUMMARY
+          echo "**Firebase Sync:** ${{ inputs.sync_firebase && 'Enabled' || 'Disabled' }} (Status: ${{ needs.sync-data.outputs.firebase_sync_status }})" >> $GITHUB_STEP_SUMMARY
+          echo "**Environments:** Auth0: ${{ inputs.auth0_environment }}, Firebase: ${{ inputs.firebase_environment }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Time:** $(date -u)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Please check the workflow logs and resolve any configuration or authentication issues." >> $GITHUB_STEP_SUMMARY
+          
+          # You can add additional notification logic here, such as:
+          # - Slack notifications to ops team
+          # - Email alerts to administrators
+          # - Teams webhooks to relevant channels
+          # - JIRA ticket creation for tracking
+          # - PagerDuty alerts for critical failures

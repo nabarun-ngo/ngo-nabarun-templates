@@ -69,6 +69,35 @@ on:
         required: false
         type: string
         default: '-Dmaven.test.skip=true -Dmaven.javadoc.skip=true'
+    outputs:
+      # Build outputs
+      build_status:
+        description: 'Status of the build process'
+        value: ${{ jobs.build_application.result }}
+      jar_name:
+        description: 'Name of the built JAR file'
+        value: ${{ jobs.build_application.outputs.jar_name }}
+      # Deployment outputs
+      deployment_status:
+        description: 'Status of the deployment process'
+        value: ${{ jobs.deploy_to_gcp.result }}
+      deployment_version:
+        description: 'Deployed GAE version ID'
+        value: ${{ jobs.deploy_to_gcp.outputs.deployment_version }}
+      deployment_id:
+        description: 'GitHub deployment ID'
+        value: ${{ jobs.deploy_to_gcp.outputs.deployment_id }}
+      # Cleanup outputs
+      cleanup_status:
+        description: 'Status of the cleanup process'
+        value: ${{ jobs.clean_gcp_resources.result }}
+      # Summary outputs
+      overall_status:
+        description: 'Overall workflow execution status'
+        value: ${{ (jobs.build_application.result == 'success' && jobs.deploy_to_gcp.result == 'success') && 'success' || 'failure' }}
+      deployment_summary:
+        description: 'Deployment summary information'
+        value: 'Tag: ${{ inputs.tag_name }} | Service: ${{ inputs.gae_service_name }} | Environment: ${{ inputs.environment_name }} | Version: ${{ jobs.deploy_to_gcp.outputs.deployment_version }}'
     secrets:
       gcp_project_id:
         required: true

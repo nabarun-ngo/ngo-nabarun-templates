@@ -1,0 +1,387 @@
+# Example Caller Workflow - Deploy to GCP with Summary
+name: 'Deploy Application to GCP with Summary'
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: 'Release tag to deploy'
+        required: true
+        type: string
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        type: choice
+        options:
+          - staging
+          - production
+        default: staging
+
+jobs:
+  deploy-to-gcp:
+    name: 'Deploy to GCP App Engine'
+    uses: ngo-nabarun-templates/.github/workflows/Deploy-GCP-v2.yml@main
+    with:
+      tag_name: ${{ inputs.tag_name }}
+      repo_name: ${{ github.event.repository.name }}
+      repo_owner_name: ${{ github.repository_owner }}
+      environment_name: ${{ inputs.environment }}
+      environment_url: 'https://your-app.appspot.com'
+      target_folder: 'target'
+      gae_service_name: 'api-service'
+      app_env: ${{ inputs.environment }}
+      app_doppler_project_name: 'my-project'
+      java_version: '17'
+      enable_health_check: true
+    secrets:
+      gcp_project_id: ${{ secrets.GCP_PROJECT_ID }}
+      gcp_service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+      app_doppler_service_token: ${{ secrets.DOPPLER_TOKEN }}
+      repo_token: ${{ secrets.GITHUB_TOKEN }}
+
+  generate-deployment-summary:
+    name: 'Generate Deployment Summary'
+    runs-on: ubuntu-latest
+    needs: deploy-to-gcp
+    if: always()
+    steps:
+      - name: Create Deployment Report
+        run: |
+          echo "# 🚀 GCP Deployment Report" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Deployment Details
+          echo "## 📋 Deployment Details" >> $GITHUB_STEP_SUMMARY
+          echo "| Field | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| **Tag** | \`${{ inputs.tag_name }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Environment** | \`${{ inputs.environment }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Repository** | \`${{ github.repository }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Workflow Run** | [\`${{ github.run_id }}\`](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Triggered By** | @${{ github.actor }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Timestamp** | $(date -u '+%Y-%m-%d %H:%M:%S UTC') |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Overall Status
+          OVERALL_STATUS="${{ needs.deploy-to-gcp.outputs.overall_status }}"
+          if [ "$OVERALL_STATUS" = "success" ]; then
+            echo "## ✅ Deployment Successful" >> $GITHUB_STEP_SUMMARY
+            echo "The application has been successfully deployed to ${{ inputs.environment }}!" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "## ❌ Deployment Failed" >> $GITHUB_STEP_SUMMARY
+            echo "The deployment encountered errors. Please check the logs for details." >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Build Status
+          echo "## 📦 Build Status" >> $GITHUB_STEP_SUMMARY
+          BUILD_STATUS="${{ needs.deploy-to-gcp.outputs.build_status }}"
+          JAR_NAME="${{ needs.deploy-to-gcp.outputs.jar_name }}"
+          if [ "$BUILD_STATUS" = "success" ]; then
+            echo "✅ **Build:** Successful" >> $GITHUB_STEP_SUMMARY
+            echo "📁 **JAR File:** \`$JAR_NAME\`" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ **Build:** Failed" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Deployment Status
+          echo "## 🚀 Deployment Status" >> $GITHUB_STEP_SUMMARY
+          DEPLOYMENT_STATUS="${{ needs.deploy-to-gcp.outputs.deployment_status }}"
+          DEPLOYMENT_VERSION="${{ needs.deploy-to-gcp.outputs.deployment_version }}"
+          DEPLOYMENT_ID="${{ needs.deploy-to-gcp.outputs.deployment_id }}"
+          
+          if [ "$DEPLOYMENT_STATUS" = "success" ]; then
+            echo "✅ **Deployment:** Successful" >> $GITHUB_STEP_SUMMARY
+            echo "🔗 **Version:** \`$DEPLOYMENT_VERSION\`" >> $GITHUB_STEP_SUMMARY
+            echo "🆔 **Deployment ID:** \`$DEPLOYMENT_ID\`" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ **Deployment:** Failed" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Cleanup Status
+          echo "## 🧹 Cleanup Status" >> $GITHUB_STEP_SUMMARY
+          CLEANUP_STATUS="${{ needs.deploy-to-gcp.outputs.cleanup_status }}"
+          if [ "$CLEANUP_STATUS" = "success" ]; then
+            echo "✅ **Cleanup:** Old resources cleaned up successfully" >> $GITHUB_STEP_SUMMARY
+          elif [ "$CLEANUP_STATUS" = "failure" ]; then
+            echo "⚠️ **Cleanup:** Some cleanup operations failed (deployment still successful)" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "⏭️ **Cleanup:** Skipped (due to deployment failure)" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Summary Information
+          echo "## 📊 Summary" >> $GITHUB_STEP_SUMMARY
+          echo "${{ needs.deploy-to-gcp.outputs.deployment_summary }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Next Steps
+          echo "## 🎯 Next Steps" >> $GITHUB_STEP_SUMMARY
+          if [ "$OVERALL_STATUS" = "success" ]; then
+            echo "- 🌐 **Application URL:** [Visit Application](https://your-app.appspot.com)" >> $GITHUB_STEP_SUMMARY
+            echo "- 📊 **Monitor:** Check application logs and metrics" >> $GITHUB_STEP_SUMMARY
+            echo "- 🧪 **Test:** Verify application functionality" >> $GITHUB_STEP_SUMMARY
+            echo "- 📢 **Notify:** Inform stakeholders about the deployment" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "- 🔍 **Investigate:** Check workflow logs for error details" >> $GITHUB_STEP_SUMMARY
+            echo "- 🔧 **Fix:** Address any issues found" >> $GITHUB_STEP_SUMMARY
+            echo "- 🔄 **Retry:** Re-run the deployment after fixes" >> $GITHUB_STEP_SUMMARY
+          fi
+
+---
+
+# Example Caller Workflow - Run Tests with Summary
+name: 'Run Parallel Tests with Summary'
+
+on:
+  workflow_dispatch:
+    inputs:
+      test_environment:
+        description: 'Test environment'
+        required: true
+        type: choice
+        options:
+          - staging
+          - integration
+        default: staging
+      cucumber_tags:
+        description: 'Cucumber tags to run'
+        required: true
+        type: string
+        default: '@smoke'
+
+jobs:
+  run-parallel-tests:
+    name: 'Execute Parallel Tests'
+    uses: ngo-nabarun-templates/.github/workflows/Run-Parallel-Tests.yml@main
+    with:
+      test_env: ${{ inputs.test_environment }}
+      test_doppler_project_name: 'test-project'
+      test_cucumber_tags: ${{ inputs.cucumber_tags }}
+      test_type: 'automation'
+      max_tests_per_matrix: 5
+      app_ui_version: 'v1.2.3'
+      app_server_version: 'v2.1.0'
+      java_version: '22'
+      repository_name: 'my-org/test-automation'
+      branch_name: 'main'
+      test_cycle_folder: '12345'
+      test_case_folder: '67890'
+      qmetry_project_id: 'PROJ-123'
+      jira_url: 'https://mycompany.atlassian.net'
+      upload_result: true
+    secrets:
+      test_doppler_service_token: ${{ secrets.DOPPLER_TOKEN }}
+      qmetry_api_key: ${{ secrets.QMETRY_API_KEY }}
+      qmetry_open_api_key: ${{ secrets.QMETRY_OPEN_API_KEY }}
+
+  generate-test-summary:
+    name: 'Generate Test Summary'
+    runs-on: ubuntu-latest
+    needs: run-parallel-tests
+    if: always()
+    steps:
+      - name: Create Test Report
+        run: |
+          echo "# 🧪 Test Execution Report" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Test Details
+          echo "## 📋 Test Details" >> $GITHUB_STEP_SUMMARY
+          echo "| Field | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| **Environment** | \`${{ inputs.test_environment }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Tags** | \`${{ inputs.cucumber_tags }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Repository** | \`${{ github.repository }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Workflow Run** | [\`${{ github.run_id }}\`](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Triggered By** | @${{ github.actor }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Overall Status
+          OVERALL_STATUS="${{ needs.run-parallel-tests.outputs.overall_status }}"
+          if [ "$OVERALL_STATUS" = "completed" ]; then
+            echo "## ✅ Test Execution Completed" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "## ❌ Test Execution Failed" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Discovery Status
+          echo "## 🔍 Test Discovery" >> $GITHUB_STEP_SUMMARY
+          DISCOVERY_STATUS="${{ needs.run-parallel-tests.outputs.discovery_status }}"
+          SCENARIO_COUNT="${{ needs.run-parallel-tests.outputs.scenario_count }}"
+          if [ "$DISCOVERY_STATUS" = "success" ]; then
+            echo "✅ **Discovery:** $SCENARIO_COUNT scenarios discovered" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ **Discovery:** Failed to discover test scenarios" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Execution Status
+          echo "## 🏃 Test Execution" >> $GITHUB_STEP_SUMMARY
+          EXECUTION_STATUS="${{ needs.run-parallel-tests.outputs.test_execution_status }}"
+          if [ "$EXECUTION_STATUS" = "success" ]; then
+            echo "✅ **Execution:** All tests passed" >> $GITHUB_STEP_SUMMARY
+          elif [ "$EXECUTION_STATUS" = "failure" ]; then
+            echo "⚠️ **Execution:** Some tests failed (results uploaded for analysis)" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ **Execution:** Test execution encountered errors" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Upload Status
+          echo "## 📤 Results Upload" >> $GITHUB_STEP_SUMMARY
+          UPLOAD_STATUS="${{ needs.run-parallel-tests.outputs.upload_status }}"
+          TEST_CYCLE="${{ needs.run-parallel-tests.outputs.test_cycle }}"
+          EXECUTION_URL="${{ needs.run-parallel-tests.outputs.test_execution_url }}"
+          
+          if [ "$UPLOAD_STATUS" = "success" ]; then
+            echo "✅ **Upload:** Results uploaded to QMetry" >> $GITHUB_STEP_SUMMARY
+            echo "🔗 **Test Cycle:** \`$TEST_CYCLE\`" >> $GITHUB_STEP_SUMMARY
+            if [ -n "$EXECUTION_URL" ]; then
+              echo "📊 **View Results:** [QMetry Execution]($EXECUTION_URL)" >> $GITHUB_STEP_SUMMARY
+            fi
+          else
+            echo "❌ **Upload:** Failed to upload results to QMetry" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Summary Information
+          echo "## 📊 Summary" >> $GITHUB_STEP_SUMMARY
+          echo "${{ needs.run-parallel-tests.outputs.test_summary }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Next Steps
+          echo "## 🎯 Next Steps" >> $GITHUB_STEP_SUMMARY
+          if [ "$OVERALL_STATUS" = "completed" ]; then
+            if [ "$EXECUTION_STATUS" = "success" ]; then
+              echo "- ✅ **All tests passed** - Ready for next phase" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "- 🔍 **Review failed tests** in QMetry execution report" >> $GITHUB_STEP_SUMMARY
+              echo "- 🐛 **Create bug tickets** for legitimate failures" >> $GITHUB_STEP_SUMMARY
+              echo "- 🔄 **Re-run specific tests** after fixes" >> $GITHUB_STEP_SUMMARY
+            fi
+          else
+            echo "- 🔍 **Check workflow logs** for technical issues" >> $GITHUB_STEP_SUMMARY
+            echo "- 🔧 **Fix infrastructure/configuration** issues" >> $GITHUB_STEP_SUMMARY
+            echo "- 🔄 **Retry test execution** after resolving issues" >> $GITHUB_STEP_SUMMARY
+          fi
+
+---
+
+# Example Caller Workflow - Deploy to Firebase with Summary
+name: 'Deploy to Firebase with Summary'
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: 'Release tag to deploy'
+        required: true
+        type: string
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        type: choice
+        options:
+          - staging
+          - production
+
+jobs:
+  deploy-to-firebase:
+    name: 'Deploy to Firebase Hosting'
+    uses: ngo-nabarun-templates/.github/workflows/Deploy-Firebase.yml@main
+    with:
+      tag_name: ${{ inputs.tag_name }}
+      repo_name: ${{ github.event.repository.name }}
+      repo_owner_name: ${{ github.repository_owner }}
+      environment_name: ${{ inputs.environment }}
+      environment_url: 'https://my-app.web.app'
+      npm_run_command: 'npm run build'
+      node_version: '20'
+      working_directory: './frontend'
+      package_manager: 'npm'
+      build_output_dir: 'dist'
+      firebase_channel: ${{ inputs.environment == 'production' && 'live' || 'preview' }}
+    secrets:
+      firebase_project_id: ${{ secrets.FIREBASE_PROJECT_ID }}
+      firebase_service_account: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+      repo_token: ${{ secrets.GITHUB_TOKEN }}
+
+  generate-firebase-summary:
+    name: 'Generate Firebase Deployment Summary'
+    runs-on: ubuntu-latest
+    needs: deploy-to-firebase
+    if: always()
+    steps:
+      - name: Create Firebase Deployment Report
+        run: |
+          echo "# 🔥 Firebase Deployment Report" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Deployment Details
+          echo "## 📋 Deployment Details" >> $GITHUB_STEP_SUMMARY
+          echo "| Field | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| **Tag** | \`${{ inputs.tag_name }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Environment** | \`${{ inputs.environment }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Channel** | \`${{ needs.deploy-to-firebase.outputs.firebase_channel }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Repository** | \`${{ github.repository }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Triggered By** | @${{ github.actor }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Overall Status
+          OVERALL_STATUS="${{ needs.deploy-to-firebase.outputs.overall_status }}"
+          if [ "$OVERALL_STATUS" = "success" ]; then
+            echo "## ✅ Deployment Successful" >> $GITHUB_STEP_SUMMARY
+            echo "Your application is now live on Firebase Hosting!" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "## ❌ Deployment Failed" >> $GITHUB_STEP_SUMMARY
+            echo "The deployment encountered errors. Please check the logs." >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Build Status
+          echo "## 📦 Build Status" >> $GITHUB_STEP_SUMMARY
+          BUILD_STATUS="${{ needs.deploy-to-firebase.outputs.build_status }}"
+          if [ "$BUILD_STATUS" = "success" ]; then
+            echo "✅ **Build:** Frontend assets built successfully" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ **Build:** Frontend build failed" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Deployment Status
+          echo "## 🚀 Deployment Status" >> $GITHUB_STEP_SUMMARY
+          DEPLOYMENT_STATUS="${{ needs.deploy-to-firebase.outputs.deployment_status }}"
+          FIREBASE_URL="${{ needs.deploy-to-firebase.outputs.firebase_url }}"
+          
+          if [ "$DEPLOYMENT_STATUS" = "success" ]; then
+            echo "✅ **Deployment:** Successfully deployed to Firebase" >> $GITHUB_STEP_SUMMARY
+            if [ -n "$FIREBASE_URL" ]; then
+              echo "🌐 **Live URL:** [$FIREBASE_URL]($FIREBASE_URL)" >> $GITHUB_STEP_SUMMARY
+            fi
+          else
+            echo "❌ **Deployment:** Firebase deployment failed" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Summary Information
+          echo "## 📊 Summary" >> $GITHUB_STEP_SUMMARY
+          echo "${{ needs.deploy-to-firebase.outputs.deployment_summary }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Next Steps
+          echo "## 🎯 Next Steps" >> $GITHUB_STEP_SUMMARY
+          if [ "$OVERALL_STATUS" = "success" ]; then
+            echo "- 🌐 **Visit Application:** [Open Live Site]($FIREBASE_URL)" >> $GITHUB_STEP_SUMMARY
+            echo "- 🧪 **Test Features:** Verify all functionality works correctly" >> $GITHUB_STEP_SUMMARY
+            echo "- 📊 **Monitor Performance:** Check Firebase Analytics" >> $GITHUB_STEP_SUMMARY
+            echo "- 📢 **Announce Release:** Notify users and stakeholders" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "- 🔍 **Check Build Logs:** Review frontend build output" >> $GITHUB_STEP_SUMMARY
+            echo "- 🔧 **Fix Issues:** Address build or deployment errors" >> $GITHUB_STEP_SUMMARY
+            echo "- 🔄 **Retry Deployment:** Re-run after fixes" >> $GITHUB_STEP_SUMMARY
+          fi
