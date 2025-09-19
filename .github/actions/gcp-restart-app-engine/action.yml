@@ -275,7 +275,8 @@ runs:
           exit 1
         fi
         
-        echo "$INSTANCE_IDS" | while read -r INSTANCE_ID; do
+        # Process each instance ID (avoiding subshell to preserve counters)
+        while IFS= read -r INSTANCE_ID; do
           if [[ -n "$INSTANCE_ID" ]]; then
             echo "🔥 Deleting instance: $INSTANCE_ID"
             
@@ -291,7 +292,7 @@ runs:
               ((FAILED_COUNT++)) || true
             fi
           fi
-        done
+        done <<< "$INSTANCE_IDS"
         
         echo "📊 Deletion summary:"
         echo "   - Deleted: $DELETED_COUNT instances"
