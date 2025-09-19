@@ -105,16 +105,61 @@ runs:
         
         # Get currently serving version (traffic-receiving version)
         echo "🔍 Detecting currently serving version..."
-        CURRENT_VERSION=$(gcloud app services describe "${{ inputs.service_name }}" \
+        
+        # Try multiple methods to detect the serving version
+        CURRENT_VERSION=""
+        
+        # Method 1: Get version with 100% traffic allocation
+        echo "   Trying method 1: Traffic allocation query..."
+        TRAFFIC_INFO=$(gcloud app services describe "${{ inputs.service_name }}" \
           --project="${{ inputs.project_id }}" \
-          --format="value(split.allocations.keys()[0])" 2>/dev/null || echo "")
+          --format="json" 2>/dev/null || echo "{}")
+        
+        if [[ "$TRAFFIC_INFO" != "{}" ]]; then
+          CURRENT_VERSION=$(echo "$TRAFFIC_INFO" | jq -r '.split.allocations | to_entries | map(select(.value == 1.0 or .value == "1.0" or .value == 100)) | .[0].key // empty' 2>/dev/null || echo "")
+        fi
+        
+        # Method 2: Get the latest serving version if method 1 failed
+        if [[ -z "$CURRENT_VERSION" ]]; then
+          echo "   Trying method 2: Latest serving version query..."
+          CURRENT_VERSION=$(gcloud app versions list \
+            --service="${{ inputs.service_name }}" \
+            --project="${{ inputs.project_id }}" \
+            --filter="traffic_split>0" \
+            --sort-by="~create_time" \
+            --limit=1 \
+            --format="value(version.id)" 2>/dev/null || echo "")
+        fi
+        
+        # Method 3: Get any version that's currently serving traffic
+        if [[ -z "$CURRENT_VERSION" ]]; then
+          echo "   Trying method 3: Any version with traffic..."
+          CURRENT_VERSION=$(echo "$TRAFFIC_INFO" | jq -r '.split.allocations | keys[0] // empty' 2>/dev/null || echo "")
+        fi
+        
+        # Method 4: Get the most recently created version as fallback
+        if [[ -z "$CURRENT_VERSION" ]]; then
+          echo "   Trying method 4: Most recent version fallback..."
+          CURRENT_VERSION=$(gcloud app versions list \
+            --service="${{ inputs.service_name }}" \
+            --project="${{ inputs.project_id }}" \
+            --sort-by="~create_time" \
+            --limit=1 \
+            --format="value(version.id)" 2>/dev/null || echo "")
+        fi
         
         if [[ -z "$CURRENT_VERSION" ]]; then
-          echo "❌ Could not detect currently serving version"
+          echo "❌ Could not detect any version for service '${{ inputs.service_name }}'"
+          echo "📋 Available versions:"
+          gcloud app versions list --service="${{ inputs.service_name }}" --project="${{ inputs.project_id }}" --format="table(version.id,traffic_split,create_time)" 2>/dev/null || echo "   Could not list versions"
           exit 1
         fi
         
-        echo "✅ Detected currently serving version: $CURRENT_VERSION"
+        echo "✅ Detected version to restart: $CURRENT_VERSION"
+        
+        # Show traffic allocation for transparency
+        echo "📊 Current traffic allocation:"
+        echo "$TRAFFIC_INFO" | jq -r '.split.allocations | to_entries[] | "   - Version: \(.key) -> \(.value * 100)% traffic"' 2>/dev/null || echo "   Could not parse traffic allocation"
         
         # Get information for the detected version
         VERSIONS_INFO=$(gcloud app versions list \
