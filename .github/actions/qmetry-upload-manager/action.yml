@@ -137,36 +137,46 @@ runs:
             "environment": "${{ inputs.test_environment }}",
             "matchTestSteps": true,
             "fields": {
-              "testCycle": {
-                "folderId": ${{ inputs.test_cycle_folder }},
-                "summary": "${{ inputs.test_cycle_summary }}"
-              },
-              "testCase": {
-                "priority": "High",
-                "folderId": ${{ inputs.test_case_folder }}
-              },
-              "testCaseExecution": {
-                "customFields": [
-                  {
-                    "name": "Run Id",
-                    "value": "${{ inputs.run_id }}-${{ inputs.run_attempt }}"
-                  },
-                  {
-                    "name": "Server Version",
-                    "value": "${{ inputs.app_server_version }}"
-                  },
-                  {
-                    "name": "UI Version",
-                    "value": "${{ inputs.app_ui_version }}"
-                  },
-                  {
-                    "name": "Test Type",
-                    "value": "${{ inputs.test_type }}"
-                  }
-                ]
-              }
+                "testCycle": {
+                    "folderId": ${{ inputs.test_cycle_folder }},
+                    "summary": "${{ inputs.test_cycle_summary }}",
+                    "description": "Automated Test Cycle for ${{ inputs.test_type }} Test in ${{ inputs.test_environment }} environment",
+                    "priority":"High",
+                    "status":"Done",
+                    "customFields": [
+                        {
+                            "name": "Cycle Type",
+                            "value": "${{ inputs.test_type }}"
+                        }
+                    ]
+                },
+                "testCase": {
+                    "priority": "High",
+                    "folderId": ${{ inputs.test_case_folder }}
+                },
+                "testCaseExecution": {
+                    "customFields": [
+                        {
+                            "name": "Run Id",
+                            "value": "${{ inputs.run_id }}-${{ inputs.run_attempt }}"
+                        },
+                        {
+                            "name": "Server Version",
+                            "value": "${{ inputs.app_server_version }}"
+                        },
+                        {
+                             "name": "UI Version",
+                             "value": "${{ inputs.app_ui_version }}"
+                        },
+                        {
+                                  "name": "Test Type",
+                                  "value": "${{ inputs.test_type }}"
+                        }
+                      ]
+                    }
+                }
             }
-          }
+
           
     - name: Process upload URL response
       shell: bash
