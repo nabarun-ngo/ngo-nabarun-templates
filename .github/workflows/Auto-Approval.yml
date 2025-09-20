@@ -1,0 +1,93 @@
+name: auto-approve-deployment
+on:
+  workflow_call:
+    inputs:
+      delay:
+        description: "Time to wait before checking pending deployments (in minutes)"
+        required: false
+        default: 2
+        type: number
+
+jobs:
+  approve_deployments:
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+      deployments: write
+      contents: read
+
+    steps:
+      - name: Wait before checking pending deployments
+        run: |
+          delay_minutes=${{ inputs.delay }}
+          echo "Waiting for $delay_minutes minute(s)..."
+          sleep $((delay_minutes * 60))
+
+      - name: Get pending deployments (REST API)
+        id: pending
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          pending=$(curl -s -H "Accept: application/vnd.github+json" \
+                            -H "Authorization: Bearer $GH_TOKEN" \
+                            -H "X-GitHub-Api-Version: 2022-11-28" \
+                            "https://api.github.com/repos/$REPO/actions/runs/$RUN_ID/pending_deployments")
+          echo "$pending" > pending_deployments.json
+          COUNT=$(jq '. | length' pending_deployments.json)
+          echo "Found $COUNT pending deployment(s)."
+          echo "count=$COUNT" >> $GITHUB_OUTPUT
+
+      - name: Approve pending deployments individually
+        if: ${{ steps.pending.outputs.count != '0' }}
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          approved_count=0
+          skipped_count=0
+          summary=""
+
+          for DEPLOYMENT_ID in $(jq '.[].id' pending_deployments.json); do
+            ENV_ID=$(jq -r ".[] | select(.id==$DEPLOYMENT_ID) | .environment.id" pending_deployments.json)
+            ACTOR=$(jq -r ".[] | select(.id==$DEPLOYMENT_ID) | .creator.login" pending_deployments.json)
+            CAN_APPROVE=$(jq -r ".[] | select(.id==$DEPLOYMENT_ID) | .current_user_can_approve" pending_deployments.json)
+
+            if [[ "$CAN_APPROVE" == "true" ]]; then
+              echo "Approving deployment $DEPLOYMENT_ID (Env ID: $ENV_ID) by $ACTOR..."
+              RESPONSE=$(curl -s -X POST \
+                -H "Accept: application/vnd.github+json" \
+                -H "Authorization: Bearer $GH_TOKEN" \
+                -H "X-GitHub-Api-Version: 2022-11-28" \
+                "https://api.github.com/repos/$REPO/actions/runs/$RUN_ID/pending_deployments" \
+                -d "{\"environment_ids\":[$ENV_ID],\"state\":\"approved\",\"comment\":\"Auto-approved\"}")
+              approved_count=$((approved_count+1))
+              status="approved"
+            else
+              echo "Skipping deployment $DEPLOYMENT_ID (cannot approve)."
+              RESPONSE="skipped"
+              skipped_count=$((skipped_count+1))
+              status="skipped"
+            fi
+
+            summary="$summary\n- Deployment ID: $DEPLOYMENT_ID | Env ID: $ENV_ID | Actor: $ACTOR | Status: $status | Response: $RESPONSE"
+          done
+
+          echo "approved_count=$approved_count" >> $GITHUB_OUTPUT
+          echo "skipped_count=$skipped_count" >> $GITHUB_OUTPUT
+          echo "deployment_summary<<EOF" >> $GITHUB_OUTPUT
+          echo -e "$summary" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Add job summary
+        run: |
+          echo "## Deployment Auto-Approval Result" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Total pending deployments:** ${{ steps.pending.outputs.count }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Approved deployments:** ${{ steps.approve.outputs.approved_count }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Skipped deployments:** ${{ steps.approve.outputs.skipped_count }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Detailed Deployment Summary:**" >> $GITHUB_STEP_SUMMARY
+          echo "${{ steps.approve.outputs.deployment_summary }}" >> $GITHUB_STEP_SUMMARY
