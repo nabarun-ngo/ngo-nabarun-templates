@@ -8,6 +8,11 @@ on:
         default: 2
         type: number
 
+    secrets:
+       GH_TOKEN: 
+          required : true 
+        
+
 jobs:
   approve_deployments:
     runs-on: ubuntu-latest
