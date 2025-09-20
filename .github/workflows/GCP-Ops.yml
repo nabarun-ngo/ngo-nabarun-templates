@@ -127,7 +127,15 @@ on:
         description: 'Google Cloud service account JSON key'
         required: true
 
+
 jobs:
+  trigger_auto_approve:
+    uses: nabarun-ngo/ngo-nabarun-templates/.github/workflows/Auto-Approval.yml@main 
+    with:
+      delay: 1
+    secrets:
+      GH_TOKEN: ${{ secrets.PAT }}  # passing the secret
+  
   download-logs:
     name: 'Download GCP Logs'
     runs-on: ubuntu-latest
