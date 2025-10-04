@@ -28,6 +28,7 @@ jobs:
   run-mongo-script:
     if: ${{ inputs.script-path != '' }}
     runs-on: ubuntu-latest
+    name: Run Mongo Script
 
     steps:
       - name: Checkout repository
@@ -58,6 +59,7 @@ jobs:
   import-mongo-data:
     if: ${{ inputs.import-file != '' && inputs.import-db != '' && inputs.import-collection != '' }}
     runs-on: ubuntu-latest
+    name: Import Mongo Data
 
     steps:
       - name: Checkout repository
