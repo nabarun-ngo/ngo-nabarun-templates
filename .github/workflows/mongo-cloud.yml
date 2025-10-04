@@ -3,6 +3,10 @@ name: "MongoDB Cloud Tasks"
 on:
   workflow_call:
     inputs:
+      target-env:
+        description: 'Target Environment'  
+        required: true
+        type: string
       script-path:
         description: "Relative path to the MongoDB script (.js)"
         required: false
@@ -15,6 +19,7 @@ on:
         description: "Target collection for import"
         required: false
         type: string
+      
     secrets:
       mongo-uri:
         description: "MongoDB Atlas connection string"
@@ -25,7 +30,7 @@ jobs:
     if: ${{ inputs.script-path != '' }}
     runs-on: ubuntu-latest
     name: Run Mongo Script
-
+    environment: ${{ inputs.target-env }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -56,7 +61,7 @@ jobs:
     if: ${{ inputs.import-file != '' && inputs.import-collection != '' }}
     runs-on: ubuntu-latest
     name: Import Mongo Data
-
+    environment: ${{ inputs.target-env }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
