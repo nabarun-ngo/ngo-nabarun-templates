@@ -8,7 +8,7 @@ on:
         required: false
         type: string
       import-file:
-        description: "Path to JSON or CSV file to import"
+        description: "Path to JSON file to import"
         required: false
         type: string
       import-db:
