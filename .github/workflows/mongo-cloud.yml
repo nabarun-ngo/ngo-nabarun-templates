@@ -1,0 +1,88 @@
+name: "MongoDB Cloud Tasks"
+
+on:
+  workflow_call:
+    inputs:
+      script-path:
+        description: "Relative path to the MongoDB script (.js)"
+        required: false
+        type: string
+      import-file:
+        description: "Path to JSON or CSV file to import"
+        required: false
+        type: string
+      import-db:
+        description: "Target MongoDB database for import"
+        required: false
+        type: string
+      import-collection:
+        description: "Target collection for import"
+        required: false
+        type: string
+    secrets:
+      mongo-uri:
+        description: "MongoDB Atlas connection string"
+        required: true
+
+jobs:
+  run-mongo-script:
+    if: ${{ inputs.script-path != '' }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Mongo Shell
+        run: |
+          curl -fsSL https://pgp.mongodb.com/server-6.0.asc | sudo gpg -o /usr/share/keyrings/mongodb-server-6.0.gpg --dearmor
+          echo "deb [ arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-server-6.0.gpg ] https://repo.mongodb.org/apt/ubuntu jammy/mongodb-org/6.0 multiverse" | sudo tee /etc/apt/sources.list.d/mongodb-org-6.0.list
+          sudo apt-get update
+          sudo apt-get install -y mongodb-mongosh
+
+      - name: Check if script exists
+        id: check_script
+        run: |
+          if [ ! -f "${{ inputs.script-path }}" ]; then
+            echo "Script not found: ${{ inputs.script-path }}. Skipping execution."
+            echo "exists=false" >> $GITHUB_OUTPUT
+          else
+            echo "exists=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Run MongoDB script on Atlas
+        if: steps.check_script.outputs.exists == 'true'
+        run: |
+          mongosh "${{ secrets.mongo-uri }}" "${{ inputs.script-path }}"
+
+  import-mongo-data:
+    if: ${{ inputs.import-file != '' && inputs.import-db != '' && inputs.import-collection != '' }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Mongo Tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y mongo-tools
+
+      - name: Check if import file exists
+        id: check_import
+        run: |
+          if [ ! -f "${{ inputs.import-file }}" ]; then
+            echo "Import file not found: ${{ inputs.import-file }}. Skipping execution."
+            echo "exists=false" >> $GITHUB_OUTPUT
+          else
+            echo "exists=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Import data into Atlas
+        if: steps.check_import.outputs.exists == 'true'
+        run: |
+          mongoimport --uri="${{ secrets.mongo-uri }}" \
+                      --db="${{ inputs.import-db }}" \
+                      --collection="${{ inputs.import-collection }}" \
+                      --file="${{ inputs.import-file }}" \
+                      --jsonArray
