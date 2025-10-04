@@ -24,6 +24,13 @@ on:
       mongo-uri:
         description: "MongoDB Atlas connection string"
         required: true
+    outputs:
+      script-logs:
+        description: "Logs from the script execution"
+        value: ${{ jobs.run-mongo-script.outputs.logs }}
+      import-logs:
+        description: "Logs from the data import"
+        value: ${{ jobs.import-mongo-data.outputs.logs }}
 
 jobs:
   run-mongo-script:
@@ -31,6 +38,8 @@ jobs:
     runs-on: ubuntu-latest
     name: Run Mongo Script
     environment: ${{ inputs.target-env }}
+    outputs:
+      logs: ${{ steps.run-script.outputs.logs }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -54,14 +63,23 @@ jobs:
 
       - name: Run MongoDB script on Atlas
         if: steps.check_script.outputs.exists == 'true'
+        id: run-script
         run: |
-          mongosh "${{ secrets.mongo-uri }}" "${{ inputs.script-path }}"
+          LOGS=$(mongosh "${{ secrets.mongo-uri }}" "${{ inputs.script-path }}")
+          echo "$LOGS"
+          # Export logs as output
+          LOGS="${LOGS//'%'/'%25'}"
+          LOGS="${LOGS//$'\n'/'%0A'}"
+          LOGS="${LOGS//$'\r'/'%0D'}"
+          echo "logs=$LOGS" >> $GITHUB_OUTPUT
 
   import-mongo-data:
     if: ${{ inputs.import-file != '' && inputs.import-collection != '' }}
     runs-on: ubuntu-latest
     name: Import Mongo Data
     environment: ${{ inputs.target-env }}
+    outputs:
+      logs: ${{ steps.import-data.outputs.logs }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -83,8 +101,15 @@ jobs:
 
       - name: Import data into Atlas
         if: steps.check_import.outputs.exists == 'true'
+        id: import-data
         run: |
-          mongoimport --uri="${{ secrets.mongo-uri }}" \
+          LOGS=$(mongoimport --uri="${{ secrets.mongo-uri }}" \
                       --collection="${{ inputs.import-collection }}" \
                       --file="${{ inputs.import-file }}" \
-                      --jsonArray
+                      --jsonArray)
+          echo "$LOGS"
+          # Export logs as output
+          LOGS="${LOGS//'%'/'%25'}"
+          LOGS="${LOGS//$'\n'/'%0A'}"
+          LOGS="${LOGS//$'\r'/'%0D'}"
+          echo "logs=$LOGS" >> $GITHUB_OUTPUT
