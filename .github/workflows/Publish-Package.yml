@@ -41,7 +41,11 @@ jobs:
 
     - name: Update POM version
       run: |
-        mvn versions:set -DnewVersion=${{ inputs.source_tag }} -DgenerateBackupPoms=false
+        # Remove the leading 'v' if present (e.g., v1.0.4 -> 1.0.4)
+        version="${{ inputs.source_tag }}"
+        version="${version#v}"
+        echo "🔧 Setting POM version to: $version"
+        mvn versions:set -DnewVersion=$version -DgenerateBackupPoms=false
         mvn versions:commit
     
     - name: Build with Maven
