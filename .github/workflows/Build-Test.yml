@@ -41,10 +41,38 @@ on:
 
 
 jobs:
-
-  build:
-    name: Build and Test
+  build_java:
     runs-on: ubuntu-latest
+    name: Build and Test Java
+    if: inputs.platform == 'java'
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+      with:
+        repository: ${{ inputs.repo }}
+        ref: ${{ inputs.branch }}
+        path: ${{ inputs.working_directory }}
+    
+    - name: Set up JDK ${{ inputs.java_version }}
+      uses: actions/setup-java@v3
+      with:
+        java-version: ${{ inputs.java_version }}
+        distribution: 'temurin'
+        cache: 'maven'
+        server-id: github
+        server-username: GITHUB_ACTOR
+        server-password: GITHUB_TOKEN
+    
+    - name: Build all modules
+      run: mvn -B ${{ inputs.command }}
+      env:
+        GITHUB_ACTOR: ${{ github.actor }}
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        
+  build_node:
+    name: Build and Test Node
+    runs-on: ubuntu-latest
+    if: inputs.platform == 'node'
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -54,21 +82,20 @@ jobs:
           path: ${{ inputs.working_directory }}
 
       - name: Node.js Build and Test
-        if: inputs.platform == 'node'
         uses: nabarun-ngo/ngo-nabarun-templates/.github/actions/build-node@main
         with:
           node_version: ${{ inputs.node_version }}
           working_directory: ${{ inputs.working_directory }}
           command: ${{ inputs.command }}
 
-      - name: Java Build and Test
-        if: inputs.platform == 'java'
-        uses: nabarun-ngo/ngo-nabarun-templates/.github/actions/build-java@main
-        with:
-          java_version: ${{ inputs.java_version }}
-          working_directory: ${{ inputs.working_directory }}
-          maven_command: ${{ inputs.command }}
-          maven_options: ${{ inputs.maven_options }}
-          token: ${{ secrets.GITHUB_TOKEN }}
-          enable_cache: 'true'
-          upload_test_results: 'true'
+      #- name: Java Build and Test
+       # if: inputs.platform == 'java'
+       # uses: nabarun-ngo/ngo-nabarun-templates/.github/actions/build-java@main
+     #   with:
+      #    java_version: ${{ inputs.java_version }}
+      #    working_directory: ${{ inputs.working_directory }}
+      #    maven_command: ${{ inputs.command }}
+       #   maven_options: ${{ inputs.maven_options }}
+      #    token: ${{ secrets.GITHUB_TOKEN }}
+       #   enable_cache: 'true'
+      #    upload_test_results: 'true'
