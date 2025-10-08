@@ -45,7 +45,7 @@ jobs:
         version="${{ inputs.source_tag }}"
         version="${version#v}"
         echo "🔧 Setting POM version to: $version"
-        mvn versions:set -DnewVersion=$version -DgenerateBackupPoms=false
+        mvn versions:set -DnewVersion=$version -DgenerateBackupPoms=false -DprocessAllModules=true
         mvn versions:commit
     
     - name: Build with Maven
