@@ -87,6 +87,8 @@ runs:
         java-version: ${{ inputs.java_version }}
         server-id: ${{ inputs.server_id }} # 
         settings-path: ${{ github.workspace }} # location for the settings.xml file
+        server-username: ${{ github.actor }}
+        server-password: ${{ secrets.GITHUB_TOKEN }}
 
     - name: Upload Maven settings.xml for review
       uses: actions/upload-artifact@v4
@@ -128,7 +130,6 @@ runs:
         # Display Java version for verification
         echo "☕ Java version:"
         java -version
-        mvn clean install -s ${{ github.workspace }}/settings.xml
 
     - name: Build with Maven
       id: build
