@@ -39,6 +39,8 @@ inputs:
     description: 'Value of the distributionManagement/repository/id field of the pom.xml'
     required: false
     default: 'github'
+  token:
+    required: false
 
 outputs:
   build_status:
@@ -88,7 +90,7 @@ runs:
         server-id: ${{ inputs.server_id }} # 
         settings-path: ${{ github.workspace }} # location for the settings.xml file
         server-username: ${{ github.actor }}
-        server-password: ${{ secrets.GITHUB_TOKEN }}
+        server-password: ${{ inputs.token }}
 
     - name: Upload Maven settings.xml for review
       uses: actions/upload-artifact@v4
