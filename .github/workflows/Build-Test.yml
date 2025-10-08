@@ -63,11 +63,23 @@ jobs:
         server-username: GITHUB_ACTOR
         server-password: GITHUB_TOKEN
     
-    - name: Build all modules
-      run: mvn -B ${{ inputs.command }}
+    - name: Build and Test
+      run: mvn -B ${{ inputs.command }} ${{ inputs.maven_options }}
       env:
         GITHUB_ACTOR: ${{ github.actor }}
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    
+    - name: Upload Java Test Results
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: java-test-results
+        path: |
+          ${{ inputs.working_directory }}/target/surefire-reports/
+          ${{ inputs.working_directory }}/target/failsafe-reports/
+        if-no-files-found: ignore
+        retention-days: 7
+
         
   build_node:
     name: Build and Test Node
@@ -80,22 +92,27 @@ jobs:
           repository: ${{ inputs.repo }}
           ref: ${{ inputs.branch }}
           path: ${{ inputs.working_directory }}
-
-      - name: Node.js Build and Test
-        uses: nabarun-ngo/ngo-nabarun-templates/.github/actions/build-node@main
+    
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
         with:
-          node_version: ${{ inputs.node_version }}
-          working_directory: ${{ inputs.working_directory }}
-          command: ${{ inputs.command }}
+          node-version: ${{ inputs.node_version }}
+    
+      - name: Run Build and Test Command
+        shell: bash
+        working-directory: ${{ inputs.working_directory }}
+        run: |
+         echo "Running: ${{ inputs.command }}"
+         ${{ inputs.command }}
+     
+      - name: Upload Node Test Results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: node-test-results
+          path: ${{ inputs.working_directory }}/coverage
+          if-no-files-found: ignore
+          retention-days: 7
+  
 
-      #- name: Java Build and Test
-       # if: inputs.platform == 'java'
-       # uses: nabarun-ngo/ngo-nabarun-templates/.github/actions/build-java@main
-     #   with:
-      #    java_version: ${{ inputs.java_version }}
-      #    working_directory: ${{ inputs.working_directory }}
-      #    maven_command: ${{ inputs.command }}
-       #   maven_options: ${{ inputs.maven_options }}
-      #    token: ${{ secrets.GITHUB_TOKEN }}
-       #   enable_cache: 'true'
-      #    upload_test_results: 'true'
+  
