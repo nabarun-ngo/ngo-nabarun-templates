@@ -86,7 +86,7 @@ runs:
         distribution: 'temurin'
         java-version: ${{ inputs.java_version }}
         server-id: ${{ inputs.server_id }} # 
-       # settings-path: ${{ github.workspace }} # location for the settings.xml file
+        settings-path: ${{ github.workspace }} # location for the settings.xml file
 
     
 
@@ -138,7 +138,7 @@ runs:
         BUILD_START=$(date +%s)
         
         # Build the full Maven command
-        MVN_CMD="mvn ${{ inputs.maven_command }}"
+        MVN_CMD="mvn ${{ inputs.maven_command }} -s $GITHUB_WORKSPACE/settings.xml"
         if [[ -n "${{ inputs.maven_options }}" ]]; then
           MVN_CMD="$MVN_CMD ${{ inputs.maven_options }}"
         fi
