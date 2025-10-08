@@ -128,6 +128,7 @@ runs:
         # Display Java version for verification
         echo "☕ Java version:"
         java -version
+        mvn clean install -s ${{ github.workspace }}/settings.xml
 
     - name: Build with Maven
       id: build
