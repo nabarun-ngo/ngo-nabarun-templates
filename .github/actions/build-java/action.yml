@@ -89,9 +89,7 @@ runs:
         java-version: ${{ inputs.java_version }}
         server-id: ${{ inputs.server_id }} # 
         settings-path: ${{ github.workspace }} # location for the settings.xml file
-        server-username: ${{ github.actor }}
-        server-password: ${{ inputs.token }}
-
+#to be removed
     - name: Upload Maven settings.xml for review
       uses: actions/upload-artifact@v4
       with:
