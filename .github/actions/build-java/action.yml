@@ -35,6 +35,10 @@ inputs:
     description: 'Prefix for Maven cache key'
     required: false
     default: 'maven'
+  server_id:
+    description: 'Value of the distributionManagement/repository/id field of the pom.xml'
+    required: false
+    default: 'github'
 
 outputs:
   build_status:
@@ -81,6 +85,8 @@ runs:
       with:
         distribution: 'temurin'
         java-version: ${{ inputs.java_version }}
+        server-id: ${{ inputs.server_id }} # 
+        settings-path: ${{ github.workspace }} # location for the settings.xml file
 
     - name: Cache Maven dependencies
       if: inputs.enable_cache == 'true'
