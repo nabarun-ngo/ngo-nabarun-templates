@@ -88,7 +88,11 @@ runs:
         server-id: ${{ inputs.server_id }} # 
         settings-path: ${{ github.workspace }} # location for the settings.xml file
 
-    
+    - name: Upload Maven settings.xml for review
+      uses: actions/upload-artifact@v3
+      with:
+        name: maven-settings
+        path: ${{ github.workspace }}/settings.xml
 
     - name: Cache Maven dependencies
       if: inputs.enable_cache == 'true'
