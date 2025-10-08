@@ -86,7 +86,9 @@ runs:
         distribution: 'temurin'
         java-version: ${{ inputs.java_version }}
         server-id: ${{ inputs.server_id }} # 
-        settings-path: ${{ github.workspace }} # location for the settings.xml file
+       # settings-path: ${{ github.workspace }} # location for the settings.xml file
+
+    
 
     - name: Cache Maven dependencies
       if: inputs.enable_cache == 'true'
