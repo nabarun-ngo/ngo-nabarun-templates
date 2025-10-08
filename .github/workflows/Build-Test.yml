@@ -69,5 +69,6 @@ jobs:
           working_directory: ${{ inputs.working_directory }}
           maven_command: ${{ inputs.command }}
           maven_options: ${{ inputs.maven_options }}
+          token: ${{ secrets.GITHUB_TOKEN }}
           enable_cache: 'true'
           upload_test_results: 'true'
