@@ -7,6 +7,10 @@ on:
         required: true
         type: string
         description: 'Cloud Run service name'
+      environment:
+        required: true
+        type: string
+        description: 'Target Environment' 
       region:
         required: false
         type: string
@@ -62,7 +66,7 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     if: github.event_name != 'workflow_dispatch' || github.event.inputs.action == 'deploy'
-    
+    environment: ${{ inputs.environment }}
     permissions:
       contents: read
       packages: write
@@ -130,7 +134,7 @@ jobs:
   restart:
     runs-on: ubuntu-latest
     if: github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'restart'
-    
+    environment: ${{ inputs.environment }}
     steps:
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v2
