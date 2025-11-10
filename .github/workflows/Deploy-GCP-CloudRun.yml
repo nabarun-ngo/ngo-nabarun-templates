@@ -148,6 +148,7 @@ jobs:
     name: 'Build and Push Docker Image'
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    environment: ${{ inputs.environment_name }}
     permissions:
       contents: read
       packages: write
