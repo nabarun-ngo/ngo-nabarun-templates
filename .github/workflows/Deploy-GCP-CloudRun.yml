@@ -283,6 +283,7 @@ jobs:
             --cpu=${{ inputs.cpu }} \
             --timeout=${{ inputs.timeout }} \
             --port=${{ inputs.port }} \
+            --service-account cloudrun-sa@ngonabarun-stage.iam.gserviceaccount.com
             --set-env-vars="DOPPLER_TOKEN=${{ secrets.DOPPLER_TOKEN }},DOPPLER_PROJECT=${{ inputs.doppler_project }},DOPPLER_CONFIG=${{ inputs.doppler_config }},VERSION=${{ inputs.tag_name }},ENVIRONMENT=${{ inputs.environment_name }}" \
             --project=${{ secrets.GCP_PROJECT_ID }} \
             --quiet
