@@ -273,7 +273,7 @@ jobs:
           echo "🚀 Deploying ${IMAGE_NAME}:${IMAGE_TAG} to Cloud Run..."
           
           gcloud run deploy ${{ inputs.service_name }} \
-            --image=${IMAGE_NAME}:${IMAGE_TAG} \
+            --image=docker.io/library/redis:latest \
             --platform=managed \
             --region=${{ inputs.region }} \
             --allow-unauthenticated \
