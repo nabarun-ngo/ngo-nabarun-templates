@@ -215,11 +215,11 @@ jobs:
           fi
       
       - name: Set up Docker Buildx (if cache enabled)
-        if: inputs.enable_build_cache
+        if: ${{ inputs.enable_build_cache && steps.image_meta.outputs.exists == 'N' }}
         uses: docker/setup-buildx-action@v3
       
       - name: Build and push Docker image
-        if: ${{ steps.image_meta.outputs.exists == 'Y' }}
+        if: ${{ steps.image_meta.outputs.exists == 'N' }}
         run: |
           IMAGE_NAME="${{ steps.image_meta.outputs.name }}"
           IMAGE_TAG="${{ steps.image_meta.outputs.tag }}"
@@ -240,7 +240,7 @@ jobs:
           echo "✅ Image pushed successfully"
       
       - name: Image size and security scan
-        if: ${{ steps.image_meta.outputs.exists == 'Y' }}
+        if: ${{ steps.image_meta.outputs.exists == 'N' }}
         run: |
           IMAGE_NAME="${{ steps.image_meta.outputs.name }}"
           IMAGE_TAG="${{ steps.image_meta.outputs.tag }}"
