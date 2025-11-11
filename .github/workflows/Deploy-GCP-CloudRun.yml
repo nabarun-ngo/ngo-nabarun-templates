@@ -168,6 +168,7 @@ jobs:
     outputs:
       image_tag: ${{ steps.image_meta.outputs.tag }}
       image_name: ${{ steps.image_meta.outputs.name }}
+      docker_image: ${{ steps.image_meta.outputs.full }}
     
     steps:
       - name: Checkout repository | Tag ${{ inputs.tag_name }}
@@ -281,7 +282,7 @@ jobs:
       - name: Deploy to Cloud Run
         id: deploy
         run: |
-          IMAGE_NAME="${{ needs.build_and_push.outputs.image_name }}"
+          IMAGE_NAME="${{ inputs.registry }}/${{ inputs.image_name }}"
           IMAGE_TAG="${{ needs.build_and_push.outputs.image_tag }}"
           
           # Extract client_email from SA JSON
