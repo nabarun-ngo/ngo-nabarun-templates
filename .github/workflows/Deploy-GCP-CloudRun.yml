@@ -209,37 +209,37 @@ jobs:
         if: inputs.enable_build_cache
         uses: docker/setup-buildx-action@v3
       
-      # - name: Build and push Docker image
-      #   run: |
-      #     IMAGE_NAME="${{ steps.image_meta.outputs.name }}"
-      #     IMAGE_TAG="${{ steps.image_meta.outputs.tag }}"
+      - name: Build and push Docker image
+        run: |
+          IMAGE_NAME="${{ steps.image_meta.outputs.name }}"
+          IMAGE_TAG="${{ steps.image_meta.outputs.tag }}"
           
-      #     echo "🔨 Building Docker image..."
-      #     docker build \
-      #       --tag ${IMAGE_NAME}:${IMAGE_TAG} \
-      #       --tag ${IMAGE_NAME}:latest \
-      #       --label "org.opencontainers.image.source=https://github.com/${{ inputs.repo_owner_name }}/${{ inputs.repo_name }}" \
-      #       --label "org.opencontainers.image.revision=${{ github.sha }}" \
-      #       --label "org.opencontainers.image.version=${{ inputs.tag_name }}" \
-      #       .
+          echo "🔨 Building Docker image..."
+          docker build \
+            --tag ${IMAGE_NAME}:${IMAGE_TAG} \
+            --tag ${IMAGE_NAME}:latest \
+            --label "org.opencontainers.image.source=https://github.com/${{ inputs.repo_owner_name }}/${{ inputs.repo_name }}" \
+            --label "org.opencontainers.image.revision=${{ github.sha }}" \
+            --label "org.opencontainers.image.version=${{ inputs.tag_name }}" \
+            .
           
-      #     echo "📦 Pushing Docker image..."
-      #     docker push ${IMAGE_NAME}:${IMAGE_TAG}
-      #     docker push ${IMAGE_NAME}:latest
+          echo "📦 Pushing Docker image..."
+          docker push ${IMAGE_NAME}:${IMAGE_TAG}
+          docker push ${IMAGE_NAME}:latest
           
-      #     echo "✅ Image pushed successfully"
+          echo "✅ Image pushed successfully"
       
-      # - name: Image size and security scan
-      #   run: |
-      #     IMAGE_NAME="${{ steps.image_meta.outputs.name }}"
-      #     IMAGE_TAG="${{ steps.image_meta.outputs.tag }}"
+      - name: Image size and security scan
+        run: |
+          IMAGE_NAME="${{ steps.image_meta.outputs.name }}"
+          IMAGE_TAG="${{ steps.image_meta.outputs.tag }}"
           
-      #     echo "📊 Image Size:"
-      #     docker images ${IMAGE_NAME}:${IMAGE_TAG} --format "table {{.Repository}}\t{{.Tag}}\t{{.Size}}"
+          echo "📊 Image Size:"
+          docker images ${IMAGE_NAME}:${IMAGE_TAG} --format "table {{.Repository}}\t{{.Tag}}\t{{.Size}}"
           
-      #     echo ""
-      #     echo "🔍 Image Layers:"
-      #     docker history ${IMAGE_NAME}:${IMAGE_TAG} --human=true --no-trunc=false | head -10
+          echo ""
+          echo "🔍 Image Layers:"
+          docker history ${IMAGE_NAME}:${IMAGE_TAG} --human=true --no-trunc=false | head -10
       
 
   deploy_to_cloudrun:
