@@ -295,7 +295,6 @@ jobs:
         run: |
           IMAGE_NAME="${{ inputs.registry }}/${{ inputs.image_name }}"
           IMAGE_TAG="${{ needs.build_and_push.outputs.image_tag }}"
-          ENV_VARS="DOPPLER_TOKEN=${{ secrets.DOPPLER_TOKEN }},DOPPLER_PROJECT=${{ inputs.doppler_project }},DOPPLER_CONFIG=${{ inputs.doppler_config }},VERSION=${{ inputs.tag_name }},NODE_ENV=${{ inputs.environment_name }}"
           # Extract client_email from SA JSON
           SERVICE_ACCOUNT_EMAIL=$(echo '${{ secrets.GCP_SA_KEY }}' | jq -r '.client_email')
           echo "🚀 Deploying ${IMAGE_NAME}:${IMAGE_TAG} to Cloud Run using ${SERVICE_ACCOUNT_EMAIL}..."
@@ -312,7 +311,7 @@ jobs:
             --timeout ${{ inputs.timeout }} \
             --port ${{ inputs.port }} \
             --service-account ${SERVICE_ACCOUNT_EMAIL}
-            --set-env-vars ${ENV_VARS} \
+            --update-env-vars "DOPPLER_TOKEN=${{ secrets.DOPPLER_TOKEN }},DOPPLER_PROJECT=${{ inputs.doppler_project }},DOPPLER_CONFIG=${{ inputs.doppler_config }},VERSION=${{ inputs.tag_name }},NODE_ENV=${{ inputs.environment_name }}" \
             --project ${{ secrets.GCP_PROJECT_ID }} \
             --quiet
 
