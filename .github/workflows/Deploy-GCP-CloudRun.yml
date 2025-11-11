@@ -301,7 +301,11 @@ jobs:
             --timeout=${{ inputs.timeout }} \
             --port=${{ inputs.port }} \
             --service-account ${SERVICE_ACCOUNT_EMAIL}
-            --set-env-vars="DOPPLER_TOKEN=${{ secrets.DOPPLER_TOKEN }},DOPPLER_PROJECT=${{ inputs.doppler_project }},DOPPLER_CONFIG=${{ inputs.doppler_config }},VERSION=${{ inputs.tag_name }},ENVIRONMENT=${{ inputs.environment_name }}" \
+            --set-env-vars DOPPLER_TOKEN=${{ secrets.DOPPLER_TOKEN }} \
+            --set-env-vars DOPPLER_PROJECT=${{ inputs.doppler_project }} \
+            --set-env-vars DOPPLER_CONFIG=${{ inputs.doppler_config }} \
+            --set-env-vars VERSION=${{ inputs.tag_name }} \
+            --set-env-vars NODE_ENV=${{ inputs.environment_name }} \
             --project=${{ secrets.GCP_PROJECT_ID }} \
             --quiet
 
@@ -427,7 +431,7 @@ jobs:
           gcloud run services update ${{ inputs.service_name }} \
             --region=${{ inputs.region }} \
             --update-labels=restart-timestamp=${TIMESTAMP} \
-            --update-env-vars="DOPPLER_TOKEN=${{ secrets.DOPPLER_TOKEN }},DOPPLER_PROJECT=${{ inputs.doppler_project }},DOPPLER_CONFIG=${{ inputs.doppler_config }},VERSION=${{ inputs.tag_name }}" \
+            --update-env-vars=DOPPLER_TOKEN=${{ secrets.DOPPLER_TOKEN }},DOPPLER_PROJECT=${{ inputs.doppler_project }},DOPPLER_CONFIG=${{ inputs.doppler_config }},VERSION=${{ inputs.tag_name }} \
             --project=${{ secrets.GCP_PROJECT_ID }}
           
           echo "✅ Service restarted successfully!"
