@@ -309,9 +309,8 @@ jobs:
             --memory ${{ inputs.memory }} \
             --cpu ${{ inputs.cpu }} \
             --timeout ${{ inputs.timeout }} \
-            --port ${{ inputs.port }} \
-            --service-account ${SERVICE_ACCOUNT_EMAIL}
-            --update-env-vars "DOPPLER_TOKEN=${{ secrets.DOPPLER_TOKEN }},DOPPLER_PROJECT=${{ inputs.doppler_project }},DOPPLER_CONFIG=${{ inputs.doppler_config }},VERSION=${{ inputs.tag_name }},NODE_ENV=${{ inputs.environment_name }}" \
+            --service-account ${SERVICE_ACCOUNT_EMAIL} \
+            --set-env-vars "DOPPLER_TOKEN=${{ secrets.DOPPLER_TOKEN }},DOPPLER_PROJECT=${{ inputs.doppler_project }},DOPPLER_CONFIG=${{ inputs.doppler_config }},VERSION=${{ inputs.tag_name }},NODE_ENV=${{ inputs.environment_name }}" \
             --project ${{ secrets.GCP_PROJECT_ID }} \
             --quiet
 
