@@ -301,11 +301,7 @@ jobs:
             --timeout=${{ inputs.timeout }} \
             --port=${{ inputs.port }} \
             --service-account ${SERVICE_ACCOUNT_EMAIL}
-            --set-env-vars DOPPLER_TOKEN=${{ secrets.DOPPLER_TOKEN }} \
-            --set-env-vars DOPPLER_PROJECT=${{ inputs.doppler_project }} \
-            --set-env-vars DOPPLER_CONFIG=${{ inputs.doppler_config }} \
-            --set-env-vars VERSION=${{ inputs.tag_name }} \
-            --set-env-vars NODE_ENV=${{ inputs.environment_name }} \
+            --set-env-vars DOPPLER_PROJECT=${{ inputs.doppler_project }},DOPPLER_CONFIG=${{ inputs.doppler_config }},DOPPLER_TOKEN=${{ secrets.DOPPLER_TOKEN }},VERSION=${{ inputs.tag_name }},NODE_ENV=${{ inputs.environment_name }} \
             --project=${{ secrets.GCP_PROJECT_ID }} \
             --quiet
 
