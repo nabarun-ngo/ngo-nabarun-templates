@@ -204,12 +204,22 @@ jobs:
           echo "full=${IMAGE_NAME}:${IMAGE_TAG}" >> $GITHUB_OUTPUT
           
           echo "📦 Image: ${IMAGE_NAME}:${IMAGE_TAG}"
+
+          echo "📦 Checking if Image: ${IMAGE_NAME}:${IMAGE_TAG} exists in ${REGISTRY}"
+          if docker manifest inspect ${IMAGE_NAME}:${IMAGE_TAG} > /dev/null; then
+            echo "Image exists."
+            echo "exists=Y" >> $GITHUB_OUTPUT
+          else
+            echo "Image does not exist."
+            echo "exists=N" >> $GITHUB_OUTPUT
+          fi
       
       - name: Set up Docker Buildx (if cache enabled)
         if: inputs.enable_build_cache
         uses: docker/setup-buildx-action@v3
       
       - name: Build and push Docker image
+        if: ${{ steps.image_meta.outputs.exists == 'Y' }}
         run: |
           IMAGE_NAME="${{ steps.image_meta.outputs.name }}"
           IMAGE_TAG="${{ steps.image_meta.outputs.tag }}"
@@ -230,6 +240,7 @@ jobs:
           echo "✅ Image pushed successfully"
       
       - name: Image size and security scan
+        if: ${{ steps.image_meta.outputs.exists == 'Y' }}
         run: |
           IMAGE_NAME="${{ steps.image_meta.outputs.name }}"
           IMAGE_TAG="${{ steps.image_meta.outputs.tag }}"
