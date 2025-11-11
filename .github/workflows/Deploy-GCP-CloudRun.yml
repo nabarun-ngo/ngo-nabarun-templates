@@ -17,6 +17,10 @@ on:
         required: true
         type: string
         description: 'Repository owner'
+      image_name:
+        description: 'name of the docker image'
+        type: string
+        required: true
       registry:
         required: false
         description: 'Docker registry'
@@ -191,8 +195,7 @@ jobs:
         id: image_meta
         run: |
           REGISTRY="${{ inputs.registry }}"
-          REPO_LOWER=$(echo "${{ inputs.repo_owner_name }}/${{ inputs.repo_name }}" | tr '[:upper:]' '[:lower:]')
-          IMAGE_NAME="${REGISTRY}/${REPO_LOWER}"
+          IMAGE_NAME="${REGISTRY}/${{ inputs.image_name }}"
           IMAGE_TAG="${{ inputs.tag_name }}"
           
           echo "name=${IMAGE_NAME}" >> $GITHUB_OUTPUT
