@@ -284,10 +284,12 @@ jobs:
           IMAGE_NAME="${{ needs.build_and_push.outputs.image_name }}"
           IMAGE_TAG="${{ needs.build_and_push.outputs.image_tag }}"
           
-          echo "🚀 Deploying ${IMAGE_NAME}:${IMAGE_TAG} to Cloud Run..."
+          # Extract client_email from SA JSON
+          SERVICE_ACCOUNT_EMAIL=$(echo '${{ secrets.GCP_SA_KEY }}' | jq -r '.client_email')
+          echo "🚀 Deploying ${IMAGE_NAME}:${IMAGE_TAG} to Cloud Run using ${SERVICE_ACCOUNT_EMAIL}..."
           
           gcloud run deploy ${{ inputs.service_name }} \
-            --image=docker.io/library/redis:latest \
+            --image=${IMAGE_NAME}:${IMAGE_TAG} \
             --platform=managed \
             --region=${{ inputs.region }} \
             --allow-unauthenticated \
@@ -297,7 +299,7 @@ jobs:
             --cpu=${{ inputs.cpu }} \
             --timeout=${{ inputs.timeout }} \
             --port=${{ inputs.port }} \
-            --service-account cloudrun-sa@ngonabarun-stage.iam.gserviceaccount.com
+            --service-account ${SERVICE_ACCOUNT_EMAIL}
             --set-env-vars="DOPPLER_TOKEN=${{ secrets.DOPPLER_TOKEN }},DOPPLER_PROJECT=${{ inputs.doppler_project }},DOPPLER_CONFIG=${{ inputs.doppler_config }},VERSION=${{ inputs.tag_name }},ENVIRONMENT=${{ inputs.environment_name }}" \
             --project=${{ secrets.GCP_PROJECT_ID }} \
             --quiet
