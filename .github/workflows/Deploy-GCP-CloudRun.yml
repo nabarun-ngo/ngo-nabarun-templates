@@ -290,6 +290,14 @@ jobs:
         with:
           project_id: ${{ secrets.GCP_PROJECT_ID }}
 
+      - name: Run Prisma Migration
+        run: |
+          doppler run \
+            --token="$DOPPLER_TOKEN" \
+            --project="$DOPPLER_PROJECT" \
+            --config="$DOPPLER_CONFIG" \
+            -- npx prisma migrate deploy
+
       - name: Deploy to Cloud Run
         id: deploy
         run: |
