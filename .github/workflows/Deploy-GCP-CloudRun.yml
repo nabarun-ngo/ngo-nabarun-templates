@@ -266,11 +266,11 @@ jobs:
           IMAGE_TAG="${{ needs.build_and_push.outputs.image_tag }}"
           echo "Running migration from ${IMAGE_NAME}:${IMAGE_TAG}"
           docker run --rm \
+            --entrypoint ./migrate.sh \
             -e DOPPLER_TOKEN=${{ secrets.DOPPLER_TOKEN }} \
-            -e DOPPLER_PROJECT=${{ secrets.DOPPLER_PROJECT }} \
-            -e DOPPLER_CONFIG=${{ secrets.DOPPLER_CONFIG }} \
-            ${IMAGE_NAME}:${IMAGE_TAG} \
-            ./migrate.sh
+            -e DOPPLER_PROJECT=${{ inputs.doppler_project }} \
+            -e DOPPLER_CONFIG=${{ inputs.doppler_config }} \
+            ${IMAGE_NAME}:${IMAGE_TAG}
 
   deploy_to_cloudrun:
     name: 'Deploy to Cloud Run'
