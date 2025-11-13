@@ -262,11 +262,14 @@ jobs:
     steps:
       - name: Run database migrations
         run: |
+          IMAGE_NAME="${{ inputs.registry }}/${{ inputs.image_name }}"
+          IMAGE_TAG="${{ needs.build_and_push.outputs.image_tag }}"
+          echo "Running migration from ${IMAGE_NAME}:${IMAGE_TAG}"
           docker run --rm \
             -e DOPPLER_TOKEN=${{ secrets.DOPPLER_TOKEN }} \
             -e DOPPLER_PROJECT=${{ secrets.DOPPLER_PROJECT }} \
             -e DOPPLER_CONFIG=${{ secrets.DOPPLER_CONFIG }} \
-            ${{ needs.build_and_push.outputs.docker_image }} \
+            ${IMAGE_NAME}:${IMAGE_TAG} \
             ./migrate.sh
 
   deploy_to_cloudrun:
