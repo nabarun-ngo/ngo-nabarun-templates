@@ -108,6 +108,8 @@ runs:
       shell: bash
       working-directory: ${{ inputs.working_directory }}
       run: |
+        echo "Doppler keys"
+        doppler secrets --only-names
         echo "🚀 Running command with Doppler: ${{ inputs.command }}"
         doppler run -- ${{ inputs.command }}
         echo "✅ Command completed successfully"
