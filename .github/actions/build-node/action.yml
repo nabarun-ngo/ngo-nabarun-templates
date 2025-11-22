@@ -110,6 +110,8 @@ runs:
       run: |
         echo "Doppler keys"
         doppler secrets --only-names
+        echo "Downloading and creating .env file"
+        doppler secrets download --no-file --format env > .env
         echo "🚀 Running command with Doppler: ${{ inputs.command }}"
         doppler run -- ${{ inputs.command }}
         echo "✅ Command completed successfully"
