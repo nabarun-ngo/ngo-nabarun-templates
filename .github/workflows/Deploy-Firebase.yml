@@ -14,12 +14,16 @@ on:
       environment_name:
         required: true
         type: string
-      environment_url:
-        required: false
-        type: string
       npm_run_command:
         description: "NPM command to run (e.g., 'npm run build', 'yarn build')"
         required: true
+        type: string
+      target_site:
+        description: "Target site"
+        required: true
+        type: string
+      environment_url:
+        required: false
         type: string
       node_version:
         description: "Node.js version to use"
@@ -46,6 +50,19 @@ on:
         required: false
         type: string
         default: 'live'
+      use_doppler:
+        description: "Enable Doppler for secrets management"
+        required: false
+        type: boolean
+        default: false
+      doppler_project:
+        description: "Doppler project name (optional)"
+        required: false
+        type: string
+      doppler_config:
+        description: "Doppler config name (optional)"
+        required: false
+        type: string
     secrets:
       firebase_project_id:
         required: true
@@ -53,6 +70,8 @@ on:
         required: true
       repo_token:
         required: true
+      doppler_token:
+        required: false
     outputs:
       # Build outputs
       build_status:
@@ -80,7 +99,7 @@ on:
         value: ${{ (jobs.build_application.result == 'success' && jobs.deploy_to_firebase.result == 'success') && 'success' || 'failure' }}
       deployment_summary:
         description: 'Deployment summary information'
-        value: 'Tag: ${{ inputs.tag_name }} | Channel: ${{ inputs.firebase_channel }} | Environment: ${{ inputs.environment_name }} | Node: ${{ inputs.node_version }} | Manager: ${{ inputs.package_manager }}'
+        value: 'Tag: ${{ inputs.tag_name }} | Channel: ${{ inputs.firebase_channel }} | Environment: ${{ inputs.environment_name }} | Node: ${{ inputs.node_version }} | Manager: ${{ inputs.package_manager }} | Doppler: ${{ inputs.use_doppler }}'
      
 jobs:
   build_application:
@@ -112,13 +131,41 @@ jobs:
           file: ${{ inputs.working_directory }}/package.json
           fields: '{"version": "${{ inputs.tag_name }}"}'
       
-      - name: Build with Node.js
+      - name: Validate Doppler Configuration
+        if: inputs.use_doppler == true
+        shell: bash
+        run: |
+          if [ -z "${{ secrets.doppler_token }}" ]; then
+            echo "❌ Error: DOPPLER_TOKEN secret is required when use_doppler is enabled"
+            echo "Please add DOPPLER_TOKEN to your repository secrets"
+            exit 1
+          fi
+          echo "✅ Doppler configuration validated"
+      
+      - name: Build with Node.js (with Doppler)
+        if: inputs.use_doppler == true
         id: build
         uses: nabarun-ngo/ngo-nabarun-templates/.github/actions/build-node@main
         with:
           node_version: ${{ inputs.node_version }}
           working_directory: ${{ inputs.working_directory }}
           command: ${{ inputs.npm_run_command }}
+          package_manager: ${{ inputs.package_manager }}
+          use_doppler: 'true'
+          doppler_token: ${{ secrets.doppler_token }}
+          doppler_project: ${{ inputs.doppler_project }}
+          doppler_config: ${{ inputs.doppler_config }}
+
+      - name: Build with Node.js (without Doppler)
+        if: inputs.use_doppler != true
+        id: build_no_doppler
+        uses: nabarun-ngo/ngo-nabarun-templates/.github/actions/build-node@main
+        with:
+          node_version: ${{ inputs.node_version }}
+          working_directory: ${{ inputs.working_directory }}
+          command: ${{ inputs.npm_run_command }}
+          package_manager: ${{ inputs.package_manager }}
+          use_doppler: 'false'
           
       - name: Validate build output
         shell: bash
@@ -206,6 +253,8 @@ jobs:
           firebaseServiceAccount: ${{ secrets.firebase_service_account }}
           projectId: ${{ secrets.firebase_project_id }}
           channelId: ${{ inputs.firebase_channel }}
+          entryPoint: ${{ inputs.working_directory }}
+          target: ${{ inputs.target_site }}
         env:
           FIREBASE_CLI_EXPERIMENTS: webframeworks
 
@@ -230,6 +279,3 @@ jobs:
           environment-url: ${{ inputs.environment_url }}
           repo: ${{ inputs.repo_name }}
           owner: ${{ inputs.repo_owner_name }}
- 
-  
-  
