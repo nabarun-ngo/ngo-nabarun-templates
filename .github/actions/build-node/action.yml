@@ -1,5 +1,5 @@
 name: 'Node.js Build and Test'
-description: 'Build and test a Node.js project.'
+description: 'Build and test a Node.js project with optional Doppler secrets management.'
 inputs:
   node_version:
     description: 'Node.js version'
@@ -12,6 +12,35 @@ inputs:
   command:
     description: 'Command to run (e.g., npm run build, npm test)'
     required: true
+  use_doppler:
+    description: 'Enable Doppler for secrets management'
+    required: false
+    default: 'false'
+  doppler_token:
+    description: 'Doppler service token (required if use_doppler is true)'
+    required: false
+  doppler_project:
+    description: 'Doppler project name (optional, for explicit setup)'
+    required: false
+  doppler_config:
+    description: 'Doppler config name (optional, for explicit setup)'
+    required: false
+  package_manager:
+    description: 'Package manager to use (npm, yarn, pnpm)'
+    required: false
+    default: 'npm'
+  install_dependencies:
+    description: 'Install dependencies before running command'
+    required: false
+    default: 'true'
+  cache_dependencies:
+    description: 'Cache node_modules for faster builds'
+    required: false
+    default: 'true'
+outputs:
+  build_status:
+    description: 'Status of the build'
+    value: ${{ steps.check.outputs.status }}
 runs:
   using: 'composite'
   steps:
@@ -19,21 +48,107 @@ runs:
       uses: actions/setup-node@v4
       with:
         node-version: ${{ inputs.node_version }}
-    - name: Run Build and Test Command
+        cache: ${{ inputs.cache_dependencies == 'true' && inputs.package_manager || '' }}
+        cache-dependency-path: ${{ inputs.working_directory }}/package-lock.json
+
+    - name: Install Doppler CLI
+      if: inputs.use_doppler == 'true'
+      uses: dopplerhq/cli-action@v3
+
+    - name: Validate Doppler Token
+      if: inputs.use_doppler == 'true'
+      shell: bash
+      run: |
+        if [ -z "${{ inputs.doppler_token }}" ]; then
+          echo "❌ Error: Doppler token is required when use_doppler is true"
+          exit 1
+        fi
+        echo "✅ Doppler token provided"
+
+    - name: Setup Doppler (Explicit Configuration)
+      if: inputs.use_doppler == 'true' && inputs.doppler_project != '' && inputs.doppler_config != ''
       shell: bash
       working-directory: ${{ inputs.working_directory }}
       run: |
-        echo "Running: ${{ inputs.command }}"
+        echo "🔧 Setting up Doppler with explicit configuration..."
+        doppler setup \
+          --token "${{ inputs.doppler_token }}" \
+          --project "${{ inputs.doppler_project }}" \
+          --config "${{ inputs.doppler_config }}" \
+          --no-interactive
+        echo "✅ Doppler configured: Project=${{ inputs.doppler_project }}, Config=${{ inputs.doppler_config }}"
+      env:
+        DOPPLER_TOKEN: ${{ inputs.doppler_token }}
+
+    - name: Install Dependencies
+      if: inputs.install_dependencies == 'true'
+      shell: bash
+      working-directory: ${{ inputs.working_directory }}
+      run: |
+        echo "📦 Installing dependencies with ${{ inputs.package_manager }}..."
+        case "${{ inputs.package_manager }}" in
+          npm)
+            npm ci
+            ;;
+          yarn)
+            yarn install --frozen-lockfile
+            ;;
+          pnpm)
+            pnpm install --frozen-lockfile
+            ;;
+          *)
+            echo "❌ Unsupported package manager: ${{ inputs.package_manager }}"
+            exit 1
+            ;;
+        esac
+        echo "✅ Dependencies installed"
+
+    - name: Run Build Command (with Doppler)
+      if: inputs.use_doppler == 'true'
+      shell: bash
+      working-directory: ${{ inputs.working_directory }}
+      run: |
+        echo "🚀 Running command with Doppler: ${{ inputs.command }}"
+        doppler run -- ${{ inputs.command }}
+        echo "✅ Command completed successfully"
+      env:
+        DOPPLER_TOKEN: ${{ inputs.doppler_token }}
+
+    - name: Run Build Command (without Doppler)
+      if: inputs.use_doppler != 'true'
+      shell: bash
+      working-directory: ${{ inputs.working_directory }}
+      run: |
+        echo "🚀 Running command: ${{ inputs.command }}"
         ${{ inputs.command }}
-    - name: Upload Node Test Results
+        echo "✅ Command completed successfully"
+
+    - name: Upload Test Results
       if: always()
       uses: actions/upload-artifact@v4
       with:
-        name: node-test-results
-        path: ${{ inputs.working_directory }}/coverage
-    - name: Check Node Build Status
+        name: node-test-results-${{ github.run_id }}
+        path: |
+          ${{ inputs.working_directory }}/coverage
+          ${{ inputs.working_directory }}/test-results
+        if-no-files-found: ignore
+        retention-days: 7
+
+    - name: Upload Build Logs
+      if: failure()
+      uses: actions/upload-artifact@v4
+      with:
+        name: build-logs-${{ github.run_id }}
+        path: |
+          ${{ inputs.working_directory }}/*.log
+          ${{ inputs.working_directory }}/npm-debug.log
+          ${{ inputs.working_directory }}/yarn-error.log
+        if-no-files-found: ignore
+        retention-days: 3
+
+    - name: Check Build Status
       id: check
       shell: bash
       run: |
-        echo "✅ Node Build and Tests Successful"
+        echo "✅ Node.js Build and Tests Successful"
         echo "status=success" >> "$GITHUB_OUTPUT"
