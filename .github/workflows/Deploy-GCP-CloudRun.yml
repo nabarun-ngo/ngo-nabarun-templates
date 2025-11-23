@@ -426,18 +426,6 @@ jobs:
     timeout-minutes: 10
     
     steps:
-      - name: Create GitHub Deployment
-        uses: chrnorm/deployment-action@v2
-        id: deployment
-        with:
-          token: ${{ secrets.REPO_TOKEN }}
-          environment-url: ${{ inputs.environment_url }}
-          environment: ${{ inputs.environment_name }}
-          repo: ${{ inputs.repo_name }}
-          owner: ${{ inputs.repo_owner_name }}
-          ref: ${{ inputs.tag_name }}
-          description: 'Restarting service to fetch fresh secrets'
-
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v2
         with:
@@ -462,24 +450,4 @@ jobs:
           echo "✅ Service restarted successfully!"
           echo "🔐 New containers will fetch fresh secrets from Doppler on startup"
 
-      - name: Update deployment status (success)
-        if: success()
-        uses: chrnorm/deployment-status@v2
-        with:
-          state: 'success'
-          deployment-id: ${{ steps.deployment.outputs.deployment_id }}
-          token: ${{ secrets.REPO_TOKEN }}
-          environment-url: ${{ inputs.environment_url }}
-          repo: ${{ inputs.repo_name }}
-          owner: ${{ inputs.repo_owner_name }}
-
-      - name: Update deployment status (failure)
-        if: failure()
-        uses: chrnorm/deployment-status@v2
-        with:
-          state: 'failure'
-          deployment-id: ${{ steps.deployment.outputs.deployment_id }}
-          token: ${{ secrets.REPO_TOKEN }}
-          environment-url: ${{ inputs.environment_url }}
-          repo: ${{ inputs.repo_name }}
-          owner: ${{ inputs.repo_owner_name }}
+     
