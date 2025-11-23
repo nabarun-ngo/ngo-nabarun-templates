@@ -418,6 +418,44 @@ jobs:
           repo: ${{ inputs.repo_name }}
           owner: ${{ inputs.repo_owner_name }}
 
+  clean_gcp_resources:
+    name: 'Clean Up Old GCP Resources'
+    runs-on: ubuntu-latest
+    needs: [deploy_to_cloudrun]
+    environment: ${{ inputs.environment_name }}
+    # Only run cleanup when deployment succeeds
+    if: needs.deploy_to_cloudrun.result == 'success'
+    timeout-minutes: 20
+    steps:
+      - name: Setup Google Cloud CLI
+        uses: google-github-actions/auth@v2
+        with:
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Clean Artifact Registry repositories
+        uses: nabarun-ngo/ngo-nabarun-templates/.github/actions/gcp-clean-artifact-registry@main
+        continue-on-error: true
+        with:
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
+
+      - name: Clean old GCR versions
+        uses: nabarun-ngo/ngo-nabarun-templates/.github/actions/gcp-clean-gcr-versions@main
+        with:
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
+          service_name: ${{ inputs.service_name }}
+          region: ${{ inputs.region }}
+          keep_revisions: '1'
+
+      - name: Clean old GCS files
+        uses: nabarun-ngo/ngo-nabarun-templates/.github/actions/gcp-clean-gcs-files@main
+        continue-on-error: true
+        with:
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
+          keep_days: '5'
+          bucket_patterns: 'auto'
+          timeout_minutes: '10'
+
   restart_service:
     name: 'Restart Service (Manual Only)'
     runs-on: ubuntu-latest
