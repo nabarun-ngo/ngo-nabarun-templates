@@ -1,0 +1,92 @@
+name: GCP Clean Old Cloud Run Revisions
+description: Cleans up old Cloud Run revisions keeping only the specified number of recent revisions
+inputs:
+  project_id:
+    description: 'GCP Project ID'
+    required: true
+  service_name:
+    description: 'Cloud Run Service Name'
+    required: true
+  region:
+    description: 'Cloud Run Region'
+    required: true
+    default: 'us-central1'
+  keep_revisions:
+    description: 'Number of revisions to keep'
+    required: false
+    default: '3'
+outputs:
+  revisions_deleted:
+    description: 'Number of revisions actually deleted'
+    value: ${{ steps.cleanup.outputs.revisions_deleted }}
+  total_revisions_found:
+    description: 'Total number of revisions found before cleanup'
+    value: ${{ steps.cleanup.outputs.total_revisions_found }}
+runs:
+  using: composite
+  steps:
+    - id: cleanup
+      name: Clean old Cloud Run revisions
+      shell: bash
+      run: |
+        echo "🧹 Cleaning old Cloud Run revisions..."
+        
+        PROJECT="${{ inputs.project_id }}"
+        SERVICE="${{ inputs.service_name }}"
+        REGION="${{ inputs.region }}"
+        KEEP=${{ inputs.keep_revisions }}
+        
+        echo "📊 Configuration: Keep $KEEP revisions for service '$SERVICE' in region '$REGION'"
+        
+        # Get all revisions sorted by creation time (newest first)
+        REVISIONS=$(gcloud run revisions list \
+          --service="$SERVICE" \
+          --region="$REGION" \
+          --project="$PROJECT" \
+          --format="value(metadata.name)" \
+          --sort-by=~metadata.creationTimestamp 2>/dev/null || echo "")
+        
+        if [[ -z "$REVISIONS" ]]; then
+          echo "ℹ️ No revisions found for service $SERVICE in region $REGION"
+          echo "total_revisions_found=0" >> "$GITHUB_OUTPUT"
+          echo "revisions_deleted=0" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+        
+        # Count total revisions
+        REVISION_ARRAY=($REVISIONS)
+        REVISION_COUNT=${#REVISION_ARRAY[@]}
+        
+        echo "📈 Total revisions found: $REVISION_COUNT"
+        echo "📋 All revisions: ${REVISION_ARRAY[*]}"
+        echo "total_revisions_found=$REVISION_COUNT" >> "$GITHUB_OUTPUT"
+        
+        if [[ $REVISION_COUNT -le $KEEP ]]; then
+          echo "✅ No cleanup needed (keeping $KEEP, found $REVISION_COUNT)"
+          echo "revisions_deleted=0" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+        
+        # Calculate revisions to delete
+        DELETE_COUNT=$((REVISION_COUNT - KEEP))
+        echo "🗑️ Will delete $DELETE_COUNT old revisions"
+        
+        # Delete old revisions (skip the first KEEP revisions)
+        DELETED_COUNT=0
+        for ((i=$KEEP; i<$REVISION_COUNT; i++)); do
+          REVISION="${REVISION_ARRAY[$i]}"
+          echo "🗑️ Deleting revision: $REVISION"
+          
+          if gcloud run revisions delete "$REVISION" \
+             --region="$REGION" \
+             --project="$PROJECT" \
+             --quiet 2>/dev/null; then
+            echo "✅ Successfully deleted $REVISION"
+            DELETED_COUNT=$((DELETED_COUNT + 1))
+          else
+            echo "⚠️ Failed to delete $REVISION (may be receiving traffic)"
+          fi
+        done
+        
+        echo "📊 Cleanup summary: $DELETED_COUNT/$DELETE_COUNT revisions deleted"
+        echo "revisions_deleted=$DELETED_COUNT" >> "$GITHUB_OUTPUT"
