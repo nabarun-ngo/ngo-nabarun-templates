@@ -89,6 +89,7 @@ on:
         required: false
         type: string
         default: '10'
+        
     outputs:
       operation_result:
         description: 'GCP operation result'
@@ -230,6 +231,36 @@ jobs:
           echo "- Final service status: ${{ steps.restart.outputs.service_status }}" >> $GITHUB_STEP_SUMMARY
           echo "- Execution time: ${{ steps.restart.outputs.execution_time }}" >> $GITHUB_STEP_SUMMARY
           echo "- Result: ${{ steps.restart.outputs.restart_result }}" >> $GITHUB_STEP_SUMMARY
+
+  restart_gcr_service:
+    name: 'Restart GCR Service'
+    runs-on: ubuntu-latest
+    if: ${{ inputs.operation == 'restart-gcr' }}
+    environment: ${{ inputs.environment_name }}
+    timeout-minutes: 10
+    
+    steps:
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.gcp_sa_key }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Restart GCR service
+        run: |
+          echo "🔄 Restarting service..."
+          
+          # Force a new revision by updating a label with timestamp
+          TIMESTAMP=$(date +%s)
+          
+          gcloud run services update ${{ inputs.service_name }} \
+            --update-env-vars=restart-timestamp=${TIMESTAMP} \
+            --project=${{ secrets.project_id }}
+          
+          echo "✅ Service restarted successfully!"
+          echo "🔐 New containers will fetch fresh secrets"
 
   cleanup-gcp-resources:
     name: 'Clean Up Old GCP Resources'
