@@ -236,7 +236,7 @@ jobs:
     name: 'Restart GCR Service'
     runs-on: ubuntu-latest
     if: ${{ inputs.operation == 'restart-gcr' }}
-    environment: ${{ inputs.environment_name }}
+    environment: ${{ inputs.environment }}
     timeout-minutes: 10
     
     steps:
