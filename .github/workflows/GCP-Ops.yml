@@ -89,6 +89,11 @@ on:
         required: false
         type: string
         default: '10'
+      region:
+        description: 'GCR location'
+        type: string
+        required: false
+        default: 'asia-south1'
         
     outputs:
       operation_result:
@@ -258,6 +263,7 @@ jobs:
           gcloud run services update ${{ inputs.service_name }} \
             --update-env-vars=restart-timestamp=${TIMESTAMP} \
             --project=${{ secrets.project_id }}
+            --region=${{ inputs.region }}
           
           echo "✅ Service restarted successfully!"
           echo "🔐 New containers will fetch fresh secrets"
