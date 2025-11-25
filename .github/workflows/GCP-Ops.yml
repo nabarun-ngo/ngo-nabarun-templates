@@ -262,7 +262,7 @@ jobs:
           
           gcloud run services update ${{ inputs.service_name }} \
             --update-env-vars=restart-timestamp=${TIMESTAMP} \
-            --project=${{ secrets.project_id }}
+            --project=${{ secrets.project_id }} \
             --region=${{ inputs.region }}
           
           echo "✅ Service restarted successfully!"
