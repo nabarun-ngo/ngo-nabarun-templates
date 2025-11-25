@@ -93,7 +93,7 @@ on:
         description: 'GCR location'
         type: string
         required: false
-        default: 'asia-south1'
+        default: 'us-central1'
         
     outputs:
       operation_result:
@@ -267,6 +267,13 @@ jobs:
           
           echo "✅ Service restarted successfully!"
           echo "🔐 New containers will fetch fresh secrets"
+      - name: Authenticate to Google Cloud
+        uses:  nabarun-ngo/ngo-nabarun-templates/.github/actions/gcp-clean-gcr-versions@main
+        with:
+          project_id: ${{ secrets.project_id }}
+          service_name: ${{ inputs.service_name }}
+          region: ${{ inputs.region }}
+          keep_revisions: 1
 
   cleanup-gcp-resources:
     name: 'Clean Up Old GCP Resources'
