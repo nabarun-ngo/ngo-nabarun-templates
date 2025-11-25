@@ -263,11 +263,19 @@ jobs:
           gcloud run services update ${{ inputs.service_name }} \
             --update-env-vars=restart-timestamp=${TIMESTAMP} \
             --project=${{ secrets.project_id }} \
-            --region=${{ inputs.region }}
-          
+            --region=${{ inputs.region }} \
+            --no-traffic
+
           echo "✅ Service restarted successfully!"
+
+          gcloud run services update-traffic ${{ inputs.service_name }} \
+            --to-latest \
+            --region=${{ inputs.region }} \
+            --project=${{ secrets.project_id }}
+          
           echo "🔐 New containers will fetch fresh secrets"
-      - name: Authenticate to Google Cloud
+      
+      - name: Clean old versions
         uses:  nabarun-ngo/ngo-nabarun-templates/.github/actions/gcp-clean-gcr-versions@main
         with:
           project_id: ${{ secrets.project_id }}
