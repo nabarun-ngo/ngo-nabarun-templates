@@ -513,8 +513,8 @@ jobs:
           flags: '--quiet --no-promote'
           env_vars: |-
             NODE_ENV=${{ inputs.environment_name }}
-            DOPPLER_PROJECT_NAME=${{ inputs.app_doppler_project_name }}
-            DOPPLER_SERVICE_TOKEN=${{ secrets.app_doppler_service_token }}
+            DOPPLER_PROJECT=${{ inputs.app_doppler_project_name }}
+            DOPPLER_TOKEN=${{ secrets.app_doppler_service_token }}
             DOPPLER_CONFIG=${{ inputs.app_doppler_config }}
             VERSION=${{ inputs.tag_name }}
           
