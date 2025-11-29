@@ -436,6 +436,13 @@ jobs:
         with:
           name: app-yaml-${{ inputs.tag_name }}
           path: .
+      
+      - name: Copy app.yaml to artifacts directory (for Node deployment)
+        if: inputs.app_type == 'node'
+        run: |
+          echo "📄 Copying app.yaml to artifacts directory..."
+          cp ${{ inputs.gae_app_yaml_path }} ./artifacts/
+          ls -la ./artifacts/ | grep -E "app\.yaml|package\.json|dist|node_modules"
 
       - name: Create GitHub Deployment
         uses: chrnorm/deployment-action@v2
