@@ -427,7 +427,11 @@ jobs:
             
             # Run migration with Doppler
             echo "Running: doppler run -- ${{ inputs.migration_command }}"
-            doppler run -- ${{ inputs.migration_command }}
+            doppler run \
+              --token="$DOPPLER_TOKEN" \
+              --project="$DOPPLER_PROJECT" \
+              --config="$DOPPLER_CONFIG" \
+              -- ${{ inputs.migration_command }}
           else
             echo "⚠️ Doppler CLI not found in artifact, using environment variables directly"
             echo "Running: ${{ inputs.migration_command }}"
