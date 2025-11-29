@@ -123,7 +123,7 @@ on:
         default: 'default'
       
       # Environment Configuration
-      app_env:
+      app_doppler_config:
         required: true
         type: string
       app_doppler_project_name:
@@ -147,11 +147,6 @@ on:
         default: 5
       
       # Deployment Configuration
-      deployment_timeout:
-        description: "Deployment timeout in minutes (default: 25)"
-        required: false
-        type: number
-        default: 25
       enable_health_check:
         description: "Enable post-deployment health check (default: true)"
         required: false
@@ -364,7 +359,7 @@ jobs:
         env:
           DOPPLER_TOKEN: ${{ secrets.app_doppler_service_token }}
           DOPPLER_PROJECT: ${{ inputs.app_doppler_project_name }}
-          DOPPLER_CONFIG: ${{ inputs.app_env }}
+          DOPPLER_CONFIG: ${{ inputs.app_doppler_config }}
         run: |
           echo "🗄️ Running database migration..."
           
@@ -429,7 +424,7 @@ jobs:
         with:
           path: '${{ inputs.gae_app_yaml_path }}'
         env:
-          ENVIRONMENT: ${{ inputs.app_env }}
+          ENVIRONMENT: ${{ inputs.environment_name }}
           DOPPLER_PROJECT_NAME: ${{ inputs.app_doppler_project_name }}
           DOPPLER_SERVICE_TOKEN: ${{ secrets.app_doppler_service_token }}
           LOG_LEVEL: ${{ inputs.app_log_level }}
