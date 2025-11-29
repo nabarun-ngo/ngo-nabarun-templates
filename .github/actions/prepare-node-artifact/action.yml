@@ -73,6 +73,12 @@ runs:
           cp -r prisma/* deployment-artifact/prisma/
           echo "✅ Prisma schema copied"
         fi
+
+         # Copy .gcloudignore if it exists
+        if [ -f ".gcloudignore" ]; then
+          echo "📝 Copying .gcloudignore..."
+          cp .gcloudignore deployment-artifact/
+        fi
         
         # Copy .env files if they exist (for local testing)
         if [ -f ".env" ]; then
