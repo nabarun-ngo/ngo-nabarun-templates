@@ -411,6 +411,8 @@ jobs:
           
   #         echo "✅ Database migration completed successfully"
 
+  #&& (needs.run_db_migration.result == 'success' || needs.run_db_migration.result == 'skipped')
+
   deploy_to_gcp:
     name: 'Deploy to GCP App Engine'
     runs-on: ubuntu-latest
@@ -418,8 +420,7 @@ jobs:
     timeout-minutes: 20
     if: |
       always() &&
-      needs.build_application.result == 'success' &&
-      (needs.run_db_migration.result == 'success' || needs.run_db_migration.result == 'skipped')
+      needs.build_application.result == 'success' 
     environment: ${{ inputs.environment_name }}
     outputs:
       deployment_version: ${{ steps.get_version.outputs.version }}
