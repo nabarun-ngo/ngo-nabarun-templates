@@ -3,6 +3,10 @@ name: JMeter Load Test
 on:
   workflow_call:
     inputs:
+      script:
+        description: 'Path of the jmx script(including .jmx ext)'
+        type: string
+        required: true
       users:
         description: "Concurrent users"
         required: true
@@ -15,6 +19,10 @@ on:
         description: "Loop count per user"
         required: true
         type: number
+      lifetime:
+        description: 'Thread lifetime'
+        type: number
+        required: true
       target_url:
         description: "Target base URL (without protocol)"
         required: true
@@ -38,12 +46,14 @@ jobs:
       - name: Run JMeter Load Test
         run: |
           jmeter -n \
-            -t loadtests/swagger-get-loadtest.jmx \
+            -t loadtests/${{ inputs.script }} \
             -JUSERS=${{ inputs.users }} \
             -JRAMP_UP=${{ inputs.rampup }} \
             -JLOOPS=${{ inputs.loops }} \
+            -JLIFETIME=${{ inputs.lifetime }} \
             -JTARGET_HOST=${{ inputs.target_url }} \
             -JJWT_TOKEN=${{ secrets.JWT_TOKEN }} \
+            -JAPI_KEY=${{ secrets.API_KEY }} \
             -l results.jtl \
             -e -o report
 
