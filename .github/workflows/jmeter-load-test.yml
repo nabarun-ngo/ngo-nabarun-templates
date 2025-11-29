@@ -42,9 +42,13 @@ jobs:
 
       - name: Install JMeter
         run: |
-          sudo apt update
-          sudo apt install -y jmeter
-
+          wget https://archive.apache.org/dist/jmeter/binaries/apache-jmeter-5.6.3.tgz
+          tar -xzf apache-jmeter-5.6.3.tgz
+          sudo ln -s $PWD/apache-jmeter-5.6.3/bin/jmeter /usr/local/bin/jmeter
+      
+      - name: Verify JMeter Installation
+        run: jmeter --version
+      
       - name: Run JMeter Load Test
         run: |
           jmeter -n \
@@ -57,7 +61,7 @@ jobs:
             -JJWT_TOKEN=${{ secrets.JWT_TOKEN }} \
             -JAPI_KEY=${{ secrets.API_KEY }} \
             -l results.jtl \
-            -o report
+            -e -o report
 
       - name: Upload JMeter HTML Report
         uses: actions/upload-artifact@v4
