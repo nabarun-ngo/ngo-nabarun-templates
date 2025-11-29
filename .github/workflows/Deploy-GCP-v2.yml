@@ -110,6 +110,11 @@ on:
         required: false
         type: string
         default: 'npx prisma migrate deploy'
+      migration_working_directory:
+        description: "Working directory for migration command (relative to artifact root)"
+        required: false
+        type: string
+        default: '.'
       
       
       # GCP Configuration
@@ -138,12 +143,12 @@ on:
       keep_gae_versions:
         description: "Number of GAE versions to keep (optional, default 1)"
         required: false
-        type: number
+        type: string
         default: 1
       gcs_keep_days:
         description: "Number of days to keep files in GCS bucket (optional, default 5)"
         required: false
-        type: number
+        type: string
         default: 5
       
       # Deployment Configuration
@@ -273,6 +278,7 @@ jobs:
           include_node_modules: ${{ inputs.include_node_modules }}
           install_doppler_cli: ${{ inputs.install_doppler_cli }}
           doppler_cli_version: ${{ inputs.doppler_cli_version }}
+          include_prisma_schema: 'true'
 
       
       - name: Find Node build artifacts
@@ -354,26 +360,79 @@ jobs:
         with:
           node-version: ${{ inputs.node_version }}
       
-      - name: Run database migration
+      - name: Verify artifact structure
+        run: |
+          echo "📁 Artifact structure:"
+          ls -la ./artifacts/
+          if [ -d "./artifacts/prisma" ]; then
+            echo "✅ Prisma directory found"
+            ls -la ./artifacts/prisma/
+          else
+            echo "⚠️ No Prisma directory found"
+          fi
+          if [ -d "./artifacts/node_modules" ]; then
+            echo "✅ node_modules found"
+          else
+            echo "⚠️ No node_modules found"
+          fi
+          if [ -d "./artifacts/bin" ]; then
+            echo "✅ bin directory found"
+            ls -la ./artifacts/bin/
+          else
+            echo "⚠️ No bin directory found"
+          fi
+      
+      - name: Install missing dependencies (if needed)
+        if: inputs.app_type == 'node'
         working-directory: ./artifacts
+        run: |
+          # Check if node_modules exists and has content
+          if [ ! -d "node_modules" ] || [ -z "$(ls -A node_modules 2>/dev/null)" ]; then
+            echo "📦 node_modules missing or empty, installing dependencies..."
+            if [ -f "package-lock.json" ]; then
+              npm ci --omit=dev
+            elif [ -f "yarn.lock" ]; then
+              yarn install --production --frozen-lockfile
+            elif [ -f "pnpm-lock.yaml" ]; then
+              pnpm install --prod --frozen-lockfile
+            else
+              npm install --omit=dev
+            fi
+          else
+            echo "✅ node_modules already present"
+          fi
+      
+      - name: Run database migration
+        working-directory: ./artifacts/${{ inputs.migration_working_directory }}
         env:
           DOPPLER_TOKEN: ${{ secrets.app_doppler_service_token }}
           DOPPLER_PROJECT: ${{ inputs.app_doppler_project_name }}
           DOPPLER_CONFIG: ${{ inputs.app_doppler_config }}
         run: |
           echo "🗄️ Running database migration..."
+          echo "Working directory: $(pwd)"
           
           # Add bin to PATH if Doppler CLI was installed
-          if [ -d "bin" ]; then
-            chmod +x bin/doppler  # Fix permission denied error
-            export PATH="$PWD/bin:$PATH"
-            echo "✅ Doppler CLI available at: $(which doppler)"
-            doppler --version
+          BIN_PATH="$(pwd)/bin"
+          if [ ! -d "$BIN_PATH" ]; then
+            # Try parent directory
+            BIN_PATH="$(dirname $(pwd))/bin"
           fi
           
-          # Run migration command
-          echo "Running: ${{ inputs.migration_command }}"
-          ${{ inputs.migration_command }}
+          if [ -d "$BIN_PATH" ] && [ -f "$BIN_PATH/doppler" ]; then
+            chmod +x "$BIN_PATH/doppler"
+            export PATH="$BIN_PATH:$PATH"
+            echo "✅ Doppler CLI available at: $(which doppler)"
+            doppler --version
+            
+            # Run migration with Doppler
+            echo "Running: doppler run -- ${{ inputs.migration_command }}"
+            doppler run -- ${{ inputs.migration_command }}
+          else
+            echo "⚠️ Doppler CLI not found in artifact, using environment variables directly"
+            echo "Running: ${{ inputs.migration_command }}"
+            ${{ inputs.migration_command }}
+          fi
           
           echo "✅ Database migration completed successfully"
 
