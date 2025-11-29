@@ -22,6 +22,10 @@ inputs:
     description: 'Doppler CLI version'
     required: false
     default: 'latest'
+  include_prisma_schema:
+    description: 'Include Prisma schema for migrations'
+    required: false
+    default: 'true'
 
 outputs:
   artifact_path:
@@ -63,9 +67,21 @@ runs:
         [ -f pnpm-lock.yaml ] && cp pnpm-lock.yaml deployment-artifact/ || true
         
         # Copy Prisma schema if it exists (needed for migrations)
-        if [ -d "prisma" ]; then
+        if [ "${{ inputs.include_prisma_schema }}" == "true" ] && [ -d "prisma" ]; then
           echo "📋 Copying Prisma schema..."
-          cp -r prisma deployment-artifact/
+          mkdir -p deployment-artifact/prisma
+          cp -r prisma/* deployment-artifact/prisma/
+          echo "✅ Prisma schema copied"
+        fi
+        
+        # Copy .env files if they exist (for local testing)
+        if [ -f ".env" ]; then
+          echo "📝 Copying .env file..."
+          cp .env deployment-artifact/ || true
+        fi
+        if [ -f ".env.production" ]; then
+          echo "📝 Copying .env.production file..."
+          cp .env.production deployment-artifact/ || true
         fi
         
         # Install production dependencies only
@@ -84,6 +100,14 @@ runs:
               pnpm install --prod --frozen-lockfile --ignore-scripts
               ;;
           esac
+          
+          # Ensure Prisma client is generated if Prisma is present
+          if [ -d "prisma" ] && [ -d "node_modules" ]; then
+            echo "🔄 Ensuring Prisma client is generated..."
+            if command -v npx &> /dev/null; then
+              npx prisma generate 2>/dev/null || echo "⚠️ Prisma generate skipped (might not be needed)"
+            fi
+          fi
           
           cd ..
           
@@ -120,6 +144,31 @@ runs:
         ./bin/doppler --version
         
         echo "✅ Doppler CLI installed successfully"
+        cd ..
+
+    - name: Verify artifact contents
+      shell: bash
+      run: |
+        echo "📋 Verifying artifact contents..."
+        cd deployment-artifact
+        
+        echo "✅ Contents of deployment-artifact:"
+        ls -la
+        
+        if [ -d "prisma" ]; then
+          echo "✅ Prisma directory present:"
+          ls -la prisma/
+        fi
+        
+        if [ -d "node_modules" ]; then
+          echo "✅ node_modules present (size: $(du -sh node_modules | cut -f1))"
+        fi
+        
+        if [ -d "bin" ] && [ -f "bin/doppler" ]; then
+          echo "✅ Doppler CLI present:"
+          ./bin/doppler --version
+        fi
+        
         cd ..
 
     - name: Set output path
