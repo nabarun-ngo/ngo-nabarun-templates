@@ -57,7 +57,7 @@ jobs:
             -JJWT_TOKEN=${{ secrets.JWT_TOKEN }} \
             -JAPI_KEY=${{ secrets.API_KEY }} \
             -l results.jtl \
-            -e -o report
+            -o report
 
       - name: Upload JMeter HTML Report
         uses: actions/upload-artifact@v4
