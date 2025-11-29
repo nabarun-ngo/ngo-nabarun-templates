@@ -48,7 +48,7 @@ jobs:
       - name: Run JMeter Load Test
         run: |
           jmeter -n \
-            -t loadtests/${{ inputs.script }} \
+            -t ${{ inputs.script }} \
             -JUSERS=${{ inputs.users }} \
             -JRAMP_UP=${{ inputs.rampup }} \
             -JLOOPS=${{ inputs.loops }} \
