@@ -106,10 +106,10 @@ on:
         type: boolean
         default: false
       migration_command:
-        description: "Command to run database migrations (e.g., 'npx prisma migrate deploy')"
+        description: "Command to run database migrations (e.g., 'npm ci && npx prisma migrate deploy')"
         required: false
         type: string
-        default: 'npx prisma migrate deploy'
+        default: 'npm ci && npx prisma migrate deploy'
       migration_working_directory:
         description: "Working directory for migration command (relative to artifact root)"
         required: false
@@ -143,12 +143,12 @@ on:
       keep_gae_versions:
         description: "Number of GAE versions to keep (optional, default 1)"
         required: false
-        type: string
+        type: number
         default: 1
       gcs_keep_days:
         description: "Number of days to keep files in GCS bucket (optional, default 5)"
         required: false
-        type: string
+        type: number
         default: 5
       
       # Deployment Configuration
@@ -370,36 +370,11 @@ jobs:
           else
             echo "⚠️ No Prisma directory found"
           fi
-          if [ -d "./artifacts/node_modules" ]; then
-            echo "✅ node_modules found"
-          else
-            echo "⚠️ No node_modules found"
-          fi
           if [ -d "./artifacts/bin" ]; then
             echo "✅ bin directory found"
             ls -la ./artifacts/bin/
           else
             echo "⚠️ No bin directory found"
-          fi
-      
-      - name: Install missing dependencies (if needed)
-        if: inputs.app_type == 'node'
-        working-directory: ./artifacts
-        run: |
-          # Check if node_modules exists and has content
-          if [ ! -d "node_modules" ] || [ -z "$(ls -A node_modules 2>/dev/null)" ]; then
-            echo "📦 node_modules missing or empty, installing dependencies..."
-            if [ -f "package-lock.json" ]; then
-              npm ci --omit=dev
-            elif [ -f "yarn.lock" ]; then
-              yarn install --production --frozen-lockfile
-            elif [ -f "pnpm-lock.yaml" ]; then
-              pnpm install --prod --frozen-lockfile
-            else
-              npm install --omit=dev
-            fi
-          else
-            echo "✅ node_modules already present"
           fi
       
       - name: Run database migration
@@ -427,15 +402,11 @@ jobs:
             
             # Run migration with Doppler
             echo "Running: doppler run -- ${{ inputs.migration_command }}"
-            doppler run \
-              --token="$DOPPLER_TOKEN" \
-              --project="$DOPPLER_PROJECT" \
-              --config="$DOPPLER_CONFIG" \
-              -- ${{ inputs.migration_command }}
+            doppler run -- bash -c '${{ inputs.migration_command }}'
           else
             echo "⚠️ Doppler CLI not found in artifact, using environment variables directly"
             echo "Running: ${{ inputs.migration_command }}"
-            ${{ inputs.migration_command }}
+            bash -c '${{ inputs.migration_command }}'
           fi
           
           echo "✅ Database migration completed successfully"
@@ -490,7 +461,6 @@ jobs:
         env:
           ENVIRONMENT: ${{ inputs.environment_name }}
           DOPPLER_PROJECT_NAME: ${{ inputs.app_doppler_project_name }}
-          DOPPLER_CONFIG: ${{ inputs.app_doppler_config }}
           DOPPLER_SERVICE_TOKEN: ${{ secrets.app_doppler_service_token }}
           LOG_LEVEL: ${{ inputs.app_log_level }}
           VERSION: ${{ inputs.tag_name }}
@@ -525,7 +495,7 @@ jobs:
           project_id: ${{ secrets.gcp_project_id }}
           deliverables: '${{ inputs.gae_app_yaml_path }}'
           working_directory: './artifacts'
-          flags: '--quiet --no-promote --'
+          flags: '--quiet --no-promote'
           
       - name: Get deployed version
         id: get_version
