@@ -486,6 +486,7 @@ jobs:
         env:
           ENVIRONMENT: ${{ inputs.environment_name }}
           DOPPLER_PROJECT_NAME: ${{ inputs.app_doppler_project_name }}
+          DOPPLER_CONFIG: ${{ inputs.app_doppler_config }}
           DOPPLER_SERVICE_TOKEN: ${{ secrets.app_doppler_service_token }}
           LOG_LEVEL: ${{ inputs.app_log_level }}
           VERSION: ${{ inputs.tag_name }}
@@ -520,7 +521,7 @@ jobs:
           project_id: ${{ secrets.gcp_project_id }}
           deliverables: '${{ inputs.gae_app_yaml_path }}'
           working_directory: './artifacts'
-          flags: '--quiet --no-promote'
+          flags: '--quiet --no-promote --'
           
       - name: Get deployed version
         id: get_version
