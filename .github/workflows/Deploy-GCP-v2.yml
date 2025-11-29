@@ -495,12 +495,12 @@ jobs:
           deliverables: './artifacts/${{ needs.build_application.outputs.artifact_name }}'
           flags: '--appyaml=${{ inputs.gae_app_yaml_path }} --quiet --no-promote'
           env_vars: |-
-            ENVIRONMENT: ${{ inputs.environment_name }}
-            DOPPLER_PROJECT_NAME: ${{ inputs.app_doppler_project_name }}
-            DOPPLER_SERVICE_TOKEN: ${{ secrets.app_doppler_service_token }}
-            DOPPLER_CONFIG: ${{ inputs.app_doppler_config }}
-            LOG_LEVEL: ${{ inputs.app_log_level }}
-            VERSION: ${{ inputs.tag_name }}
+            ENVIRONMENT=${{ inputs.environment_name }}
+            DOPPLER_PROJECT_NAME=${{ inputs.app_doppler_project_name }}
+            DOPPLER_SERVICE_TOKEN=${{ secrets.app_doppler_service_token }}
+            DOPPLER_CONFIG=${{ inputs.app_doppler_config }}
+            LOG_LEVEL=${{ inputs.app_log_level }}
+            VERSION=${{ inputs.tag_name }}
       
       - name: Deploy to Google App Engine (Node)
         if: inputs.app_type == 'node'
@@ -512,11 +512,11 @@ jobs:
           working_directory: './artifacts'
           flags: '--quiet --no-promote'
           env_vars: |-
-            NODE_ENV: ${{ inputs.environment_name }}
-            DOPPLER_PROJECT_NAME: ${{ inputs.app_doppler_project_name }}
-            DOPPLER_SERVICE_TOKEN: ${{ secrets.app_doppler_service_token }}
-            DOPPLER_CONFIG: ${{ inputs.app_doppler_config }}
-            VERSION: ${{ inputs.tag_name }}
+            NODE_ENV=${{ inputs.environment_name }}
+            DOPPLER_PROJECT_NAME=${{ inputs.app_doppler_project_name }}
+            DOPPLER_SERVICE_TOKEN=${{ secrets.app_doppler_service_token }}
+            DOPPLER_CONFIG=${{ inputs.app_doppler_config }}
+            VERSION=${{ inputs.tag_name }}
           
           
       - name: Get deployed version
