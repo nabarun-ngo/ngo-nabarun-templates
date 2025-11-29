@@ -331,90 +331,90 @@ jobs:
           path: ${{ inputs.gae_app_yaml_path }}
           retention-days: 1
 
-  run_db_migration:
-    name: 'Run Database Migration'
-    runs-on: ubuntu-latest
-    needs: [build_application]
-    if: |
-      always() &&
-      needs.build_application.result == 'success' &&
-      inputs.enable_db_migration
-    environment: ${{ inputs.environment_name }}
-    timeout-minutes: 20
-    steps:
-      - name: Download build artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: ${{ needs.build_application.outputs.artifact_name }}
-          path: ./artifacts/
+  # run_db_migration:
+  #   name: 'Run Database Migration'
+  #   runs-on: ubuntu-latest
+  #   needs: [build_application]
+  #   if: |
+  #     always() &&
+  #     needs.build_application.result == 'success' &&
+  #     inputs.enable_db_migration
+  #   environment: ${{ inputs.environment_name }}
+  #   timeout-minutes: 20
+  #   steps:
+  #     - name: Download build artifact
+  #       uses: actions/download-artifact@v4
+  #       with:
+  #         name: ${{ needs.build_application.outputs.artifact_name }}
+  #         path: ./artifacts/
       
-      - name: Setup Google Cloud CLI
-        uses: google-github-actions/auth@v2
-        with:
-          project_id: ${{ secrets.gcp_project_id }}
-          credentials_json: ${{ secrets.gcp_service_account }}
+  #     - name: Setup Google Cloud CLI
+  #       uses: google-github-actions/auth@v2
+  #       with:
+  #         project_id: ${{ secrets.gcp_project_id }}
+  #         credentials_json: ${{ secrets.gcp_service_account }}
       
-      - name: Setup Node.js (for Node apps)
-        if: inputs.app_type == 'node'
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ inputs.node_version }}
+  #     - name: Setup Node.js (for Node apps)
+  #       if: inputs.app_type == 'node'
+  #       uses: actions/setup-node@v4
+  #       with:
+  #         node-version: ${{ inputs.node_version }}
       
-      - name: Verify artifact structure
-        run: |
-          echo "📁 Artifact structure:"
-          ls -la ./artifacts/
-          if [ -d "./artifacts/prisma" ]; then
-            echo "✅ Prisma directory found"
-            ls -la ./artifacts/prisma/
-          else
-            echo "⚠️ No Prisma directory found"
-          fi
-          if [ -d "./artifacts/bin" ]; then
-            echo "✅ bin directory found"
-            ls -la ./artifacts/bin/
-          else
-            echo "⚠️ No bin directory found"
-          fi
+  #     - name: Verify artifact structure
+  #       run: |
+  #         echo "📁 Artifact structure:"
+  #         ls -la ./artifacts/
+  #         if [ -d "./artifacts/prisma" ]; then
+  #           echo "✅ Prisma directory found"
+  #           ls -la ./artifacts/prisma/
+  #         else
+  #           echo "⚠️ No Prisma directory found"
+  #         fi
+  #         if [ -d "./artifacts/bin" ]; then
+  #           echo "✅ bin directory found"
+  #           ls -la ./artifacts/bin/
+  #         else
+  #           echo "⚠️ No bin directory found"
+  #         fi
       
-      - name: Run database migration
-        working-directory: ./artifacts/${{ inputs.migration_working_directory }}
-        env:
-          DOPPLER_TOKEN: ${{ secrets.app_doppler_service_token }}
-          DOPPLER_PROJECT: ${{ inputs.app_doppler_project_name }}
-          DOPPLER_CONFIG: ${{ inputs.app_doppler_config }}
-        run: |
-          echo "🗄️ Running database migration..."
-          echo "Working directory: $(pwd)"
+  #     - name: Run database migration
+  #       working-directory: ./artifacts/${{ inputs.migration_working_directory }}
+  #       env:
+  #         DOPPLER_TOKEN: ${{ secrets.app_doppler_service_token }}
+  #         DOPPLER_PROJECT: ${{ inputs.app_doppler_project_name }}
+  #         DOPPLER_CONFIG: ${{ inputs.app_doppler_config }}
+  #       run: |
+  #         echo "🗄️ Running database migration..."
+  #         echo "Working directory: $(pwd)"
           
-          # Add bin to PATH if Doppler CLI was installed
-          BIN_PATH="$(pwd)/bin"
-          if [ ! -d "$BIN_PATH" ]; then
-            # Try parent directory
-            BIN_PATH="$(dirname $(pwd))/bin"
-          fi
+  #         # Add bin to PATH if Doppler CLI was installed
+  #         BIN_PATH="$(pwd)/bin"
+  #         if [ ! -d "$BIN_PATH" ]; then
+  #           # Try parent directory
+  #           BIN_PATH="$(dirname $(pwd))/bin"
+  #         fi
           
-          if [ -d "$BIN_PATH" ] && [ -f "$BIN_PATH/doppler" ]; then
-            chmod +x "$BIN_PATH/doppler"
-            export PATH="$BIN_PATH:$PATH"
-            echo "✅ Doppler CLI available at: $(which doppler)"
-            doppler --version
+  #         if [ -d "$BIN_PATH" ] && [ -f "$BIN_PATH/doppler" ]; then
+  #           chmod +x "$BIN_PATH/doppler"
+  #           export PATH="$BIN_PATH:$PATH"
+  #           echo "✅ Doppler CLI available at: $(which doppler)"
+  #           doppler --version
             
-            # Run migration with Doppler
-            echo "Running: doppler run -- ${{ inputs.migration_command }}"
-            doppler run -- bash -c '${{ inputs.migration_command }}'
-          else
-            echo "⚠️ Doppler CLI not found in artifact, using environment variables directly"
-            echo "Running: ${{ inputs.migration_command }}"
-            bash -c '${{ inputs.migration_command }}'
-          fi
+  #           # Run migration with Doppler
+  #           echo "Running: doppler run -- ${{ inputs.migration_command }}"
+  #           doppler run -- bash -c '${{ inputs.migration_command }}'
+  #         else
+  #           echo "⚠️ Doppler CLI not found in artifact, using environment variables directly"
+  #           echo "Running: ${{ inputs.migration_command }}"
+  #           bash -c '${{ inputs.migration_command }}'
+  #         fi
           
-          echo "✅ Database migration completed successfully"
+  #         echo "✅ Database migration completed successfully"
 
   deploy_to_gcp:
     name: 'Deploy to GCP App Engine'
     runs-on: ubuntu-latest
-    needs: [build_application, run_db_migration]
+    needs: [build_application]
     timeout-minutes: 20
     if: |
       always() &&
@@ -493,6 +493,13 @@ jobs:
           project_id: ${{ secrets.gcp_project_id }}
           deliverables: './artifacts/${{ needs.build_application.outputs.artifact_name }}'
           flags: '--appyaml=${{ inputs.gae_app_yaml_path }} --quiet --no-promote'
+          env_vars: |-
+            ENVIRONMENT: ${{ inputs.environment_name }}
+            DOPPLER_PROJECT_NAME: ${{ inputs.app_doppler_project_name }}
+            DOPPLER_SERVICE_TOKEN: ${{ secrets.app_doppler_service_token }}
+            DOPPLER_CONFIG: ${{ inputs.app_doppler_config }}
+            LOG_LEVEL: ${{ inputs.app_log_level }}
+            VERSION: ${{ inputs.tag_name }}
       
       - name: Deploy to Google App Engine (Node)
         if: inputs.app_type == 'node'
@@ -503,6 +510,13 @@ jobs:
           deliverables: '${{ inputs.gae_app_yaml_path }}'
           working_directory: './artifacts'
           flags: '--quiet --no-promote'
+          env_vars: |-
+            NODE_ENV: ${{ inputs.environment_name }}
+            DOPPLER_PROJECT_NAME: ${{ inputs.app_doppler_project_name }}
+            DOPPLER_SERVICE_TOKEN: ${{ secrets.app_doppler_service_token }}
+            DOPPLER_CONFIG: ${{ inputs.app_doppler_config }}
+            VERSION: ${{ inputs.tag_name }}
+          
           
       - name: Get deployed version
         id: get_version
