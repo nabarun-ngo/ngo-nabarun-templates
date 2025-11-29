@@ -29,7 +29,9 @@ on:
         type: string
     secrets:
       JWT_TOKEN:
-        required: true
+        required: false
+      API_KEY:
+        required: false
 
 jobs:
   jmeter:
