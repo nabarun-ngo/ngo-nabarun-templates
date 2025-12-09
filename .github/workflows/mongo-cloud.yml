@@ -1,5 +1,4 @@
-name: "MongoDB Cloud Tasks"
-
+name: "MongoDB to PostgreSQL Migration Tasks"
 on:
   workflow_call:
     inputs:
@@ -19,11 +18,18 @@ on:
         description: "Target collection for import"
         required: false
         type: string
-      
+      migration-script-path:
+        description: "Path to MongoDB to PostgreSQL migration script (.js)"
+        required: false
+        type: string
     secrets:
       mongo-uri:
         description: "MongoDB Atlas connection string"
         required: true
+      postgres-uri:
+        description: "PostgreSQL connection string (e.g., postgresql://user:pass@host:port/database)"
+        required: false
+      
     outputs:
       script-logs:
         description: "Logs from the script execution"
@@ -31,6 +37,9 @@ on:
       import-logs:
         description: "Logs from the data import"
         value: ${{ jobs.import-mongo-data.outputs.logs }}
+      migration-logs:
+        description: "Logs from MongoDB to PostgreSQL migration"
+        value: ${{ jobs.migrate-mongo-to-postgres.outputs.logs }}
 
 jobs:
   run-mongo-script:
@@ -43,14 +52,14 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
+        
       - name: Install Mongo Shell
         run: |
           curl -fsSL https://pgp.mongodb.com/server-6.0.asc | sudo gpg -o /usr/share/keyrings/mongodb-server-6.0.gpg --dearmor
           echo "deb [ arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-server-6.0.gpg ] https://repo.mongodb.org/apt/ubuntu jammy/mongodb-org/6.0 multiverse" | sudo tee /etc/apt/sources.list.d/mongodb-org-6.0.list
           sudo apt-get update
           sudo apt-get install -y mongodb-mongosh
-
+          
       - name: Check if script exists
         id: check_script
         run: |
@@ -60,7 +69,7 @@ jobs:
           else
             echo "exists=true" >> $GITHUB_OUTPUT
           fi
-
+          
       - name: Run MongoDB script on Atlas
         if: steps.check_script.outputs.exists == 'true'
         id: run-script
@@ -83,12 +92,12 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
+        
       - name: Install Mongo Tools
         run: |
           sudo apt-get update
           sudo apt-get install -y mongo-tools
-
+          
       - name: Check if import file exists
         id: check_import
         run: |
@@ -98,7 +107,7 @@ jobs:
           else
             echo "exists=true" >> $GITHUB_OUTPUT
           fi
-
+          
       - name: Import data into Atlas
         if: steps.check_import.outputs.exists == 'true'
         id: import-data
@@ -113,3 +122,119 @@ jobs:
           LOGS="${LOGS//$'\n'/'%0A'}"
           LOGS="${LOGS//$'\r'/'%0D'}"
           echo "logs=$LOGS" >> $GITHUB_OUTPUT
+
+  migrate-mongo-to-postgres:
+    if: ${{ inputs.migration-script-path != '' }}
+    runs-on: ubuntu-latest
+    name: Migrate MongoDB to PostgreSQL
+    environment: ${{ inputs.target-env }}
+    outputs:
+      logs: ${{ steps.run-migration.outputs.logs }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          
+      - name: Install MongoDB and PostgreSQL drivers
+        run: |
+          npm install mongodb@6 pg@8
+          
+      - name: Install Mongo Shell (for verification)
+        run: |
+          curl -fsSL https://pgp.mongodb.com/server-6.0.asc | sudo gpg -o /usr/share/keyrings/mongodb-server-6.0.gpg --dearmor
+          echo "deb [ arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-server-6.0.gpg ] https://repo.mongodb.org/apt/ubuntu jammy/mongodb-org/6.0 multiverse" | sudo tee /etc/apt/sources.list.d/mongodb-org-6.0.list
+          sudo apt-get update
+          sudo apt-get install -y mongodb-mongosh
+          
+      - name: Install PostgreSQL client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+          
+      - name: Check if migration script exists
+        id: check_migration
+        run: |
+          if [ ! -f "${{ inputs.migration-script-path }}" ]; then
+            echo "Migration script not found: ${{ inputs.migration-script-path }}. Skipping execution."
+            echo "exists=false" >> $GITHUB_OUTPUT
+          else
+            echo "exists=true" >> $GITHUB_OUTPUT
+          fi
+          
+      - name: Verify MongoDB connection
+        if: steps.check_migration.outputs.exists == 'true'
+        run: |
+          echo "Testing MongoDB connection..."
+          mongosh "${{ secrets.mongo-uri }}" --eval "db.adminCommand('ping')"
+          
+      - name: Verify PostgreSQL connection
+        if: steps.check_migration.outputs.exists == 'true'
+        run: |
+          echo "Testing PostgreSQL connection..."
+          psql "${{ secrets.postgres-uri }}" -c "SELECT version();"
+          
+      - name: Run MongoDB to PostgreSQL migration
+        if: steps.check_migration.outputs.exists == 'true'
+        id: run-migration
+        env:
+          MONGO_URI: ${{ secrets.mongo-uri }}
+          POSTGRES_URI: ${{ secrets.postgres-uri }}
+        run: |
+          echo "Starting migration from MongoDB to PostgreSQL..."
+          LOGS=$(node "${{ inputs.migration-script-path }}" 2>&1)
+          EXIT_CODE=$?
+          echo "$LOGS"
+          
+          if [ $EXIT_CODE -ne 0 ]; then
+            echo "Migration failed with exit code $EXIT_CODE"
+            exit $EXIT_CODE
+          fi
+          
+          # Export logs as output
+          LOGS="${LOGS//'%'/'%25'}"
+          LOGS="${LOGS//
+          
+      - name: Migration Summary
+        if: steps.check_migration.outputs.exists == 'true' && success()
+        run: |
+          echo "✅ Migration completed successfully!"
+          echo "Source: MongoDB Atlas"
+          echo "Target: PostgreSQL"
+          
+      - name: Migration Failed
+        if: steps.check_migration.outputs.exists == 'true' && failure()
+        run: |
+          echo "❌ Migration failed. Please check the logs above for details."
+          exit 1\n'/'%0A'}"
+          LOGS="${LOGS//
+          
+      - name: Migration Summary
+        if: steps.check_migration.outputs.exists == 'true' && success()
+        run: |
+          echo "✅ Migration completed successfully!"
+          echo "Source: MongoDB Atlas"
+          echo "Target: PostgreSQL (${{ secrets.postgres-host }}:${{ secrets.postgres-port || '5432' }}/${{ inputs.postgres-database }})"
+          
+      - name: Migration Failed
+        if: steps.check_migration.outputs.exists == 'true' && failure()
+        run: |
+          echo "❌ Migration failed. Please check the logs above for details."
+          exit 1\r'/'%0D'}"
+          echo "logs=$LOGS" >> $GITHUB_OUTPUT
+          
+      - name: Migration Summary
+        if: steps.check_migration.outputs.exists == 'true' && success()
+        run: |
+          echo "✅ Migration completed successfully!"
+          echo "Source: MongoDB Atlas"
+          echo "Target: PostgreSQL (${{ secrets.postgres-host }}:${{ secrets.postgres-port || '5432' }}/${{ inputs.postgres-database }})"
+          
+      - name: Migration Failed
+        if: steps.check_migration.outputs.exists == 'true' && failure()
+        run: |
+          echo "❌ Migration failed. Please check the logs above for details."
+          exit 1
