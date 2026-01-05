@@ -441,7 +441,7 @@ jobs:
       - name: Copy app.yaml to artifacts directory (for Node deployment)
         if: inputs.app_type == 'node'
         run: |
-          echo "📄 Copying app.yaml to artifacts directory..."
+          echo "📄 Copying ${{ inputs.gae_app_yaml_path }} to artifacts directory..."
           cp ${{ inputs.gae_app_yaml_path }} ./artifacts/
           ls -la ./artifacts/ | grep -E "app\.yaml|package\.json|dist|node_modules"
 
@@ -462,17 +462,17 @@ jobs:
           project_id: ${{ secrets.gcp_project_id }}
           credentials_json: ${{ secrets.gcp_service_account }}
         
-      - name: Setup Application Variables
-        uses: ikuanyshbekov/app-yaml-env-compiler@v1.0
-        with:
-          path: '${{ inputs.gae_app_yaml_path }}'
-        env:
-          ENVIRONMENT: ${{ inputs.environment_name }}
-          DOPPLER_PROJECT_NAME: ${{ inputs.app_doppler_project_name }}
-          DOPPLER_SERVICE_TOKEN: ${{ secrets.app_doppler_service_token }}
-          LOG_LEVEL: ${{ inputs.app_log_level }}
-          VERSION: ${{ inputs.tag_name }}
-          APP_TYPE: ${{ inputs.app_type }}
+      # - name: Setup Application Variables
+      #   uses: ikuanyshbekov/app-yaml-env-compiler@v1.0
+      #   with:
+      #     path: '${{ inputs.gae_app_yaml_path }}'
+      #   env:
+      #     ENVIRONMENT: ${{ inputs.environment_name }}
+      #     DOPPLER_PROJECT_NAME: ${{ inputs.app_doppler_project_name }}
+      #     DOPPLER_SERVICE_TOKEN: ${{ secrets.app_doppler_service_token }}
+      #     LOG_LEVEL: ${{ inputs.app_log_level }}
+      #     VERSION: ${{ inputs.tag_name }}
+      #     APP_TYPE: ${{ inputs.app_type }}
          
       - name: Prepare deployment artifacts (Java)
         if: inputs.app_type == 'java'
