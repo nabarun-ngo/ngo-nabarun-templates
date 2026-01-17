@@ -106,7 +106,7 @@ jobs:
     name: 'Build Node.js Application'
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    environment: ${{ inputs.environment_name }}
+    environment: ${{ inputs.use_doppler && inputs.environment_name || 'NO ENV' }}
     outputs:
       build_successful: ${{ steps.build.outputs.build_status }}
     steps:
