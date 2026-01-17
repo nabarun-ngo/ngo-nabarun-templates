@@ -27,14 +27,8 @@ on:
         description: 'Number of keys found/affected'
         value: ${{ jobs.view-redis-keys.outputs.keys_count || jobs.delete-redis-key.outputs.affected_count }}
     secrets:
-      redis_host:
-        description: 'Redis Host'
-        required: true
-      redis_port:
-        description: 'Redis Port'
-        required: true
-      redis_password:
-        description: 'Redis Password'
+      redis_uri:
+        description: 'Redis URI'
         required: true
 
 jobs:
@@ -50,7 +44,7 @@ jobs:
       - name: Ping Redis Server
         id: ping-test
         run: |
-          response=$(redis-cli -h ${{ secrets.redis_host }} -p ${{ secrets.redis_port }} -a ${{ secrets.redis_password }} PING 2>/dev/null)
+          response=$(redis-cli -u ${{ secrets.redis_uri }} PING 2>/dev/null)
           echo "Redis response: $response"
           if [ "$response" = "PONG" ]; then
             echo "result=✅ Redis server is responding correctly" >> $GITHUB_OUTPUT
@@ -78,7 +72,7 @@ jobs:
         id: list-keys
         run: |
           echo "Fetching all Redis keys..."
-          keys_output=$(redis-cli -h ${{ secrets.redis_host }} -p ${{ secrets.redis_port }} -a ${{ secrets.redis_password }} KEYS "*" 2>/dev/null)
+          keys_output=$(redis-cli -u ${{ secrets.redis_uri }} KEYS "*" 2>/dev/null)
           keys_count=$(echo "$keys_output" | wc -l)
           
           if [ -z "$keys_output" ] || [ "$keys_output" = "" ]; then
@@ -111,7 +105,7 @@ jobs:
         if: ${{ inputs.key != '' }}
         run: |
           echo "Deleting specific key: ${{ inputs.key }}"
-          deleted_count=$(redis-cli -h ${{ secrets.redis_host }} -p ${{ secrets.redis_port }} -a ${{ secrets.redis_password }} DEL "${{ inputs.key }}" 2>/dev/null)
+          deleted_count=$(redis-cli -u ${{ secrets.redis_uri }} DEL "${{ inputs.key }}" 2>/dev/null)
           echo "count=$deleted_count" >> $GITHUB_OUTPUT
           if [ "$deleted_count" -eq "1" ]; then
             echo "result=✅ Successfully deleted key: ${{ inputs.key }}" >> $GITHUB_OUTPUT
@@ -126,11 +120,11 @@ jobs:
         if: ${{ inputs.key == '' }}
         run: |
           echo "Getting current key count before flush..."
-          key_count=$(redis-cli -h ${{ secrets.redis_host }} -p ${{ secrets.redis_port }} -a ${{ secrets.redis_password }} DBSIZE 2>/dev/null)
+          key_count=$(redis-cli -u ${{ secrets.redis_uri }} DBSIZE 2>/dev/null)
           echo "Found $key_count keys before flush"
           
           echo "Executing FLUSHALL..."
-          result=$(redis-cli -h ${{ secrets.redis_host }} -p ${{ secrets.redis_port }} -a ${{ secrets.redis_password }} FLUSHALL 2>/dev/null)
+          result=$(redis-cli -u ${{ secrets.redis_uri }} FLUSHALL 2>/dev/null)
           echo "count=$key_count" >> $GITHUB_OUTPUT
           
           if [ "$result" = "OK" ]; then
@@ -146,7 +140,7 @@ jobs:
         id: list-keys
         run: |
           echo "Fetching all Redis keys..."
-          keys_output=$(redis-cli -h ${{ secrets.redis_host }} -p ${{ secrets.redis_port }} -a ${{ secrets.redis_password }} KEYS "*" 2>/dev/null)
+          keys_output=$(redis-cli -u ${{ secrets.redis_uri }} KEYS "*" 2>/dev/null)
           keys_count=$(echo "$keys_output" | wc -l)
           
           if [ -z "$keys_output" ] || [ "$keys_output" = "" ]; then
