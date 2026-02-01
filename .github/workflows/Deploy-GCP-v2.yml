@@ -140,6 +140,11 @@ on:
         default: 'INFO'
       
       # Cleanup Configuration
+      enable_cleanup:
+        description: "Enable GAE cleanup"
+        required: false
+        type: boolean
+        default: true
       keep_gae_versions:
         description: "Number of GAE versions to keep (optional, default 1)"
         required: false
@@ -414,12 +419,11 @@ jobs:
   deploy_to_gcp:
     name: 'Deploy to GCP App Engine'
     runs-on: ubuntu-latest
-    needs: [build_application,run_db_migration]
-    timeout-minutes: 20
+    needs: [build_application]
+    timeout-minutes: 60
     if: |
       always() &&
-      needs.build_application.result == 'success' &&
-      (needs.run_db_migration.result == 'success' || needs.run_db_migration.result == 'skipped')
+      needs.build_application.result == 'success'
       
     environment: ${{ inputs.environment_name }}
     outputs:
@@ -461,18 +465,6 @@ jobs:
         with:
           project_id: ${{ secrets.gcp_project_id }}
           credentials_json: ${{ secrets.gcp_service_account }}
-        
-      # - name: Setup Application Variables
-      #   uses: ikuanyshbekov/app-yaml-env-compiler@v1.0
-      #   with:
-      #     path: '${{ inputs.gae_app_yaml_path }}'
-      #   env:
-      #     ENVIRONMENT: ${{ inputs.environment_name }}
-      #     DOPPLER_PROJECT_NAME: ${{ inputs.app_doppler_project_name }}
-      #     DOPPLER_SERVICE_TOKEN: ${{ secrets.app_doppler_service_token }}
-      #     LOG_LEVEL: ${{ inputs.app_log_level }}
-      #     VERSION: ${{ inputs.tag_name }}
-      #     APP_TYPE: ${{ inputs.app_type }}
          
       - name: Prepare deployment artifacts (Java)
         if: inputs.app_type == 'java'
@@ -563,30 +555,15 @@ jobs:
           repo: ${{ inputs.repo_name }}
           owner: ${{ inputs.repo_owner_name }}
 
-  clean_gcp_resources:
-    name: 'Clean Up Old GCP Resources'
-    runs-on: ubuntu-latest
-    needs: [deploy_to_gcp]
-    environment: ${{ inputs.environment_name }}
-    # Only run cleanup when deployment succeeds
-    if: |
-      always() &&
-      needs.deploy_to_gcp.result == 'success'
-    timeout-minutes: 20
-    steps:
-      - name: Setup Google Cloud CLI
-        uses: google-github-actions/auth@v2
-        with:
-          project_id: ${{ secrets.gcp_project_id }}
-          credentials_json: ${{ secrets.gcp_service_account }}
-
       - name: Clean Artifact Registry repositories
+        if: ${{inputs.enable_cleanup}}
         uses: nabarun-ngo/ngo-nabarun-templates/.github/actions/gcp-clean-artifact-registry@main
         continue-on-error: true
         with:
           project_id: ${{ secrets.gcp_project_id }}
 
       - name: Clean old GAE versions
+        if: ${{inputs.enable_cleanup}}
         uses: nabarun-ngo/ngo-nabarun-templates/.github/actions/gcp-clean-gae-versions@main
         with:
           project_id: ${{ secrets.gcp_project_id }}
@@ -594,6 +571,7 @@ jobs:
           keep_versions: ${{ inputs.keep_gae_versions }}
 
       - name: Clean old GCS files
+        if: ${{inputs.enable_cleanup}}
         uses: nabarun-ngo/ngo-nabarun-templates/.github/actions/gcp-clean-gcs-files@main
         continue-on-error: true
         with:
