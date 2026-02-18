@@ -144,7 +144,7 @@ on:
         description: "Enable GAE cleanup"
         required: false
         type: boolean
-        default: true
+        default: false
       keep_gae_versions:
         description: "Number of GAE versions to keep (optional, default 1)"
         required: false
