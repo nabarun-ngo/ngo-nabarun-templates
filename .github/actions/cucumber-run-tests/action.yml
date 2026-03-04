@@ -84,7 +84,7 @@ runs:
         echo "🚀 Executing Cucumber tests..."
         
         # Run Maven test with Cucumber
-        mvn -Dsurefire.rerunFailingTestsCount=${{ inputs.max_rerun_attempts }} clean test -q \
+        mvn -Dsurefire.rerunFailingTestsCount=${{ inputs.max_rerun_attempts }} clean test -B -e \
           -Dcucumber.features="${{ inputs.scenarios }}" \
           -Dcucumber.plugin="pretty,html:target/cucumber-${{ inputs.job_index }}.html,json:target/cucumber-${{ inputs.job_index }}.json,junit:target/cucumber-${{ inputs.job_index }}.xml" \
           -DENVIRONMENT=${{ inputs.test_environment }} \

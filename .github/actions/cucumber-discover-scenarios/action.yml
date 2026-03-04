@@ -45,10 +45,10 @@ runs:
         echo "🔍 Discovering scenarios with tag: ${{ inputs.cucumber_tags }}..."
         
         # Run Cucumber dry-run with JSON plugin
-        mvn clean test -q \
+        mvn clean test -B -e \
           -Dcucumber.filter.tags="${{ inputs.cucumber_tags }}" \
           -Dcucumber.execution.dry-run=true \
-          -Dcucumber.plugin=json:target/cucumber.json || true
+          -Dcucumber.plugin=json:target/cucumber.json
         
         if [[ ! -f "target/cucumber.json" ]]; then
           echo "❌ ERROR: Cucumber JSON output not generated"
