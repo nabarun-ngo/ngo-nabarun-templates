@@ -88,6 +88,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       GITHUB_TOKEN: ${{ secrets.repo_token }}
+      GITHUB_ACTOR: ${{ github.actor }}
     steps:
       - name: Setup test environment
         uses: nabarun-ngo/ngo-nabarun-templates/.github/actions/test-setup@main

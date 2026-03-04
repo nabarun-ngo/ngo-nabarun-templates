@@ -122,6 +122,7 @@ jobs:
       scenario_count: ${{ steps.discover.outputs.scenario_count }}
     env:
       GITHUB_TOKEN: ${{ secrets.repo_token }}
+      GITHUB_ACTOR: ${{ github.actor }}
     steps:
       - name: Setup test environment
         uses: nabarun-ngo/ngo-nabarun-templates/.github/actions/test-setup@main
@@ -147,6 +148,7 @@ jobs:
       matrix: ${{ fromJson(needs.discover-scenarios.outputs.matrix) }}
     env:
       GITHUB_TOKEN: ${{ secrets.repo_token }}
+      GITHUB_ACTOR: ${{ github.actor }}
     steps:
     - name: Setup test environment
       uses: nabarun-ngo/ngo-nabarun-templates/.github/actions/test-setup@main
