@@ -62,7 +62,9 @@ runs:
       with:
         java-version: ${{ inputs.java_version }}
         distribution: 'temurin'
-        server-id: ${{ inputs.server_id }} # 
+        server-id: ${{ inputs.server_id }}
+        server-username: GITHUB_ACTOR
+        server-password: GITHUB_TOKEN
         settings-path: ${{ github.workspace }} # location for the settings.xml file
 
     - name: Cache Maven dependencies
