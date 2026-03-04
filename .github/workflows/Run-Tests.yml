@@ -63,6 +63,8 @@ on:
         default: true
         
     secrets:
+      repo_token:
+        required: false
       test_doppler_service_token:
         required: true
       qmetry_api_key:
@@ -84,6 +86,8 @@ jobs:
   run_test:
     name: 'Run Test'
     runs-on: ubuntu-latest
+    env:
+      GITHUB_TOKEN: ${{ secrets.repo_token }}
     steps:
       - name: Setup test environment
         uses: nabarun-ngo/ngo-nabarun-templates/.github/actions/test-setup@main

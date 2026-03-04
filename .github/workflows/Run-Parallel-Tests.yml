@@ -71,6 +71,8 @@ on:
         default: true
         
     secrets:
+      repo_token:
+        required: false
       test_doppler_service_token:
         required: true
       qmetry_api_key:
@@ -118,6 +120,8 @@ jobs:
     outputs:
       matrix: ${{ steps.discover.outputs.matrix }}
       scenario_count: ${{ steps.discover.outputs.scenario_count }}
+    env:
+      GITHUB_TOKEN: ${{ secrets.repo_token }}
     steps:
       - name: Setup test environment
         uses: nabarun-ngo/ngo-nabarun-templates/.github/actions/test-setup@main
@@ -141,6 +145,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix: ${{ fromJson(needs.discover-scenarios.outputs.matrix) }}
+    env:
+      GITHUB_TOKEN: ${{ secrets.repo_token }}
     steps:
     - name: Setup test environment
       uses: nabarun-ngo/ngo-nabarun-templates/.github/actions/test-setup@main
