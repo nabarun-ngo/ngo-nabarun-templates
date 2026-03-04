@@ -28,7 +28,11 @@ inputs:
     description: 'Whether to enable Maven dependency caching'
     required: false
     default: 'true'
-
+  server_id:
+    description: 'The server id'
+    required: false
+    default: 'github'
+    
 outputs:
   java_version:
     description: 'Java version that was set up'
@@ -58,6 +62,8 @@ runs:
       with:
         java-version: ${{ inputs.java_version }}
         distribution: 'temurin'
+        server-id: ${{ inputs.server_id }} # 
+        settings-path: ${{ github.workspace }} # location for the settings.xml file
 
     - name: Cache Maven dependencies
       if: inputs.enable_maven_cache == 'true'
