@@ -1,47 +1,100 @@
-# ngo-nabarun-templates
+# 🛠️ NGO Nabarun Templates Repository
 
-This repository contains scripts and templates for automating workflows, testing, and environment management for Nabarun NGO projects. It includes Bash and Python scripts for CI/CD, test orchestration, Auth0 and Firebase sync, and more.
+[![GitHub Actions](https://img.shields.io/badge/GitHub-Actions-blue?logo=github-actions)](https://github.com/features/actions)
+[![Bash](https://img.shields.io/badge/Scripting-Bash-4EAA25?logo=gnu-bash&logoColor=white)](https://www.gnu.org/software/bash/)
+[![Python](https://img.shields.io/badge/Scripting-Python-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-## Folder Structure
-
-- `scripts/` - Main automation scripts
-  - `auth0/` - Auth0 processing Python scripts
-  - `common/` - Common utility scripts
-  - Various Bash scripts for test and environment management
-- `trash/` - Collection of workflow YAMLs and templates
-  - `auth0/` - Auth0 workflow YAMLs
-  - `firebase/` - Firebase workflow YAMLs
-  - `templates/` - Build and other templates
-
-## Key Scripts
-
-### Bash Scripts
-- `discover_scenarios.sh` - Discovers Cucumber scenarios by tag and prepares a matrix for GitHub Actions.
-- `merge-cucumber-jsons.sh` - Merges multiple Cucumber JSON result files into a single file.
-- `process-auth0.sh` - Replaces keywords in files based on Auth0 environment mappings.
-- `run_cucumber_tests.sh` - Runs Cucumber tests for specified scenarios with rerun support.
-- `run_cucumber_with_reruns.sh` - Runs Cucumber tests with multiple rerun attempts for failed scenarios.
-- `wait-for-qmetry-report-import.sh` - Polls QMetry API for import status and reports success/failure.
-
-### Python Scripts
-- `auth0/process_auth0.py` - Replaces keywords in files using source and destination Auth0 JSON mappings.
-- `auth0/process_auth0_v2.py` - Replaces values with keys in files using Auth0 JSON mappings, with dry-run and backup support.
-- `common/set_env.py` - Sets environment variables for GitHub Actions workflows based on event payloads and inputs.
-
-## Usage
-
-Most scripts are designed to be run in CI/CD pipelines or locally for automation. See individual script documentation for usage details.
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Submit a pull request with a clear description
-
-## License
-
-MIT License
+A centralized repository for **reusable automation assets**, including GitHub Actions, Bash scripts, and Python utilities designed to streamline CI/CD, testing, and operations for NGO Nabarun projects.
 
 ---
 
-For more details, see the documentation for each script in the `docs/` folder (to be created).
+## 🏗️ Repository Architecture
+
+This repository follows a modular structure to provide maximum reusability across the NGO Nabarun ecosystem:
+
+```mermaid
+graph TD
+    A[ngo-nabarun-templates] --> B[.github/actions/]
+    A --> C[scripts/]
+    A --> D[docs/]
+    
+    B --> B1[Build/Deploy Actions]
+    B --> B2[Testing Framework Actions]
+    B --> B3[GCP/Cloud Management]
+    B --> B4[Integration Actions]
+    
+    C --> C1[bash/]
+    C --> C2[python/]
+    
+    E[ngo-nabarun-ops] -.->|Uses| A
+    F[Other Repos] -.->|Reference| A
+```
+
+---
+
+## 🧩 Key Components
+
+### ⚡ GitHub Actions (`.github/actions/`)
+The core of our automation, providing plug-and-play functionality for workflows:
+
+| Category | Key Actions |
+| :--- | :--- |
+| **🚀 Build/Deploy** | `build-java`, `build-node`, `prepare-node-artifact`, `resolve-inputs` |
+| **🧪 Testing** | `cucumber-discover-scenarios`, `cucumber-run-tests`, `test-setup`, `test-results-consolidation` |
+| **☁️ GCP Ops** | `gcp-clean-gae-versions`, `gcp-promote-gae-traffic`, `gcp-restart-app-engine`, `gcp-download-logs` |
+| **📊 Integration** | `qmetry-upload-manager`, `qmetry-result-linker`, `notify-system` |
+| **🛠️ Utilities** | `update-json-from-env`, `update-pr-description`, `validate-and-find-file` |
+
+### 📜 Automation Scripts (`scripts/`)
+Native scripts for low-level automation and complex logic:
+
+- **Bash (`scripts/`)**:
+  - `discover_scenarios.sh`: Dynamic Cucumber scenario discovery.
+  - `run_cucumber_tests.sh`: Robust test execution with rerun logic.
+  - `wait-for-qmetry-report-import.sh`: API polling for test management.
+- **Python (`scripts/common/`, `scripts/auth0/`)**:
+  - `set_env.py`: Intelligent environment variable management.
+  - `process_auth0_v2.py`: Advanced Auth0 configuration transformation.
+
+---
+
+## 📖 Essential Documentation
+
+For detailed usage instructions, refer to these comprehensive guides:
+
+- 📘 **[Comprehensive Usage Guide](COMPREHENSIVE-USAGE-GUIDE.md)**: The ultimate reference for all templates.
+- 🔄 **[Workflow Transformation](WORKFLOW-TRANSFORMATION.md)**: Guide on how workflows are structured and transformed.
+- 📑 **[Script Documentation](docs/scripts.md)**: Technical details for Bash automation.
+- 🐍 **[Python Reference](docs/python_scripts.md)**: Documentation for Python-based utilities.
+
+---
+
+## 🔄 Dynamic Usage in NGO Nabarun
+
+This repository is primarily utilized by the **[ngo-nabarun-ops](https://github.com/nabarun-ngo/ngo-nabarun-ops)** repository to orchestrate:
+
+1. **Deployment Pipelines**: Using `build-*` and `gcp-*` actions.
+2. **Automated Testing**: Using `cucumber-*` and `test-*` actions.
+3. **Environment Sync**: Using `auth0/` scripts and `update-json-from-env`.
+
+---
+
+## 🤝 Contributing
+
+1. **Identify** a reusable pattern in any of our workflows.
+2. **Abstract** the logic into a new GitHub Action or script.
+3. **Document** the usage in the relevant section.
+4. **Submit** a PR for review.
+
+---
+
+## 📄 License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+---
+
+<p align="center">
+  <sub>Built with ❤️ by the NGO Nabarun DevOps Team</sub>
+</p>
