@@ -28,6 +28,10 @@ inputs:
     description: 'Run tests in headless mode (Y/N)'
     required: false
     default: 'N'
+  additional_plugin:
+    description: 'Additional Plugin(s) (comma separated)'
+    required: false
+    default: ''
   
 outputs:
   test_status:
@@ -82,11 +86,16 @@ runs:
         set +e  # Don't exit on error, capture status
         
         echo "🚀 Executing Cucumber tests..."
-        
+
+        plugins="${{ inputs.additional_plugin }}"
+        if [ -n "$plugins" ]; then
+          plugins=",$plugins"
+        fi
+
         # Run Maven test with Cucumber
         mvn -Dsurefire.rerunFailingTestsCount=${{ inputs.max_rerun_attempts }} clean test -B -e \
           -Dcucumber.features="${{ inputs.scenarios }}" \
-          -Dcucumber.plugin="pretty,html:target/cucumber-${{ inputs.job_index }}.html,json:target/cucumber-${{ inputs.job_index }}.json,junit:target/cucumber-${{ inputs.job_index }}.xml" \
+          -Dcucumber.plugin="pretty,html:target/cucumber-${{ inputs.job_index }}.html,json:target/cucumber-${{ inputs.job_index }}.json,junit:target/cucumber-${{ inputs.job_index }}.xml${plugins}" \
           -DENVIRONMENT=${{ inputs.test_environment }} \
           -DCONFIG_SOURCE=doppler \
           -DDOPPLER_PROJECT_NAME=${{ inputs.doppler_project_name }} \
