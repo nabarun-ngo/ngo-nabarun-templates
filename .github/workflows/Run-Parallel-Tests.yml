@@ -69,6 +69,9 @@ on:
         required: false
         type: boolean
         default: true
+      additional_plugins:
+        required: false
+        type: string
         
     secrets:
       repo_token:
@@ -177,6 +180,7 @@ jobs:
         doppler_project_name: ${{ inputs.test_doppler_project_name }}
         doppler_service_token: ${{ secrets.test_doppler_service_token }}
         max_rerun_attempts: ${{ inputs.max_rerun_attempt }}
+        additional_plugin: ${{ inputs.additional_plugins }}
       continue-on-error: true
 
     - name: Upload Test Results
