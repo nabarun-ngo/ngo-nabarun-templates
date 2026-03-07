@@ -14,9 +14,13 @@ inputs:
     description: "Test cycle summary to search for"
     required: true
 
-  app_url:
+  app_execution_url:
     description: "QMetry execution URL template containing {executionId}"
     required: true
+
+  jira_url:
+    description: "Jira Url"
+    required: false
 
   workflow_name:
     description: "GitHub workflow name"
@@ -100,7 +104,7 @@ runs:
         echo "✅ Test Cycle: $TEST_CYCLE"
         echo "Execution ID: $EXECUTION_ID"
 
-        EXECUTION_URL="${{ inputs.app_url }}"
+        EXECUTION_URL="${{ inputs.app_execution_url }}"
         EXECUTION_URL="${EXECUTION_URL/\{executionId\}/$EXECUTION_ID}"
 
         echo "🔗 Execution URL:"
