@@ -57,8 +57,8 @@ on:
         description: 'QMetry folder ID for test cases'
         required: true
         type: string
-      qmetry_project_id:
-        description: 'QMetry project ID'
+      qmetry_execution_url:
+        description: 'QMetry Execution URL with placeholder'
         required: true
         type: string
       jira_url:
@@ -247,7 +247,7 @@ jobs:
         uses: nabarun-ngo/ngo-nabarun-templates/.github/actions/qmetry-result-linker@main
         with:
           qmetry_open_api_key: ${{ secrets.qmetry_open_api_key }}
-          qmetry_project_id: ${{ inputs.qmetry_project_id }}
+          app_execution_url: ${{ inputs.qmetry_execution_url }}
           jira_url: ${{ inputs.jira_url }}
           test_cycle_summary: ${{ steps.cache_manager.outputs.test_cycle_summary }}
           workflow_name: ${{ github.workflow }}
