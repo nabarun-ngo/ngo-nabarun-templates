@@ -1,17 +1,21 @@
 name: "QMetry Result Linker"
-description: "Generates QMetry execution URL and caches variables for workflow re-runs"
+description: "Generates QMetry execution URL, extracts test cycle info, and caches variables for re-runs"
 
 inputs:
   qmetry_open_api_key:
     description: "QMetry Open API key"
     required: true
 
-  test_cycle_summary:
-    description: "Test cycle summary to search"
+  qmetry_project_id:
+    description: "QMetry Project ID"
     required: true
 
-  app_execution_url:
-    description: "Execution URL template containing {executionId}"
+  test_cycle_summary:
+    description: "Test cycle summary to search for"
+    required: true
+
+  app_url:
+    description: "QMetry execution URL template containing {executionId}"
     required: true
 
   workflow_name:
@@ -19,7 +23,7 @@ inputs:
     required: true
 
   run_id:
-    description: "GitHub run id"
+    description: "GitHub workflow run id"
     required: true
 
   cache_file_path:
@@ -32,16 +36,16 @@ outputs:
     description: "Generated execution URL"
     value: ${{ steps.generate.outputs.execution_url }}
 
-  execution_id:
-    description: "Execution ID"
-    value: ${{ steps.generate.outputs.execution_id }}
-
   test_cycle:
-    description: "Test cycle key"
+    description: "QMetry test cycle key"
     value: ${{ steps.generate.outputs.test_cycle }}
 
+  execution_id:
+    description: "QMetry execution id"
+    value: ${{ steps.generate.outputs.execution_id }}
+
   cache_key:
-    description: "Cache key"
+    description: "Cache key used"
     value: ${{ steps.cache.outputs.cache_key }}
 
 runs:
@@ -52,6 +56,7 @@ runs:
       shell: bash
       run: |
         echo "🔗 QMetry Result Linker"
+        echo "Project ID: ${{ inputs.qmetry_project_id }}"
         echo "Test Cycle Summary: ${{ inputs.test_cycle_summary }}"
         echo "Workflow: ${{ inputs.workflow_name }}"
         echo "Run ID: ${{ inputs.run_id }}"
@@ -68,11 +73,12 @@ runs:
           {
             "filter": {
               "summary": "${{ inputs.test_cycle_summary }}",
+              "projectId": "${{ inputs.qmetry_project_id }}",
               "isAutomated": true
             }
           }
 
-    - name: Process response and generate execution URL
+    - name: Process response and generate URL
       id: generate
       shell: bash
       run: |
@@ -81,9 +87,9 @@ runs:
         echo "📡 QMetry Response:"
         echo "$RESPONSE" | jq '.' || echo "$RESPONSE"
 
-        COUNT=$(echo "$RESPONSE" | jq '.data | length')
+        DATA_COUNT=$(echo "$RESPONSE" | jq '.data | length')
 
-        if [[ "$COUNT" -eq 0 ]]; then
+        if [[ "$DATA_COUNT" -eq 0 ]]; then
           echo "❌ No test cycle found"
           exit 1
         fi
@@ -94,15 +100,15 @@ runs:
         echo "✅ Test Cycle: $TEST_CYCLE"
         echo "Execution ID: $EXECUTION_ID"
 
-        EXECUTION_URL="${{ inputs.app_execution_url }}"
+        EXECUTION_URL="${{ inputs.app_url }}"
         EXECUTION_URL="${EXECUTION_URL/\{executionId\}/$EXECUTION_ID}"
 
         echo "🔗 Execution URL:"
         echo "$EXECUTION_URL"
 
         echo "execution_url=$EXECUTION_URL" >> $GITHUB_OUTPUT
-        echo "execution_id=$EXECUTION_ID" >> $GITHUB_OUTPUT
         echo "test_cycle=$TEST_CYCLE" >> $GITHUB_OUTPUT
+        echo "execution_id=$EXECUTION_ID" >> $GITHUB_OUTPUT
 
         cat > "${{ inputs.cache_file_path }}" <<EOF
         execution_id=$EXECUTION_ID
@@ -125,13 +131,13 @@ runs:
         CACHE_KEY="cache-variables-${{ inputs.workflow_name }}-${{ inputs.run_id }}"
         echo "cache_key=$CACHE_KEY" >> $GITHUB_OUTPUT
 
-    - name: Execution summary
+    - name: Summary
       shell: bash
       run: |
-        echo "--------------------------------"
+        echo "------------------------------------"
         echo "🧪 QMetry Execution Summary"
         echo "Test Cycle : ${{ steps.generate.outputs.test_cycle }}"
         echo "Execution ID : ${{ steps.generate.outputs.execution_id }}"
         echo "Execution URL:"
         echo "${{ steps.generate.outputs.execution_url }}"
-        echo "--------------------------------"
+        echo "------------------------------------"
