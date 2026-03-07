@@ -125,8 +125,10 @@ runs:
       shell: bash
       id: extract_labels
       run: |
-        LABELS=$(jq '[.[].elements[]?.tags[]?.name | ltrimstr("@")] | unique' "${{ inputs.results_file_path }}")
-        echo "labels=$LABELS" >> $GITHUB_OUTPUT
+        LABELS=$(jq -c '[.[].elements[]?.tags[]?.name | ltrimstr("@")] | unique' "${{ inputs.results_file_path }}")
+        echo "labels<<EOF" >> $GITHUB_OUTPUT
+        echo "$LABELS"     >> $GITHUB_OUTPUT
+        echo "EOF"         >> $GITHUB_OUTPUT
         
     - name: Generate QMetry upload URL
       id: generate_upload_url
