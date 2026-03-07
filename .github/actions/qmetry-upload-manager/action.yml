@@ -147,6 +147,10 @@ runs:
                         {
                             "name": "Cycle Type",
                             "value": "${{ inputs.test_type }}"
+                        },
+                        {
+                            "name": "Run Id",
+                            "value": "${{ inputs.run_id }}"
                         }
                     ]
                 },
@@ -169,8 +173,8 @@ runs:
                              "value": "${{ inputs.app_ui_version }}"
                         },
                         {
-                                  "name": "Test Type",
-                                  "value": "${{ inputs.test_type }}"
+                             "name": "Test Type",
+                             "value": "${{ inputs.test_type }}"
                         }
                       ]
                     }
