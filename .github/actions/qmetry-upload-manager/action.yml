@@ -120,6 +120,14 @@ runs:
       with:
         repository: ${{ inputs.templates_repository }}
         path: 'qmetry-templates'
+
+    - name: Extract Data from ${{ inputs.results_file_path }}
+      shell: bash
+      run: |
+        echo "🏷️ Extracting Cucumber tags..."
+        LABELS_JSON=$(jq '[.[].elements[].tags[].name | ltrimstr("@")] | unique' "${{ inputs.results_file_path }}")
+        echo "Detected labels: $LABELS_JSON"
+        echo "QMETRY_LABELS=$LABELS_JSON" >> $GITHUB_ENV
         
     - name: Generate QMetry upload URL
       id: generate_upload_url
@@ -156,7 +164,8 @@ runs:
                 },
                 "testCase": {
                     "priority": "High",
-                    "folderId": ${{ inputs.test_case_folder }}
+                    "folderId": ${{ inputs.test_case_folder }},
+                    "labels": ${{ env.QMETRY_LABELS }}
                 },
                 "testCaseExecution": {
                     "customFields": [
