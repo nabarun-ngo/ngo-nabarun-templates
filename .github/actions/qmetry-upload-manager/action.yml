@@ -120,15 +120,6 @@ runs:
       with:
         repository: ${{ inputs.templates_repository }}
         path: 'qmetry-templates'
-
-    - name: Extract labels from results
-      shell: bash
-      id: extract_labels
-      run: |
-        LABELS=$(jq -c '[.[].elements[]?.tags[]?.name | ltrimstr("@")] | unique' "${{ inputs.results_file_path }}")
-        echo "labels<<EOF" >> $GITHUB_OUTPUT
-        echo "$LABELS"     >> $GITHUB_OUTPUT
-        echo "EOF"         >> $GITHUB_OUTPUT
         
     - name: Generate QMetry upload URL
       id: generate_upload_url
@@ -165,8 +156,7 @@ runs:
                 },
                 "testCase": {
                     "priority": "High",
-                    "folderId": ${{ inputs.test_case_folder }},
-                    "labels": ${{ steps.extract_labels.outputs.labels }}
+                    "folderId": ${{ inputs.test_case_folder }}
                 },
                 "testCaseExecution": {
                     "customFields": [
