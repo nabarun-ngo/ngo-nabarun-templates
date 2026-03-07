@@ -125,7 +125,7 @@ runs:
       shell: bash
       run: |
         echo "🏷️ Extracting Cucumber tags..."
-        LABELS_JSON=$(jq '[.[].elements[].tags[].name | ltrimstr("@")] | unique' "${{ inputs.results_file_path }}")
+        LABELS_JSON=$(jq '[.[].elements[]?.tags[]?.name | ltrimstr("@")] | unique' "${{ inputs.results_file_path }}")
         echo "Detected labels: $LABELS_JSON"
         echo "QMETRY_LABELS=$LABELS_JSON" >> $GITHUB_ENV
         
