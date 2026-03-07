@@ -49,6 +49,10 @@ on:
         required: false
         type: string
         default: '1449797'
+      qmetry_project_id:
+        description: 'QMetry Project Id'
+        required: true
+        type: string
       qmetry_execution_url:
         description: 'QMetry Execution URL with placeholder'
         required: true
@@ -184,5 +188,6 @@ jobs:
           workflow_name: ${{ github.workflow }}
           run_id: ${{ github.run_id }}
           cache_file_path: variables.env
+          qmetry_project_id: ${{ inputs.qmetry_project_id }}
       
       
