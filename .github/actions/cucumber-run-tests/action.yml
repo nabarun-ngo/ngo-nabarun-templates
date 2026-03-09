@@ -123,13 +123,13 @@ runs:
       working-directory: ${{ inputs.test_directory }}
       run: |
         echo "📋 Verifying test artifacts..."
-        
+    
         EXPECTED_FILES=(
           "target/cucumber-${{ inputs.job_index }}.json"
           "target/cucumber-${{ inputs.job_index }}.xml"
           "target/cucumber-${{ inputs.job_index }}.html"
         )
-        
+    
         MISSING_FILES=0
         for file in "${EXPECTED_FILES[@]}"; do
           if [[ -f "$file" ]]; then
@@ -139,11 +139,18 @@ runs:
             MISSING_FILES=$((MISSING_FILES + 1))
           fi
         done
+    
+        echo ""
+        echo "📁 Listing all files in target directory:"
         
+        if [[ -d "target" ]]; then
+          find target -type f
+        else
+          echo "❌ target directory not found"
+        fi
+    
         if [[ $MISSING_FILES -gt 0 ]]; then
           echo "⚠️ Warning: $MISSING_FILES expected test artifacts are missing"
-          echo "📁 Available files in target directory:"
-          ls -la target/ || echo "target directory not found"
         else
           echo "✅ All expected test artifacts are present"
         fi
