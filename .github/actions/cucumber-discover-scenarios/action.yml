@@ -45,7 +45,7 @@ runs:
         echo "🔍 Discovering scenarios with tag: ${{ inputs.cucumber_tags }}..."
         
         # Run Cucumber dry-run with JSON plugin
-        mvn clean test -B -e \
+        mvn clean test -q -B -e \
           -Dcucumber.filter.tags="${{ inputs.cucumber_tags }}" \
           -Dcucumber.execution.dry-run=true \
           -Dcucumber.plugin=json:target/cucumber.json
