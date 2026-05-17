@@ -4,7 +4,7 @@ inputs:
   node_version:
     description: 'Node.js version'
     required: false
-    default: '20'
+    default: '26'
   working_directory:
     description: 'Directory where the code resides'
     required: false
