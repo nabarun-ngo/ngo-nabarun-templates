@@ -62,7 +62,7 @@ on:
         description: "Node.js version to use (only for Node apps)"
         required: false
         type: string
-        default: '20'
+        default: 'latest'
       package_manager:
         description: "Package manager: 'npm', 'yarn', or 'pnpm' (only for Node apps)"
         required: false
@@ -259,6 +259,7 @@ jobs:
         with:
           node-version: ${{ inputs.node_version }}
           cache: ${{ inputs.enable_cache && inputs.package_manager || '' }}
+          check-latest: true
       
       - name: Install pnpm
         if: inputs.app_type == 'node' && inputs.package_manager == 'pnpm'
