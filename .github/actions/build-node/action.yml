@@ -4,7 +4,7 @@ inputs:
   node_version:
     description: 'Node.js version'
     required: false
-    default: '26'
+    default: 'latest'
   working_directory:
     description: 'Directory where the code resides'
     required: false
@@ -50,7 +50,8 @@ runs:
         node-version: ${{ inputs.node_version }}
         cache: ${{ inputs.cache_dependencies == 'true' && inputs.package_manager || '' }}
         cache-dependency-path: ${{ inputs.working_directory }}/package-lock.json
-
+        check-latest: true
+        
     - name: Install Doppler CLI
       if: inputs.use_doppler == 'true'
       uses: dopplerhq/cli-action@v3
