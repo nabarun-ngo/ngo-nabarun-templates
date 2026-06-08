@@ -133,7 +133,7 @@ jobs:
       GITHUB_ACTOR: ${{ github.actor }}
     steps:
       - name: Setup test environment
-        uses: nabarun-ngo/ngo-nabarun-templates/.github/actions/test-setup@main
+        uses: nabarun-ngo/ngo-nabarun-templates/.github/actions/test-setup@stage
         with:
           java_version: ${{ inputs.java_version }}
           test_repository: ${{ inputs.repository_name }}
@@ -142,7 +142,7 @@ jobs:
 
       - name: Discover test scenarios
         id: discover
-        uses: nabarun-ngo/ngo-nabarun-templates/.github/actions/cucumber-discover-scenarios@main
+        uses: nabarun-ngo/ngo-nabarun-templates/.github/actions/cucumber-discover-scenarios@stage
         with:
           cucumber_tags: ${{ inputs.test_cucumber_tags }}
           max_scenarios_per_job: ${{ inputs.max_tests_per_matrix }}
@@ -160,7 +160,7 @@ jobs:
       GITHUB_ACTOR: ${{ github.actor }}
     steps:
     - name: Setup test environment
-      uses: nabarun-ngo/ngo-nabarun-templates/.github/actions/test-setup@main
+      uses: nabarun-ngo/ngo-nabarun-templates/.github/actions/test-setup@stage
       with:
         java_version: ${{ inputs.java_version }}
         test_repository: ${{ inputs.repository_name }}
@@ -195,7 +195,7 @@ jobs:
 
     - name: Run Cucumber Tests
       id: run_tests
-      uses: nabarun-ngo/ngo-nabarun-templates/.github/actions/cucumber-run-tests@main
+      uses: nabarun-ngo/ngo-nabarun-templates/.github/actions/cucumber-run-tests@stage
       with:
         scenarios: ${{ steps.test_params.outputs.scenarios }}
         job_index: ${{ strategy.job-index }}
@@ -245,7 +245,7 @@ jobs:
     steps:
       - name: Publish Allure Report to GitHub Pages
         id: publish
-        uses: nabarun-ngo/ngo-nabarun-templates/.github/actions/allure-publish@main
+        uses: nabarun-ngo/ngo-nabarun-templates/.github/actions/allure-publish@stage
         with:
           allure_results_artifact_pattern: allure-results-*
           gh_pages_branch: ${{ inputs.gh_pages_branch }}
