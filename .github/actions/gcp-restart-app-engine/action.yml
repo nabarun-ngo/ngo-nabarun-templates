@@ -248,7 +248,7 @@ runs:
             echo "result=✅ Service refresh completed - no instances were running to delete" >> "$GITHUB_OUTPUT"
           fi
           echo "instances_deleted=0" >> "$GITHUB_OUTPUT"
-          return 0
+          exit 0
         fi
         
         echo "🔥 Preparing to delete $INSTANCE_COUNT instance(s)..."
@@ -258,7 +258,7 @@ runs:
           echo '${{ steps.get-instances.outputs.instances_info }}' | jq -r '.[] | "   - \(.id) (\(.version))"' 2>/dev/null || echo "   Instance list parsing failed"
           echo "instances_deleted=$INSTANCE_COUNT" >> "$GITHUB_OUTPUT"
           echo "result=✅ [DRY RUN] Would have deleted $INSTANCE_COUNT instance(s)" >> "$GITHUB_OUTPUT"
-          return 0
+          exit 0
         fi
         
         # Actual deletion
@@ -332,7 +332,7 @@ runs:
           echo "instances_recreated=0" >> "$GITHUB_OUTPUT"
           echo "service_status=DRY_RUN" >> "$GITHUB_OUTPUT"
           echo "execution_time=0s" >> "$GITHUB_OUTPUT"
-          return 0
+          exit 0
         fi
         
         # Check service status

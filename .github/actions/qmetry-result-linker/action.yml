@@ -10,6 +10,11 @@ inputs:
     description: "QMetry Project ID"
     required: true
 
+  qmetry_base_url:
+    description: 'QMetry API base URL (e.g. https://qtmcloud.qmetry.com). Override to use a different QMetry instance or TMS.'
+    required: false
+    default: 'https://qtmcloud.qmetry.com'
+
   test_cycle_summary:
     description: "Test cycle summary to search for"
     required: true
@@ -50,7 +55,7 @@ outputs:
 
   cache_key:
     description: "Cache key used"
-    value: ${{ steps.cache.outputs.cache_key }}
+    value: ${{ steps.set_cache_key.outputs.cache_key }}
 
 runs:
   using: "composite"
@@ -70,7 +75,7 @@ runs:
       id: qmetry
       uses: fjogeleit/http-request-action@v1
       with:
-        url: "https://qtmcloud.qmetry.com/rest/api/latest/testcycles/search/?fields=key,id"
+        url: "${{ inputs.qmetry_base_url }}/rest/api/latest/testcycles/search/?fields=key,id"
         method: POST
         customHeaders: '{"Content-Type": "application/json","apiKey":"${{ inputs.qmetry_open_api_key }}"}'
         data: |
@@ -130,10 +135,12 @@ runs:
         key: cache-variables-${{ inputs.workflow_name }}-${{ inputs.run_id }}
 
     - name: Set cache key output
+      id: set_cache_key
       shell: bash
       run: |
         CACHE_KEY="cache-variables-${{ inputs.workflow_name }}-${{ inputs.run_id }}"
         echo "cache_key=$CACHE_KEY" >> $GITHUB_OUTPUT
+        echo "🗝️ Cache key set: $CACHE_KEY"
 
     - name: Summary
       shell: bash

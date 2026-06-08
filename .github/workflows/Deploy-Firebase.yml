@@ -3,8 +3,19 @@ on:
   workflow_call:
     inputs:
       tag_name:
-        required: true
+        description: >
+          Git tag to deploy. Leave empty or pass "latest" to automatically
+          resolve the most recent tag reachable from source_branch.
+        required: false
         type: string
+        default: 'latest'
+      source_branch:
+        description: >
+          Branch used to find the latest tag when tag_name is empty or "latest".
+          Only tags whose commits are ancestors of this branch are considered.
+        required: false
+        type: string
+        default: 'main'
       repo_name:
         required: true
         type: string
@@ -99,21 +110,32 @@ on:
         value: ${{ (jobs.build_application.result == 'success' && jobs.deploy_to_firebase.result == 'success') && 'success' || 'failure' }}
       deployment_summary:
         description: 'Deployment summary information'
-        value: 'Tag: ${{ inputs.tag_name }} | Channel: ${{ inputs.firebase_channel }} | Environment: ${{ inputs.environment_name }} | Node: ${{ inputs.node_version }} | Manager: ${{ inputs.package_manager }} | Doppler: ${{ inputs.use_doppler }}'
+        value: 'Tag: ${{ jobs.build_application.outputs.resolved_tag }} | Channel: ${{ inputs.firebase_channel }} | Environment: ${{ inputs.environment_name }} | Node: ${{ inputs.node_version }} | Manager: ${{ inputs.package_manager }} | Doppler: ${{ inputs.use_doppler }}'
      
 jobs:
   build_application:
     name: 'Build Node.js Application'
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    environment: ${{ inputs.use_doppler && inputs.environment_name || 'NO ENV' }}
+    environment: ${{ inputs.environment_name }}
     outputs:
-      build_successful: ${{ steps.build.outputs.build_status }}
+      build_successful: ${{ steps.build.outputs.build_status || steps.build_no_doppler.outputs.build_status }}
+      resolved_tag: ${{ steps.resolve_tag.outputs.resolved_tag }}
     steps:
-      - name: Checkout repository | Tag ${{ inputs.tag_name }}
+      - name: Resolve deploy tag
+        id: resolve_tag
+        # NOTE: After forking, update the org/repo below to your own fork.
+        uses: nabarun-ngo/ngo-nabarun-templates/.github/actions/resolve-deploy-tag@main
+        with:
+          tag_name: ${{ inputs.tag_name }}
+          repository: '${{ inputs.repo_owner_name }}/${{ inputs.repo_name }}'
+          source_branch: ${{ inputs.source_branch }}
+          token: ${{ secrets.repo_token }}
+
+      - name: Checkout repository | Tag ${{ steps.resolve_tag.outputs.resolved_tag }}
         uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.tag_name }}
+          ref: ${{ steps.resolve_tag.outputs.resolved_tag }}
           repository: '${{ inputs.repo_owner_name }}/${{ inputs.repo_name }}'
           fetch-depth: 0
           token: ${{ secrets.repo_token }}
@@ -123,14 +145,14 @@ jobs:
         uses: restackio/update-json-file-action@2.1
         with:
           file: package.json
-          fields: '{"version": "${{ inputs.tag_name }}"}'
+          fields: '{"version": "${{ steps.resolve_tag.outputs.resolved_tag }}"}'
           
       - name: Update package.json version in working directory
         if: inputs.working_directory != '.'
         uses: restackio/update-json-file-action@2.1
         with:
           file: ${{ inputs.working_directory }}/package.json
-          fields: '{"version": "${{ inputs.tag_name }}"}'
+          fields: '{"version": "${{ steps.resolve_tag.outputs.resolved_tag }}"}'
       
       - name: Validate Doppler Configuration
         if: inputs.use_doppler == true
@@ -192,7 +214,7 @@ jobs:
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: firebase-build-${{ inputs.tag_name }}
+          name: firebase-build-${{ steps.resolve_tag.outputs.resolved_tag }}
           path: ${{ inputs.working_directory }}/${{ inputs.build_output_dir }}
           retention-days: 1
 
@@ -212,14 +234,14 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.tag_name }}
+          ref: ${{ needs.build_application.outputs.resolved_tag }}
           repository: '${{ inputs.repo_owner_name }}/${{ inputs.repo_name }}'
           token: ${{ secrets.repo_token }}
           
       - name: Download build artifacts
         uses: actions/download-artifact@v4
         with:
-          name: firebase-build-${{ inputs.tag_name }}
+          name: firebase-build-${{ needs.build_application.outputs.resolved_tag }}
           path: ${{ inputs.working_directory }}/${{ inputs.build_output_dir }}
 
       - name: Create GitHub Deployment
@@ -231,7 +253,7 @@ jobs:
           environment: ${{ inputs.environment_name }}
           repo: ${{ inputs.repo_name }}
           owner: ${{ inputs.repo_owner_name }}
-          ref: ${{ inputs.tag_name }}
+          ref: ${{ needs.build_application.outputs.resolved_tag }}
 
       - name: Validate Firebase configuration
         shell: bash

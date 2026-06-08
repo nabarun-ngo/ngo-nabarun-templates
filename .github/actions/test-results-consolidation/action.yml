@@ -2,9 +2,9 @@ name: 'Test Results Consolidation'
 description: 'Downloads parallel test artifacts, merges results, and prepares consolidated report'
 inputs:
   templates_repository:
-    description: 'Templates repository containing merge scripts'
+    description: 'Templates repository containing merge scripts (org/repo). Defaults to the repository this action lives in.'
     required: false
-    default: 'nabarun-ngo/ngo-nabarun-templates'
+    default: ''
   artifact_download_path:
     description: 'Path to download all artifacts'
     required: false
@@ -50,7 +50,7 @@ runs:
     - name: Checkout template repository
       uses: actions/checkout@v4
       with:
-        repository: ${{ inputs.templates_repository }}
+        repository: ${{ inputs.templates_repository || github.action_repository }}
         path: 'templates'
       
     - name: Download all test artifacts

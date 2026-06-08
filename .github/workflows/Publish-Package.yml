@@ -37,7 +37,7 @@ jobs:
         java-version: ${{ inputs.java_version }}
         distribution: 'temurin'
         cache: 'maven'
-        server-id: github
+        server-id: ${{ inputs.server_id }}
         server-username: GITHUB_ACTOR
         server-password: GITHUB_TOKEN
     

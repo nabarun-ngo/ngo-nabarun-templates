@@ -29,6 +29,12 @@ runs:
       name: Clean old GAE versions
       shell: bash
       run: |
+        echo "🧹 GCP Clean Old GAE Versions"
+        echo "  Project  : ${{ inputs.project_id }}"
+        echo "  Service  : ${{ inputs.service_name }}"
+        echo "  Keep     : ${{ inputs.keep_versions }} version(s)"
+        echo ""
+
         echo "🧹 Cleaning old GAE versions..."
         
         PROJECT="${{ inputs.project_id }}"

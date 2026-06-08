@@ -1,0 +1,222 @@
+name: 'Allure Report Publisher'
+description: >
+  Downloads parallel Allure results artifacts, restores trend history from the gh-pages
+  branch (pruning entries older than keep_history_days), generates an Allure report,
+  and deploys it to GitHub Pages.
+
+inputs:
+  allure_results_artifact_pattern:
+    description: 'Glob pattern for Allure results artifacts to download (e.g. allure-results-*)'
+    required: false
+    default: 'allure-results-*'
+  gh_pages_branch:
+    description: 'Branch used for GitHub Pages deployment'
+    required: false
+    default: 'gh-pages'
+  report_name:
+    description: 'Title displayed inside the generated Allure report'
+    required: false
+    default: 'Allure Report'
+  keep_history_days:
+    description: >
+      Number of past days of trend history to preserve. Builds older than this
+      window are pruned from all *-trend.json files. Set to 0 to disable pruning.
+    required: false
+    default: '30'
+  github_token:
+    description: 'GitHub token with contents:write permission for gh-pages deployment'
+    required: true
+  allure_version:
+    description: 'Allure CLI version to install (from GitHub releases). Must be 2.10 or newer for --name to take effect.'
+    required: false
+    default: '2.27.0'
+
+outputs:
+  report_url:
+    description: 'URL of the published Allure report on GitHub Pages (https://<owner>.github.io/<repo>/)'
+    value: ${{ steps.compute_url.outputs.report_url }}
+
+runs:
+  using: 'composite'
+  steps:
+
+    # ── 1. Download all per-job Allure results ──────────────────────────────
+    - name: Download Allure results artifacts
+      uses: actions/download-artifact@v4
+      with:
+        pattern: ${{ inputs.allure_results_artifact_pattern }}
+        path: allure-results
+        merge-multiple: true
+
+    - name: Verify Allure results exist
+      shell: bash
+      run: |
+        echo "📥 Downloaded Allure results:"
+        if [[ -d "allure-results" ]]; then
+          find allure-results -type f | head -30
+          FILE_COUNT=$(find allure-results -type f | wc -l)
+          echo "Total files: $FILE_COUNT"
+          if [[ $FILE_COUNT -eq 0 ]]; then
+            echo "⚠️  No Allure result files found — report will be empty."
+          fi
+        else
+          echo "❌ allure-results directory not found"
+          mkdir -p allure-results
+        fi
+
+    # ── 2. Restore history from gh-pages ────────────────────────────────────
+    - name: Checkout gh-pages branch for history
+      uses: actions/checkout@v4
+      with:
+        ref: ${{ inputs.gh_pages_branch }}
+        path: gh-pages
+        token: ${{ inputs.github_token }}
+      continue-on-error: true
+
+    - name: Restore Allure history and sidecar
+      shell: bash
+      run: |
+        echo "📂 Restoring Allure history from gh-pages..."
+
+        # Restore Allure history folder (trend data for the next report)
+        if [[ -d "gh-pages/history" ]]; then
+          mkdir -p allure-results/history
+          cp -r gh-pages/history/. allure-results/history/
+          echo "✅ History folder restored"
+        else
+          echo "ℹ️  No existing history folder found (first run)"
+          mkdir -p allure-results/history
+        fi
+
+        # Restore timestamps sidecar (or initialise as empty array)
+        if [[ -f "gh-pages/history-dates.json" ]]; then
+          cp gh-pages/history-dates.json history-dates.json
+          echo "✅ history-dates.json restored ($(jq length history-dates.json) entries)"
+        else
+          echo "[]" > history-dates.json
+          echo "ℹ️  No existing history-dates.json found — starting fresh"
+        fi
+
+    # ── 3. Prune history older than keep_history_days ───────────────────────
+    - name: Prune old history entries
+      shell: bash
+      run: |
+        KEEP_DAYS="${{ inputs.keep_history_days }}"
+
+        if [[ "$KEEP_DAYS" == "0" ]]; then
+          echo "ℹ️  keep_history_days=0 — skipping history pruning (unlimited history)"
+          # Still append today's timestamp so the sidecar stays in sync
+          jq --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" '. + [$ts]' history-dates.json > tmp.json
+          mv tmp.json history-dates.json
+          echo "Total history entries: $(jq length history-dates.json)"
+          exit 0
+        fi
+
+        echo "🗂️  Pruning history older than ${KEEP_DAYS} days..."
+
+        # Append current build's UTC timestamp
+        NOW_ISO="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+        jq --arg ts "$NOW_ISO" '. + [$ts]' history-dates.json > tmp.json
+        mv tmp.json history-dates.json
+
+        # Unix epoch for the cutoff
+        NOW_EPOCH=$(date -u +%s)
+        CUTOFF_EPOCH=$(( NOW_EPOCH - KEEP_DAYS * 86400 ))
+
+        # Count how many entries fall within the window (from the end of the array)
+        KEEP_N=$(jq --argjson cutoff "$CUTOFF_EPOCH" \
+          '[.[] | strptime("%Y-%m-%dT%H:%M:%SZ") | mktime | select(. >= $cutoff)] | length' \
+          history-dates.json)
+
+        echo "  Total entries after append : $(jq length history-dates.json)"
+        echo "  Entries within window      : $KEEP_N"
+        echo "  Cutoff date                : $(date -u -d "@${CUTOFF_EPOCH}" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -r "${CUTOFF_EPOCH}" +%Y-%m-%dT%H:%M:%SZ)"
+
+        if [[ "$KEEP_N" -eq 0 ]]; then
+          echo "⚠️  No entries within the window — keeping at least 1 (current build)"
+          KEEP_N=1
+        fi
+
+        # Trim sidecar to KEEP_N most-recent entries
+        jq --argjson n "$KEEP_N" '.[-($n):]' history-dates.json > tmp.json
+        mv tmp.json history-dates.json
+        echo "✅ history-dates.json trimmed to $KEEP_N entries"
+
+        # Trim each Allure *-trend.json array to KEEP_N entries
+        TREND_COUNT=0
+        for f in allure-results/history/*-trend.json; do
+          [[ -f "$f" ]] || continue
+          jq --argjson n "$KEEP_N" 'if type == "array" then .[-($n):] else . end' "$f" > tmp.json
+          mv tmp.json "$f"
+          TREND_COUNT=$(( TREND_COUNT + 1 ))
+          echo "  Trimmed: $f"
+        done
+        echo "✅ Pruned $TREND_COUNT trend file(s)"
+
+    # ── 4. Install Allure CLI ────────────────────────────────────────────────
+    - name: Install Allure CLI
+      shell: bash
+      run: |
+        ALLURE_VERSION="${{ inputs.allure_version }}"
+        echo "⬇️  Installing Allure CLI v${ALLURE_VERSION}..."
+
+        curl -sLo allure.tgz \
+          "https://github.com/allure-framework/allure2/releases/download/${ALLURE_VERSION}/allure-${ALLURE_VERSION}.tgz"
+
+        tar -xzf allure.tgz
+        sudo mv "allure-${ALLURE_VERSION}" /opt/allure
+        sudo ln -sf /opt/allure/bin/allure /usr/local/bin/allure
+
+        allure --version
+        echo "✅ Allure CLI installed"
+
+    # ── 5. Generate Allure report ────────────────────────────────────────────
+    - name: Generate Allure report
+      shell: bash
+      run: |
+        echo "📊 Generating Allure report..."
+        allure generate allure-results/ \
+          --output allure-report/ \
+          --clean \
+          --name "${{ inputs.report_name }}"
+        echo "✅ Allure report generated"
+        echo "Report contents:"
+        ls -la allure-report/
+
+    # ── 6. Copy sidecar into report for next-run restoration ────────────────
+    - name: Copy history-dates.json into report
+      shell: bash
+      run: |
+        cp history-dates.json allure-report/history-dates.json
+        echo "✅ history-dates.json copied to allure-report/ ($(jq length allure-report/history-dates.json) entries)"
+
+    # ── 7. Deploy to GitHub Pages ────────────────────────────────────────────
+    - name: Deploy to GitHub Pages
+      uses: peaceiris/actions-gh-pages@v4
+      with:
+        github_token: ${{ inputs.github_token }}
+        publish_dir: allure-report
+        publish_branch: ${{ inputs.gh_pages_branch }}
+        commit_message: 'ci: publish Allure report [run ${{ github.run_id }}]'
+        keep_files: false
+
+    # ── 8. Compute and expose the Pages URL ─────────────────────────────────
+    - name: Compute report URL
+      id: compute_url
+      shell: bash
+      run: |
+        OWNER="${GITHUB_REPOSITORY_OWNER}"
+        REPO="${GITHUB_REPOSITORY#*/}"
+        URL="https://${OWNER}.github.io/${REPO}/"
+        echo "report_url=${URL}" >> "$GITHUB_OUTPUT"
+        echo "Allure report URL: ${URL}"
+
+    - name: Deployment summary
+      shell: bash
+      run: |
+        echo "--------------------------------------------"
+        echo "✅ Allure report published to GitHub Pages"
+        echo "  Branch       : ${{ inputs.gh_pages_branch }}"
+        echo "  History kept : ${{ inputs.keep_history_days }} days"
+        echo "  Run ID       : ${{ github.run_id }}"
+        echo "--------------------------------------------"

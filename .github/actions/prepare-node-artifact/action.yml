@@ -57,7 +57,7 @@ runs:
         fi
         
         echo "📁 Copying build output from: $PATTERN"
-        cp -r $PATTERN deployment-artifact/
+        cp -r "$PATTERN" deployment-artifact/
         
         # Copy package files
         echo "📄 Copying package files..."
@@ -80,14 +80,13 @@ runs:
           cp .gcloudignore deployment-artifact/
         fi
         
-        # Copy .env files if they exist (for local testing)
+        # .env files may contain secrets — skip in CI; inject via Doppler at runtime instead
+        # Only copy if they exist and deployment truly needs them as fallback
         if [ -f ".env" ]; then
-          echo "📝 Copying .env file..."
-          cp .env deployment-artifact/ || true
+          echo "⚠️ WARNING: .env file found — skipping copy to avoid leaking secrets in artifact"
         fi
         if [ -f ".env.production" ]; then
-          echo "📝 Copying .env.production file..."
-          cp .env.production deployment-artifact/ || true
+          echo "⚠️ WARNING: .env.production file found — skipping copy to avoid leaking secrets in artifact"
         fi
         
         # Install production dependencies only

@@ -1,4 +1,15 @@
 name: Run Automated Test
+# ─────────────────────────────────────────────────────────────────────────────
+# USAGE: call this workflow from your own repo.
+#   uses: YOUR_ORG/YOUR_TEMPLATES_REPO/.github/workflows/Run-Tests.yml@v1
+# After forking, run scripts/setup-for-org.sh to replace all internal
+# action references with your own org/repo.
+# ─────────────────────────────────────────────────────────────────────────────
+# DEPRECATION NOTICE: This workflow uses QMetry for test result uploads.
+# QMetry integration is being phased out. For new projects please use
+# Run-Parallel-Tests-Allure.yml which reports via Allure + GitHub Pages.
+# This file will be removed once all callers have migrated.
+# ─────────────────────────────────────────────────────────────────────────────
 on:
   workflow_call:
     inputs:
@@ -31,41 +42,52 @@ on:
         type: string
         default: 'target'
       repository_name:
-        required: false
+        description: 'Test repository name (format: org/repo-name)'
+        required: true
         type: string
-        default: 'nabarun-ngo/ngo-nabarun-test'
       branch_name:
+        description: 'Test repository branch to checkout'
         required: false
         type: string
-        default: 'master'
+        default: 'main'
       test_cycle:
         required: false
         type: string
       test_cycle_folder:
-        required: false
+        description: 'QMetry folder ID for test cycles'
+        required: true
         type: string
-        default: '1388976'
       test_case_folder:
-        required: false
+        description: 'QMetry folder ID for test cases'
+        required: true
         type: string
-        default: '1449797'
       qmetry_project_id:
         description: 'QMetry Project Id'
         required: true
         type: string
       qmetry_execution_url:
-        description: 'QMetry Execution URL with placeholder'
+        description: 'QMetry Execution URL with {executionId} placeholder'
         required: true
         type: string
-      jira_url:
+      qmetry_base_url:
+        description: 'QMetry API base URL (e.g. https://qtmcloud.qmetry.com)'
         required: false
         type: string
-        default: 'https://ngonabarun.atlassian.net'
+        default: 'https://qtmcloud.qmetry.com'
+      jira_url:
+        description: 'JIRA/Atlassian base URL (e.g. https://yourcompany.atlassian.net)'
+        required: true
+        type: string
       upload_result:
         required: false
         type: boolean
         default: true
-        
+      templates_repository:
+        description: 'Templates repository (org/repo). Defaults to the repo this workflow lives in.'
+        required: false
+        type: string
+        default: ''
+
     secrets:
       repo_token:
         required: false
@@ -85,7 +107,7 @@ on:
       test_results_uploaded:
         description: "Whether test results were uploaded to QMetry"
         value: ${{ inputs.upload_result && jobs.upload_test_result.result == 'success' }}
-        
+
 jobs:
   run_test:
     name: 'Run Test'
@@ -95,14 +117,17 @@ jobs:
       GITHUB_ACTOR: ${{ github.actor }}
     steps:
       - name: Setup test environment
+        # NOTE: After forking, update the org/repo below to your own fork.
         uses: nabarun-ngo/ngo-nabarun-templates/.github/actions/test-setup@main
         with:
           java_version: ${{ inputs.java_version }}
           test_repository: ${{ inputs.repository_name }}
           test_branch: ${{ inputs.branch_name }}
+          templates_repository: ${{ inputs.templates_repository }}
 
       - name: Run Cucumber Tests
         id: run_tests
+        # NOTE: After forking, update the org/repo below to your own fork.
         uses: nabarun-ngo/ngo-nabarun-templates/.github/actions/cucumber-run-tests@main
         with:
           scenarios: ${{ inputs.test_cucumber_tags }}
@@ -118,7 +143,7 @@ jobs:
         with:
           name: test-results
           path: test/target/cucumber-0.json
-      
+
       - name: Show Tests Result
         shell: bash
         run: |
@@ -126,12 +151,12 @@ jobs:
           echo "Test Status: $TEST_STATUS"
           echo "Exit Code: ${{ steps.run_tests.outputs.exit_code }}"
           if [ "$TEST_STATUS" = "FAILED" ]; then
-            echo "❌ Test execution failed"
+            echo "Test execution failed"
             exit 1
           else
-            echo "✅ Test execution completed successfully"
+            echo "Test execution completed successfully"
           fi
-          
+
   upload_test_result:
     name: 'Upload Test Results'
     if: ${{ inputs.upload_result == true &&  needs.run_test.result != 'cancelled' && always() }}
@@ -144,15 +169,17 @@ jobs:
     steps:
       - name: Consolidate Test Results
         id: consolidate
+        # NOTE: After forking, update the org/repo below to your own fork.
         uses: nabarun-ngo/ngo-nabarun-templates/.github/actions/test-results-consolidation@main
         with:
-          templates_repository: nabarun-ngo/ngo-nabarun-templates
+          templates_repository: ${{ inputs.templates_repository }}
           artifact_download_path: all-results
           merged_output_path: merged
           merged_artifact_name: merged-cucumber-json
 
       - name: Manage Test Cycle Cache
         id: cache_manager
+        # NOTE: After forking, update the org/repo below to your own fork.
         uses: nabarun-ngo/ngo-nabarun-templates/.github/actions/test-cycle-cache-manager@main
         with:
           workflow_name: ${{ github.workflow }}
@@ -162,9 +189,11 @@ jobs:
 
       - name: Upload to QMetry
         id: qmetry_upload
+        # NOTE: After forking, update the org/repo below to your own fork.
         uses: nabarun-ngo/ngo-nabarun-templates/.github/actions/qmetry-upload-manager@main
         with:
           qmetry_api_key: ${{ secrets.qmetry_api_key }}
+          qmetry_base_url: ${{ inputs.qmetry_base_url }}
           test_environment: ${{ inputs.test_env }}
           test_cycle_summary: ${{ steps.cache_manager.outputs.test_cycle_summary }}
           test_cycle_folder: ${{ inputs.test_cycle_folder }}
@@ -176,12 +205,15 @@ jobs:
           run_attempt: ${{ github.run_attempt }}
           results_file_path: ${{ steps.consolidate.outputs.merged_file_path }}
           cached_test_cycle: ${{ steps.cache_manager.outputs.cached_test_cycle }}
+          templates_repository: ${{ inputs.templates_repository }}
 
       - name: Generate Result Links
         id: result_linker
+        # NOTE: After forking, update the org/repo below to your own fork.
         uses: nabarun-ngo/ngo-nabarun-templates/.github/actions/qmetry-result-linker@main
         with:
           qmetry_open_api_key: ${{ secrets.qmetry_open_api_key }}
+          qmetry_base_url: ${{ inputs.qmetry_base_url }}
           app_execution_url: ${{ inputs.qmetry_execution_url }}
           jira_url: ${{ inputs.jira_url }}
           test_cycle_summary: ${{ steps.cache_manager.outputs.test_cycle_summary }}
@@ -189,5 +221,3 @@ jobs:
           run_id: ${{ github.run_id }}
           cache_file_path: variables.env
           qmetry_project_id: ${{ inputs.qmetry_project_id }}
-      
-      

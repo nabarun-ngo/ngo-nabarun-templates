@@ -29,6 +29,13 @@ runs:
       name: Clean old Cloud Run revisions
       shell: bash
       run: |
+        echo "🧹 GCP Clean Old Cloud Run Revisions"
+        echo "  Project  : ${{ inputs.project_id }}"
+        echo "  Service  : ${{ inputs.service_name }}"
+        echo "  Region   : ${{ inputs.region }}"
+        echo "  Keep     : ${{ inputs.keep_revisions }} revision(s)"
+        echo ""
+
         echo "🧹 Cleaning old Cloud Run revisions..."
         
         PROJECT="${{ inputs.project_id }}"

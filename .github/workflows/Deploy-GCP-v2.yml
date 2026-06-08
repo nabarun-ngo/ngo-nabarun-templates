@@ -8,8 +8,20 @@ on:
         required: true
         type: string
       tag_name:
-        required: true
+        description: >
+          Git tag to deploy. Leave empty or pass "latest" to automatically
+          resolve the most recent tag reachable from source_branch.
+        required: false
         type: string
+        default: 'latest'
+      source_branch:
+        description: >
+          Branch used to find the latest tag when tag_name is empty or "latest".
+          Only tags whose commits are ancestors of this branch are considered,
+          so tags from other branches are never picked up.
+        required: false
+        type: string
+        default: 'main'
       repo_name:
         required: true
         type: string
@@ -189,14 +201,14 @@ on:
       # Cleanup outputs
       cleanup_status:
         description: 'Status of the cleanup process'
-        value: ${{ jobs.clean_gcp_resources.result }}
+        value: ${{ jobs.deploy_to_gcp.result }}
       # Summary outputs
       overall_status:
         description: 'Overall workflow execution status'
         value: ${{ (jobs.build_application.result == 'success' && jobs.deploy_to_gcp.result == 'success') && 'success' || 'failure' }}
       deployment_summary:
         description: 'Deployment summary information'
-        value: 'Tag: ${{ inputs.tag_name }} | Service: ${{ inputs.gae_service_name }} | Environment: ${{ inputs.environment_name }} | Version: ${{ jobs.deploy_to_gcp.outputs.deployment_version }}'
+        value: 'Tag: ${{ jobs.build_application.outputs.resolved_tag }} | Service: ${{ inputs.gae_service_name }} | Environment: ${{ inputs.environment_name }} | Version: ${{ jobs.deploy_to_gcp.outputs.deployment_version }}'
     
     secrets:
       gcp_project_id:
@@ -218,11 +230,22 @@ jobs:
     outputs:
       artifact_name: ${{ steps.get-artifact-info.outputs.artifact_name }}
       artifact_path: ${{ steps.get-artifact-info.outputs.artifact_path }}
+      resolved_tag: ${{ steps.resolve_tag.outputs.resolved_tag }}
     steps:
-      - name: Checkout repository | Tag ${{ inputs.tag_name }}
+      - name: Resolve deploy tag
+        id: resolve_tag
+        # NOTE: After forking, update the org/repo below to your own fork.
+        uses: nabarun-ngo/ngo-nabarun-templates/.github/actions/resolve-deploy-tag@main
+        with:
+          tag_name: ${{ inputs.tag_name }}
+          repository: '${{ inputs.repo_owner_name }}/${{ inputs.repo_name }}'
+          source_branch: ${{ inputs.source_branch }}
+          token: ${{ secrets.repo_token }}
+
+      - name: Checkout repository | Tag ${{ steps.resolve_tag.outputs.resolved_tag }}
         uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.tag_name }}
+          ref: ${{ steps.resolve_tag.outputs.resolved_tag }}
           repository: '${{ inputs.repo_owner_name }}/${{ inputs.repo_name }}'
           fetch-depth: 0
           token: ${{ secrets.repo_token }}
@@ -317,7 +340,7 @@ jobs:
             echo "artifact_path=${{ steps.get-jar-path.outputs.file_path }}" >> $GITHUB_OUTPUT
           else
             # For Node, we'll upload the entire build directory
-            ARTIFACT_NAME="node-build-${{ inputs.tag_name }}"
+            ARTIFACT_NAME="node-build-${{ steps.resolve_tag.outputs.resolved_tag }}"
             ARTIFACT_PATH="${{ steps.find-node-artifacts.outputs.artifact_pattern }}"
             echo "artifact_name=$ARTIFACT_NAME" >> $GITHUB_OUTPUT
             echo "artifact_path=$ARTIFACT_PATH" >> $GITHUB_OUTPUT
@@ -333,7 +356,7 @@ jobs:
       - name: Upload app.yaml artifact
         uses: actions/upload-artifact@v4
         with:
-          name: app-yaml-${{ inputs.tag_name }}
+          name: app-yaml-${{ steps.resolve_tag.outputs.resolved_tag }}
           path: ${{ inputs.gae_app_yaml_path }}
           retention-days: 1
 
@@ -420,11 +443,12 @@ jobs:
   deploy_to_gcp:
     name: 'Deploy to GCP App Engine'
     runs-on: ubuntu-latest
-    needs: [build_application]
+    needs: [build_application, run_db_migration]
     timeout-minutes: 60
     if: |
       always() &&
-      needs.build_application.result == 'success'
+      needs.build_application.result == 'success' &&
+      (needs.run_db_migration.result == 'success' || needs.run_db_migration.result == 'skipped')
       
     environment: ${{ inputs.environment_name }}
     outputs:
@@ -440,7 +464,7 @@ jobs:
       - name: Download app.yaml artifact to workspace root
         uses: actions/download-artifact@v4
         with:
-          name: app-yaml-${{ inputs.tag_name }}
+          name: app-yaml-${{ needs.build_application.outputs.resolved_tag }}
           path: .
       
       - name: Copy app.yaml to artifacts directory (for Node deployment)
@@ -459,7 +483,7 @@ jobs:
           environment: ${{ inputs.environment_name }}
           repo: ${{ inputs.repo_name }}
           owner: ${{ inputs.repo_owner_name }}
-          ref: ${{ inputs.tag_name }}
+          ref: ${{ needs.build_application.outputs.resolved_tag }}
                   
       - name: Setup Google Cloud CLI
         uses: google-github-actions/auth@v2
@@ -493,7 +517,7 @@ jobs:
             DOPPLER_SERVICE_TOKEN=${{ secrets.app_doppler_service_token }}
             DOPPLER_CONFIG=${{ inputs.app_doppler_config }}
             LOG_LEVEL=${{ inputs.app_log_level }}
-            VERSION=${{ inputs.tag_name }}
+            VERSION=${{ needs.build_application.outputs.resolved_tag }}
       
       - name: Deploy to Google App Engine (Node)
         if: inputs.app_type == 'node'
@@ -509,7 +533,7 @@ jobs:
             DOPPLER_PROJECT=${{ inputs.app_doppler_project_name }}
             DOPPLER_TOKEN=${{ secrets.app_doppler_service_token }}
             DOPPLER_CONFIG=${{ inputs.app_doppler_config }}
-            VERSION=${{ inputs.tag_name }}
+            VERSION=${{ needs.build_application.outputs.resolved_tag }}
           
           
       - name: Get deployed version

@@ -1,0 +1,254 @@
+name: Run Automated Test [Parallel] with Allure
+
+on:
+  workflow_call:
+    inputs:
+      test_env:
+        required: true
+        type: string
+      test_doppler_project_name:
+        required: true
+        type: string
+      test_cucumber_tags:
+        required: true
+        type: string
+      test_type:
+        required: true
+        type: string
+      max_tests_per_matrix:
+        required: false
+        type: number
+        default: 5
+      max_rerun_attempt:
+        required: false
+        type: number
+        default: 1
+      app_ui_version:
+        description: 'UI application version being tested'
+        required: true
+        type: string
+      app_server_version:
+        description: 'Server application version being tested'
+        required: true
+        type: string
+      java_version:
+        required: false
+        type: string
+        default: '22'
+      target_folder:
+        required: false
+        type: string
+        default: 'target'
+      repository_name:
+        description: 'Test repository name (org/repo-name)'
+        required: true
+        type: string
+      branch_name:
+        description: 'Test repository branch to checkout'
+        required: false
+        type: string
+        default: 'main'
+      runner_os:
+        description: 'OS for the test runner jobs (e.g. ubuntu-latest, windows-latest, macos-latest)'
+        required: false
+        type: string
+        default: 'ubuntu-latest'
+      templates_repository:
+        description: 'Templates repository (org/repo). Defaults to the repo this workflow lives in.'
+        required: false
+        type: string
+        default: ''
+      additional_plugins:
+        required: false
+        type: string
+      enable_allure:
+        description: 'Enable Allure reporting and GitHub Pages deployment'
+        required: false
+        type: boolean
+        default: true
+      allure_results_dir:
+        description: 'Path (relative to repo root) where per-job Allure results are written'
+        required: false
+        type: string
+        default: 'test/allure-results'
+      gh_pages_branch:
+        description: 'Branch used for GitHub Pages deployment'
+        required: false
+        type: string
+        default: 'gh-pages'
+      allure_report_name:
+        description: 'Title displayed in the Allure report'
+        required: false
+        type: string
+        default: 'Allure Report'
+      keep_history_days:
+        description: 'Number of past days of trend history to preserve; older builds are pruned'
+        required: false
+        type: number
+        default: 30
+
+    secrets:
+      repo_token:
+        required: false
+      test_doppler_service_token:
+        required: true
+
+    outputs:
+      # Discovery outputs
+      discovery_status:
+        description: 'Status of test discovery process'
+        value: ${{ jobs.discover-scenarios.result }}
+      scenario_count:
+        description: 'Total number of scenarios discovered'
+        value: ${{ jobs.discover-scenarios.outputs.scenario_count }}
+      # Execution outputs
+      test_execution_status:
+        description: 'Status of test execution process'
+        value: ${{ jobs.run_test.result }}
+      # Report outputs
+      allure_report_url:
+        description: 'URL of the published Allure report on GitHub Pages'
+        value: ${{ jobs.publish_allure_report.outputs.report_url }}
+      # Summary outputs
+      overall_status:
+        description: 'Overall workflow execution status'
+        value: ${{ (jobs.discover-scenarios.result == 'success' && (jobs.run_test.result == 'success' || jobs.run_test.result == 'failure')) && 'completed' || 'failed' }}
+      test_summary:
+        description: 'Test execution summary information'
+        value: 'Environment: ${{ inputs.test_env }} | Type: ${{ inputs.test_type }} | Tags: ${{ inputs.test_cucumber_tags }} | Scenarios: ${{ jobs.discover-scenarios.outputs.scenario_count }} | UI Version: ${{ inputs.app_ui_version }} | Server Version: ${{ inputs.app_server_version }}'
+
+permissions:
+  contents: read
+
+jobs:
+  discover-scenarios:
+    name: 'Discover Test'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      matrix: ${{ steps.discover.outputs.matrix }}
+      scenario_count: ${{ steps.discover.outputs.scenario_count }}
+    env:
+      GITHUB_TOKEN: ${{ secrets.repo_token }}
+      GITHUB_ACTOR: ${{ github.actor }}
+    steps:
+      - name: Setup test environment
+        uses: nabarun-ngo/ngo-nabarun-templates/.github/actions/test-setup@main
+        with:
+          java_version: ${{ inputs.java_version }}
+          test_repository: ${{ inputs.repository_name }}
+          test_branch: ${{ inputs.branch_name }}
+          templates_repository: ${{ inputs.templates_repository }}
+
+      - name: Discover test scenarios
+        id: discover
+        uses: nabarun-ngo/ngo-nabarun-templates/.github/actions/cucumber-discover-scenarios@main
+        with:
+          cucumber_tags: ${{ inputs.test_cucumber_tags }}
+          max_scenarios_per_job: ${{ inputs.max_tests_per_matrix }}
+
+  run_test:
+    needs: discover-scenarios
+    name: 'Run Test'
+    runs-on: ${{ inputs.runner_os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.discover-scenarios.outputs.matrix) }}
+    env:
+      GITHUB_TOKEN: ${{ secrets.repo_token }}
+      GITHUB_ACTOR: ${{ github.actor }}
+    steps:
+    - name: Setup test environment
+      uses: nabarun-ngo/ngo-nabarun-templates/.github/actions/test-setup@main
+      with:
+        java_version: ${{ inputs.java_version }}
+        test_repository: ${{ inputs.repository_name }}
+        test_branch: ${{ inputs.branch_name }}
+        templates_repository: ${{ inputs.templates_repository }}
+
+    - name: Process test scenarios
+      id: test_params
+      shell: bash
+      run: |
+        SCENARIOS=$(echo '${{ toJson(matrix.scenarios) }}' | jq -r '.[]' | paste -sd, -)
+        echo "Run Id : ${{ github.run_id }}"
+        echo "Test tags: ${{ inputs.test_cucumber_tags }}"
+        echo "Scenarios: $SCENARIOS"
+        echo "scenarios=$SCENARIOS" >> $GITHUB_OUTPUT
+
+    - name: Build additional plugin list
+      id: plugin_list
+      shell: bash
+      run: |
+        BASE_PLUGINS="${{ inputs.additional_plugins }}"
+        ALLURE_PLUGIN="io.qameta.allure.cucumber7jvm.AllureCucumber7Jvm"
+        if [[ "${{ inputs.enable_allure }}" == "true" ]]; then
+          if [[ -n "$BASE_PLUGINS" ]]; then
+            echo "plugins=${BASE_PLUGINS},${ALLURE_PLUGIN}" >> $GITHUB_OUTPUT
+          else
+            echo "plugins=${ALLURE_PLUGIN}" >> $GITHUB_OUTPUT
+          fi
+        else
+          echo "plugins=${BASE_PLUGINS}" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Run Cucumber Tests
+      id: run_tests
+      uses: nabarun-ngo/ngo-nabarun-templates/.github/actions/cucumber-run-tests@main
+      with:
+        scenarios: ${{ steps.test_params.outputs.scenarios }}
+        job_index: ${{ strategy.job-index }}
+        test_environment: ${{ inputs.test_env }}
+        doppler_project_name: ${{ inputs.test_doppler_project_name }}
+        doppler_service_token: ${{ secrets.test_doppler_service_token }}
+        max_rerun_attempts: ${{ inputs.max_rerun_attempt }}
+        additional_plugin: ${{ steps.plugin_list.outputs.plugins }}
+      continue-on-error: true
+
+    - name: Upload Cucumber JSON Results
+      uses: actions/upload-artifact@v4
+      with:
+        name: cucumber-json-${{ strategy.job-index }}
+        path: test/target/cucumber-${{ strategy.job-index }}.json
+
+    - name: Upload Allure Results
+      if: ${{ inputs.enable_allure }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: allure-results-${{ strategy.job-index }}
+        path: ${{ inputs.allure_results_dir }}
+
+    - name: Show Tests Result
+      shell: bash
+      run: |
+        TEST_STATUS="${{ steps.run_tests.outputs.test_status }}"
+        echo "Test Status: $TEST_STATUS"
+        echo "Exit Code: ${{ steps.run_tests.outputs.exit_code }}"
+        if [ "$TEST_STATUS" = "FAILED" ]; then
+          echo "❌ Test execution failed"
+          exit 1
+        else
+          echo "✅ Test execution completed successfully"
+        fi
+
+  publish_allure_report:
+    name: 'Publish Allure Report'
+    if: ${{ inputs.enable_allure && needs.run_test.result != 'cancelled' && always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: run_test
+    permissions:
+      contents: write
+    outputs:
+      report_url: ${{ steps.publish.outputs.report_url }}
+    steps:
+      - name: Publish Allure Report to GitHub Pages
+        id: publish
+        uses: nabarun-ngo/ngo-nabarun-templates/.github/actions/allure-publish@main
+        with:
+          allure_results_artifact_pattern: allure-results-*
+          gh_pages_branch: ${{ inputs.gh_pages_branch }}
+          report_name: ${{ inputs.allure_report_name }}
+          keep_history_days: ${{ inputs.keep_history_days }}
+          github_token: ${{ secrets.repo_token }}

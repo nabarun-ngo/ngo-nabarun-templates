@@ -4,7 +4,7 @@ on:
   workflow_call:
     inputs:
       operation:
-        description: 'Operation to perform (download-logs, restart-app-engine, cleanup-gcp-resources)'
+        description: 'Operation to perform (download-logs, restart-app-engine, restart-gcr, cleanup-gcp-resources)'
         required: true
         type: string
       environment:
@@ -98,7 +98,7 @@ on:
     outputs:
       operation_result:
         description: 'GCP operation result'
-        value: ${{ jobs.download-logs.outputs.operation_result || jobs.restart-app-engine.outputs.operation_result }}
+        value: ${{ jobs.download-logs.outputs.operation_result || jobs.restart-app-engine.outputs.operation_result || jobs.restart_gcr_service.outputs.operation_result }}
       output_path:
         description: 'Path to generated file (if applicable)'
         value: ${{ jobs.download-logs.outputs.output_path }}
@@ -221,7 +221,6 @@ jobs:
         with:
           project_id: ${{ secrets.project_id }}
           service_name: ${{ inputs.service_name }}
-          version_id: ${{ inputs.version_id }}
           confirm_restart: ${{ inputs.confirm_restart }}
           dry_run: ${{ inputs.dry_run }}
           wait_timeout: ${{ inputs.wait_timeout }}
@@ -243,7 +242,8 @@ jobs:
     if: ${{ inputs.operation == 'restart-gcr' }}
     environment: ${{ inputs.environment }}
     timeout-minutes: 10
-    
+    outputs:
+      operation_result: ${{ steps.set-result.outputs.result }}
     steps:
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v2
@@ -275,6 +275,10 @@ jobs:
           
           echo "🔐 New containers will fetch fresh secrets"
       
+      - name: Set operation result
+        id: set-result
+        run: echo "result=✅ GCR service ${{ inputs.service_name }} restarted successfully" >> "$GITHUB_OUTPUT"
+
       - name: Clean old versions
         uses:  nabarun-ngo/ngo-nabarun-templates/.github/actions/gcp-clean-gcr-versions@main
         with:

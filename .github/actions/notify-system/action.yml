@@ -1,30 +1,62 @@
+name: 'Webhook Notification'
+description: 'Send a JSON notification to any webhook endpoint (Jira, Slack, Teams, etc.).'
 
-name: 'Jira Webhook Notification'
-description: 'Send a notification to a Jira webhook.'
+inputs:
+  webhook_url:
+    description: 'Webhook URL to POST to'
+    required: true
+  message:
+    description: 'Notification message body (JSON string)'
+    required: true
+
 runs:
   using: "composite"
   steps:
-    - name: Send notification to Jira webhook
+    - name: Initialize
       shell: bash
       run: |
-        set -euo pipefail
-        webhook_url='${{ inputs.webhook_url }}'
-        message='${{ inputs.message }}'
-        if [ -z "$webhook_url" ]; then
-          echo "Error: webhook_url is required." >&2
+        echo "📣 Webhook Notification"
+        # Mask the URL so tokens embedded in it don't leak
+        MASKED_URL=$(echo "${{ inputs.webhook_url }}" | sed 's|://[^@]*@|://***@|g' | sed 's|\?.*|\?...|g')
+        echo "  Endpoint : $MASKED_URL"
+        # Validate required inputs
+        if [ -z "${{ inputs.webhook_url }}" ]; then
+          echo "❌ Error: webhook_url is required." >&2
           exit 1
         fi
-        if [ -z "$message" ]; then
-          echo "Error: message is required." >&2
+        if [ -z "${{ inputs.message }}" ]; then
+          echo "❌ Error: message is required." >&2
           exit 1
         fi
-        curl -X POST "$webhook_url" \
+        # Validate message is valid JSON
+        if ! echo '${{ inputs.message }}' | jq empty 2>/dev/null; then
+          echo "❌ Error: message is not valid JSON." >&2
+          exit 1
+        fi
+        echo "✅ Inputs validated"
+
+    - name: Send webhook notification
+      shell: bash
+      run: |
+        echo "📤 Sending notification..."
+
+        HTTP_CODE=$(curl -s -o /tmp/webhook_response.txt -w "%{http_code}" \
+          -X POST "${{ inputs.webhook_url }}" \
           -H "Content-Type: application/json" \
-          -d "$message"
-inputs:
-  webhook_url:
-    description: 'Jira webhook URL'
-    required: true
-  message:
-    description: 'Notification message (JSON string)'
-    required: true
+          -d '${{ inputs.message }}')
+
+        echo "  HTTP status : $HTTP_CODE"
+
+        if [ -s /tmp/webhook_response.txt ]; then
+          echo "  Response body:"
+          cat /tmp/webhook_response.txt | jq '.' 2>/dev/null || cat /tmp/webhook_response.txt
+        fi
+
+        rm -f /tmp/webhook_response.txt
+
+        if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
+          echo "✅ Notification delivered successfully (HTTP $HTTP_CODE)"
+        else
+          echo "❌ Notification failed (HTTP $HTTP_CODE)" >&2
+          exit 1
+        fi
