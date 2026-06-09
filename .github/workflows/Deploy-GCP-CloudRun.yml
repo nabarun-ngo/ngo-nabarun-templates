@@ -184,7 +184,6 @@ jobs:
     steps:
       - name: Resolve deploy tag
         id: resolve_tag
-        # NOTE: After forking, update the org/repo below to your own fork.
         uses: nabarun-ngo/ngo-nabarun-templates/.github/actions/resolve-deploy-tag@main
         with:
           tag_name: ${{ inputs.tag_name }}
@@ -367,40 +366,16 @@ jobs:
           echo "✅ Service deployed to: ${SERVICE_URL}"
 
       - name: Wait for service to be ready
-        run: |
-          echo "⏳ Waiting for service to be ready..."
-          sleep 30
+        run: sleep 30
 
       - name: Health check deployment
         if: inputs.enable_health_check
-        id: health_check
-        run: |
-          SERVICE_URL="${{ steps.get_url.outputs.url }}"
-          HEALTH_URL="${SERVICE_URL}${{ inputs.health_check_path }}"
-          MAX_RETRIES=10
-          RETRY_DELAY=10
-          
-          echo "🏥 Checking health endpoint: ${HEALTH_URL}"
-          
-          for i in $(seq 1 $MAX_RETRIES); do
-            echo "Attempt $i/$MAX_RETRIES..."
-            
-            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" ${HEALTH_URL} || echo "000")
-            
-            if [ "$HTTP_CODE" = "200" ]; then
-              echo "✅ Health check passed (HTTP $HTTP_CODE)"
-              exit 0
-            else
-              echo "⚠️  Health check failed (HTTP $HTTP_CODE)"
-              if [ $i -lt $MAX_RETRIES ]; then
-                echo "Retrying in ${RETRY_DELAY}s..."
-                sleep $RETRY_DELAY
-              fi
-            fi
-          done
-          
-          echo "❌ Health check failed after $MAX_RETRIES attempts"
-          exit 1
+        uses: nabarun-ngo/ngo-nabarun-templates/.github/actions/gcp-health-check-deployment@main
+        with:
+          environment_url: ${{ steps.get_url.outputs.url }}
+          health_check_path: ${{ inputs.health_check_path }}
+          max_attempts: '10'
+          retry_delay: '10'
 
       - name: Get deployment details
         if: always()

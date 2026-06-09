@@ -3,8 +3,12 @@ description: Performs health checks on deployed applications with retry logic
 
 inputs:
   environment_url:
-    description: 'URL to perform health check against'
+    description: 'Base URL to perform health check against'
     required: false
+  health_check_path:
+    description: 'Path appended to environment_url for the health check (e.g. /health, /api/v1/health)'
+    required: false
+    default: '/health'
   max_attempts:
     description: 'Maximum number of health check attempts'
     required: false
@@ -36,6 +40,7 @@ runs:
         echo "🏥 Performing deployment health check..."
         
         ENVIRONMENT_URL="${{ inputs.environment_url }}"
+        HEALTH_CHECK_PATH="${{ inputs.health_check_path }}"
         MAX_ATTEMPTS=${{ inputs.max_attempts }}
         RETRY_DELAY=${{ inputs.retry_delay }}
         TIMEOUT=${{ inputs.timeout }}
@@ -47,8 +52,10 @@ runs:
           exit 0
         fi
         
+        HEALTH_URL="${ENVIRONMENT_URL%/}${HEALTH_CHECK_PATH}"
+        
         echo "🔍 Health check configuration:"
-        echo "  URL: $ENVIRONMENT_URL"
+        echo "  URL: $HEALTH_URL"
         echo "  Max attempts: $MAX_ATTEMPTS"
         echo "  Retry delay: ${RETRY_DELAY}s"
         echo "  Request timeout: ${TIMEOUT}s"
@@ -59,9 +66,9 @@ runs:
         while [[ $ATTEMPT -le $MAX_ATTEMPTS ]]; do
           echo "🔍 Health check attempt $ATTEMPT/$MAX_ATTEMPTS"
           
-          # Try health endpoint first, then fallback to root
-          if curl -f -s --max-time "$TIMEOUT" "$ENVIRONMENT_URL/health" >/dev/null 2>&1; then
-            echo "✅ Health check passed on attempt $ATTEMPT (health endpoint)"
+          # Try configured health path first, then fallback to root
+          if curl -f -s --max-time "$TIMEOUT" "$HEALTH_URL" >/dev/null 2>&1; then
+            echo "✅ Health check passed on attempt $ATTEMPT ($HEALTH_CHECK_PATH)"
             SUCCESS=true
             break
           elif curl -f -s --max-time "$TIMEOUT" "$ENVIRONMENT_URL" >/dev/null 2>&1; then

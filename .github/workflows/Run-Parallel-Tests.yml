@@ -154,7 +154,6 @@ jobs:
       GITHUB_ACTOR: ${{ github.actor }}
     steps:
       - name: Setup test environment
-        # NOTE: After forking, update the org/repo below to your own fork.
         uses: nabarun-ngo/ngo-nabarun-templates/.github/actions/test-setup@main
         with:
           java_version: ${{ inputs.java_version }}
@@ -164,7 +163,6 @@ jobs:
 
       - name: Discover test scenarios
         id: discover
-        # NOTE: After forking, update the org/repo below to your own fork.
         uses: nabarun-ngo/ngo-nabarun-templates/.github/actions/cucumber-discover-scenarios@main
         with:
           cucumber_tags: ${{ inputs.test_cucumber_tags }}
@@ -183,7 +181,6 @@ jobs:
       GITHUB_ACTOR: ${{ github.actor }}
     steps:
     - name: Setup test environment
-      # NOTE: After forking, update the org/repo below to your own fork.
       uses: nabarun-ngo/ngo-nabarun-templates/.github/actions/test-setup@main
       with:
         java_version: ${{ inputs.java_version }}
@@ -203,7 +200,6 @@ jobs:
 
     - name: Run Cucumber Tests
       id: run_tests
-      # NOTE: After forking, update the org/repo below to your own fork.
       uses: nabarun-ngo/ngo-nabarun-templates/.github/actions/cucumber-run-tests@main
       with:
         scenarios: ${{ steps.test_params.outputs.scenarios }}
@@ -246,14 +242,12 @@ jobs:
     steps:
       - name: Consolidate Test Results
         id: consolidate
-        # NOTE: After forking, update the org/repo below to your own fork.
         uses: nabarun-ngo/ngo-nabarun-templates/.github/actions/test-results-consolidation@main
         with:
           templates_repository: ${{ inputs.templates_repository }}
 
       - name: Manage Test Cycle Cache
         id: cache_manager
-        # NOTE: After forking, update the org/repo below to your own fork.
         uses: nabarun-ngo/ngo-nabarun-templates/.github/actions/test-cycle-cache-manager@main
         with:
           workflow_name: ${{ github.workflow }}
@@ -263,7 +257,6 @@ jobs:
 
       - name: Upload to QMetry
         id: qmetry_upload
-        # NOTE: After forking, update the org/repo below to your own fork.
         uses: nabarun-ngo/ngo-nabarun-templates/.github/actions/qmetry-upload-manager@main
         with:
           qmetry_api_key: ${{ secrets.qmetry_api_key }}
@@ -283,7 +276,6 @@ jobs:
 
       - name: Generate Result Links
         id: result_linker
-        # NOTE: After forking, update the org/repo below to your own fork.
         uses: nabarun-ngo/ngo-nabarun-templates/.github/actions/qmetry-result-linker@main
         with:
           qmetry_open_api_key: ${{ secrets.qmetry_open_api_key }}

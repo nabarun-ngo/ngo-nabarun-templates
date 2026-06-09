@@ -2,7 +2,8 @@ name: 'Allure Report Publisher'
 description: >
   Downloads parallel Allure results artifacts, restores trend history from the gh-pages
   branch (pruning entries older than keep_history_days), generates an Allure report,
-  and deploys it to GitHub Pages.
+  and deploys it into a subdirectory on GitHub Pages. Other files on gh-pages (e.g. a
+  manually maintained index.html or other report subdirectories) are left untouched.
 
 inputs:
   allure_results_artifact_pattern:
@@ -30,10 +31,16 @@ inputs:
     description: 'Allure CLI version to install (from GitHub releases). Must be 2.10 or newer for --name to take effect.'
     required: false
     default: '2.27.0'
+  allure_report_subdir:
+    description: >
+      Subdirectory name under the gh-pages root where the Allure report is published.
+      The root of GitHub Pages will serve a home page that links to this subdirectory.
+    required: false
+    default: 'allure-report'
 
 outputs:
   report_url:
-    description: 'URL of the published Allure report on GitHub Pages (https://<owner>.github.io/<repo>/)'
+    description: 'URL of the published Allure report on GitHub Pages (https://<owner>.github.io/<repo>/<allure_report_subdir>/)'
     value: ${{ steps.compute_url.outputs.report_url }}
 
 runs:
@@ -77,20 +84,38 @@ runs:
       shell: bash
       run: |
         echo "📂 Restoring Allure history from gh-pages..."
+        SUBDIR="${{ inputs.allure_report_subdir }}"
 
-        # Restore Allure history folder (trend data for the next report)
-        if [[ -d "gh-pages/history" ]]; then
+        # Prefer history from the subdirectory (new layout); fall back to root (legacy layout)
+        HISTORY_SRC=""
+        if [[ -d "gh-pages/${SUBDIR}/history" ]]; then
+          HISTORY_SRC="gh-pages/${SUBDIR}/history"
+          echo "ℹ️  Using history from subdirectory: ${HISTORY_SRC}"
+        elif [[ -d "gh-pages/history" ]]; then
+          HISTORY_SRC="gh-pages/history"
+          echo "ℹ️  Using history from legacy root location (will migrate to subdir on next deploy)"
+        fi
+
+        if [[ -n "$HISTORY_SRC" ]]; then
           mkdir -p allure-results/history
-          cp -r gh-pages/history/. allure-results/history/
+          cp -r "${HISTORY_SRC}/." allure-results/history/
           echo "✅ History folder restored"
         else
           echo "ℹ️  No existing history folder found (first run)"
           mkdir -p allure-results/history
         fi
 
-        # Restore timestamps sidecar (or initialise as empty array)
-        if [[ -f "gh-pages/history-dates.json" ]]; then
-          cp gh-pages/history-dates.json history-dates.json
+        # Prefer sidecar from subdirectory; fall back to root (legacy layout)
+        SIDECAR_SRC=""
+        if [[ -f "gh-pages/${SUBDIR}/history-dates.json" ]]; then
+          SIDECAR_SRC="gh-pages/${SUBDIR}/history-dates.json"
+        elif [[ -f "gh-pages/history-dates.json" ]]; then
+          SIDECAR_SRC="gh-pages/history-dates.json"
+          echo "ℹ️  Using history-dates.json from legacy root location"
+        fi
+
+        if [[ -n "$SIDECAR_SRC" ]]; then
+          cp "${SIDECAR_SRC}" history-dates.json
           echo "✅ history-dates.json restored ($(jq length history-dates.json) entries)"
         else
           echo "[]" > history-dates.json
@@ -191,14 +216,17 @@ runs:
         echo "✅ history-dates.json copied to allure-report/ ($(jq length allure-report/history-dates.json) entries)"
 
     # ── 7. Deploy to GitHub Pages ────────────────────────────────────────────
+    #   Only the Allure report subdirectory is written; everything else on
+    #   gh-pages (index.html, other report subdirs, etc.) is left untouched.
     - name: Deploy to GitHub Pages
       uses: peaceiris/actions-gh-pages@v4
       with:
         github_token: ${{ inputs.github_token }}
         publish_dir: allure-report
+        destination_dir: ${{ inputs.allure_report_subdir }}
         publish_branch: ${{ inputs.gh_pages_branch }}
         commit_message: 'ci: publish Allure report [run ${{ github.run_id }}]'
-        keep_files: false
+        keep_files: true
 
     # ── 8. Compute and expose the Pages URL ─────────────────────────────────
     - name: Compute report URL
@@ -207,16 +235,22 @@ runs:
       run: |
         OWNER="${GITHUB_REPOSITORY_OWNER}"
         REPO="${GITHUB_REPOSITORY#*/}"
-        URL="https://${OWNER}.github.io/${REPO}/"
-        echo "report_url=${URL}" >> "$GITHUB_OUTPUT"
-        echo "Allure report URL: ${URL}"
+        SUBDIR="${{ inputs.allure_report_subdir }}"
+        REPORT_URL="https://${OWNER}.github.io/${REPO}/${SUBDIR}/"
+        echo "report_url=${REPORT_URL}" >> "$GITHUB_OUTPUT"
+        echo "Allure report URL: ${REPORT_URL}"
 
     - name: Deployment summary
       shell: bash
       run: |
+        OWNER="${GITHUB_REPOSITORY_OWNER}"
+        REPO="${GITHUB_REPOSITORY#*/}"
+        SUBDIR="${{ inputs.allure_report_subdir }}"
         echo "--------------------------------------------"
         echo "✅ Allure report published to GitHub Pages"
         echo "  Branch       : ${{ inputs.gh_pages_branch }}"
+        echo "  Subdir       : ${SUBDIR}/"
+        echo "  Report URL   : https://${OWNER}.github.io/${REPO}/${SUBDIR}/"
         echo "  History kept : ${{ inputs.keep_history_days }} days"
         echo "  Run ID       : ${{ github.run_id }}"
         echo "--------------------------------------------"

@@ -280,7 +280,7 @@ jobs:
         run: echo "result=✅ GCR service ${{ inputs.service_name }} restarted successfully" >> "$GITHUB_OUTPUT"
 
       - name: Clean old versions
-        uses:  nabarun-ngo/ngo-nabarun-templates/.github/actions/gcp-clean-gcr-versions@main
+        uses: nabarun-ngo/ngo-nabarun-templates/.github/actions/gcp-clean-gcr-versions@main
         with:
           project_id: ${{ secrets.project_id }}
           service_name: ${{ inputs.service_name }}
