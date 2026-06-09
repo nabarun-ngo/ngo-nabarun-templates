@@ -217,7 +217,7 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: allure-results-${{ strategy.job-index }}
-        path: ${{ inputs.allure_results_dir }}
+        path: 'test/${{ inputs.allure_results_dir }}'
 
     - name: Show Tests Result
       shell: bash
