@@ -1,151 +1,179 @@
-name: Create Tag & Release 
+name: Create Tag & Release
+
 on:
   workflow_call:
-     inputs:
+    inputs:
       source_branch:
         required: true
         type: string
       pre_release_branches:
-         required: false
-         type: string
-         default: 'staging,stage'
+        required: false
+        type: string
+        default: 'staging,stage'
       release_branches:
-         required: false
-         type: string
-         default: 'master,main'
-     outputs:
+        required: false
+        type: string
+        default: 'master,main'
+      templates_repository:
+        description: >
+          Templates repository that contains scripts/generate-release-notes.sh
+          (org/repo format). Defaults to the repository this workflow lives in.
+        required: false
+        type: string
+        default: ''
+    outputs:
       tag_name:
         value: ${{ jobs.create_tag.outputs.tag_name }}
       stable_tag:
         value: ${{ jobs.promote_stable.outputs.stable_tag }}
-        
+
 permissions:
-      contents: write    
-      
+  contents: write
+
 jobs:
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # JOB 1 — Auto-bump version and push a tag (beta or stable)
+  # ──────────────────────────────────────────────────────────────────────────
   create_tag:
     name: Create Tag
     runs-on: ubuntu-latest
     outputs:
-      tag_name: ${{ steps.tag_version.outputs.new_tag }}
-      bump_type: ${{ steps.tag_version.outputs.release_type }}
-      changelog: ${{ steps.tag_version.outputs.changelog }}
+      tag_name:   ${{ steps.tag_version.outputs.new_tag }}
+      bump_type:  ${{ steps.tag_version.outputs.release_type }}
     steps:
       - name: Checkout repository with full history
         uses: actions/checkout@v4
         with:
           ref: ${{ inputs.source_branch }}
-          fetch-depth: 0  # ✅ Important for changelog
-      
+          fetch-depth: 0
+
       - name: Fetch all tags
-        run: git fetch --tags --force  # ✅ Ensures older tags are available
-      
+        run: git fetch --tags --force
+
       - name: Bump version and push tag
         id: tag_version
         uses: mathieudutour/github-tag-action@v6.2
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           pre_release_branches: ${{ inputs.pre_release_branches }}
-          release_branches: ${{ inputs.release_branches }}
+          release_branches:     ${{ inputs.release_branches }}
           append_to_pre_release_tag: beta
           default_bump: patch
           dry_run: false
-          
+
+      - name: Log created tag
+        run: |
+          echo "🏷️  Tag created  : ${{ steps.tag_version.outputs.new_tag }}"
+          echo "📈  Bump type    : ${{ steps.tag_version.outputs.release_type }}"
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # JOB 2 — Confirm / promote stable tag (runs only on release branches)
+  # ──────────────────────────────────────────────────────────────────────────
   promote_stable:
     name: Promote Pre-release to Stable
     runs-on: ubuntu-latest
     needs: create_tag
-    if: contains(inputs.release_branches, inputs.source_branch)
+    if: contains(format(',{0},', inputs.release_branches), format(',{0},', inputs.source_branch))
     outputs:
-      stable_tag: ${{ steps.sync_latest.outputs.stable_tag }}
-      stable_changelog: ${{ steps.generate_changelog.outputs.changelog }}
+      stable_tag: ${{ steps.resolve_stable.outputs.stable_tag }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.source_branch }}  # ✅ Checkout the source branch
-          fetch-depth: 0  # ✅ Full history for changelog
-      
+          ref: ${{ inputs.source_branch }}
+          fetch-depth: 0
+
       - name: Fetch all tags
         run: git fetch --tags --force
-        
-      - name: Promote latest beta or fallback to latest stable
-        id: sync_latest
+
+      - name: Resolve stable tag
+        id: resolve_stable
         run: |
-          # Find the latest beta tag if exists
-          latest_beta=$(git tag --list "v*.*.*-beta.*" --sort=-version:refname | head -n 1)
-          
-          if [ -n "$latest_beta" ]; then
-            echo "Found beta tag: $latest_beta"
-            stable_version=$(echo "$latest_beta" | sed 's/-beta.*//')
+          # Prefer the tag just created by the previous job
+          STABLE="${{ needs.create_tag.outputs.tag_name }}"
+
+          if [ -z "$STABLE" ] || echo "$STABLE" | grep -q "beta"; then
+            echo "ℹ️  create_tag produced a pre-release tag or no tag — looking for latest beta to promote..."
+
+            latest_beta=$(git tag --list "v*.*.*-beta.*" --sort=-version:refname | head -n 1)
+            if [ -n "$latest_beta" ]; then
+              STABLE=$(echo "$latest_beta" | sed 's/-beta\..*//')
+              echo "Derived stable version $STABLE from $latest_beta"
+            else
+              STABLE=$(git tag --list "v*.*.*" --sort=-version:refname | grep -v "beta" | head -n 1)
+              echo "Fallback: using latest non-beta tag $STABLE"
+            fi
+
+            if [ -z "$STABLE" ]; then
+              echo "⚠️  No version tags found — nothing to promote."
+              echo "stable_tag=" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+
+            # Create the stable tag if it does not exist yet
+            if ! git rev-parse "$STABLE" >/dev/null 2>&1; then
+              echo "🏷️  Creating stable tag $STABLE on HEAD..."
+              git tag "$STABLE"
+              git push origin "$STABLE"
+            else
+              echo "✅ Stable tag $STABLE already exists"
+            fi
           else
-            echo "No beta tag found, using latest non-beta tag."
-            stable_version=$(git tag --list "v*.*.*" --sort=-version:refname | grep -v "beta" | head -n 1)
+            echo "✅ Using stable tag from create_tag job: $STABLE"
           fi
-          
-          if [ -z "$stable_version" ]; then
-            echo "No version tags found. Nothing to promote."
-            echo "stable_tag=" >> $GITHUB_OUTPUT
-            exit 0
-          fi
-          
-          # Create stable tag if it doesn't exist yet
-          if ! git rev-parse "$stable_version" >/dev/null 2>&1; then
-            echo "Creating new stable release: $stable_version"
-            git tag "$stable_version"
-            git push origin "$stable_version"
-          else
-            echo "Stable release already exists: $stable_version"
-          fi
-          
-          echo "stable_tag=$stable_version" >> $GITHUB_OUTPUT
-          
-      - name: Generate changelog for stable release
-        id: generate_changelog
-        run: |
-          stable_tag="${{ steps.sync_latest.outputs.stable_tag }}"
-          
-          if [ -z "$stable_tag" ]; then
-            echo "changelog=No changes" >> $GITHUB_OUTPUT
-            exit 0
-          fi
-          
-          # Find the previous stable tag (non-beta)
-          previous_tag=$(git tag --list "v*.*.*" --sort=-version:refname | grep -v "beta" | grep -v "^${stable_tag}$" | head -n 1)
-          
-          if [ -z "$previous_tag" ]; then
-            echo "No previous stable tag found, generating full changelog"
-            changelog=$(git log --pretty=format:"- %s (%h)" "$stable_tag" 2>/dev/null || echo "Initial release")
-          else
-            echo "Generating changelog from $previous_tag to $stable_tag"
-            changelog=$(git log --pretty=format:"- %s (%h)" "${previous_tag}..${stable_tag}" 2>/dev/null || echo "No changes")
-          fi
-          
-          # Escape for GitHub Actions output
-          echo "changelog<<EOF" >> $GITHUB_OUTPUT
-          echo "$changelog" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
-          
+
+          echo "stable_tag=$STABLE" >> "$GITHUB_OUTPUT"
+          echo "🚀 Stable tag resolved: $STABLE"
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # JOB 3 — Build comprehensive release notes and publish the GitHub Release
+  # ──────────────────────────────────────────────────────────────────────────
   create_release:
     name: Create GitHub Release
     runs-on: ubuntu-latest
     needs: [create_tag, promote_stable]
     if: needs.promote_stable.outputs.stable_tag != ''
     steps:
-      - name: Checkout repository
+      - name: Checkout application repo at stable tag
         uses: actions/checkout@v4
         with:
-          ref: ${{ needs.promote_stable.outputs.stable_tag }}  # ✅ Checkout at the stable tag
-          fetch-depth: 0  # ✅ Full history
-          
-      - name: Create GitHub Release
+          ref: ${{ needs.promote_stable.outputs.stable_tag }}
+          fetch-depth: 0
+
+      - name: Fetch all tags
+        run: git fetch --tags --force
+
+      - name: Checkout templates repo (for release-notes script)
+        uses: actions/checkout@v4
+        with:
+          # NOTE: After forking, update this to your own fork via templates_repository input.
+          repository: ${{ inputs.templates_repository || 'nabarun-ngo/ngo-nabarun-templates' }}
+          path: _templates
+          sparse-checkout: |
+            scripts/generate-release-notes.sh
+          sparse-checkout-cone-mode: false
+
+      - name: Generate release notes
+        run: |
+          chmod +x _templates/scripts/generate-release-notes.sh
+          bash _templates/scripts/generate-release-notes.sh \
+            "${{ needs.promote_stable.outputs.stable_tag }}" \
+            release_notes.md
+
+      - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          tag_name: ${{ needs.promote_stable.outputs.stable_tag }}  
-          name: Release ${{ needs.promote_stable.outputs.stable_tag }}
-          body: |
-            **Changes:**
-            ${{ needs.promote_stable.outputs.stable_changelog }}
-          draft: false
-          prerelease: false
+          tag_name:              ${{ needs.promote_stable.outputs.stable_tag }}
+          name:                  "🚀 Release ${{ needs.promote_stable.outputs.stable_tag }}"
+          body_path:             release_notes.md
+          draft:                 false
+          prerelease:            false
+          generate_release_notes: false
+
+      - name: Release summary
+        run: |
+          echo "🎉 GitHub Release published!"
+          echo "  Tag : ${{ needs.promote_stable.outputs.stable_tag }}"
+          echo "  URL : ${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ needs.promote_stable.outputs.stable_tag }}"

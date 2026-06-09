@@ -96,7 +96,7 @@ jobs:
       - name: Install Mongo Tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y mongo-tools
+          sudo apt-get install -y mongodb-database-tools
           
       - name: Check if import file exists
         id: check_import
@@ -188,53 +188,27 @@ jobs:
           LOGS=$(node "${{ inputs.migration-script-path }}" 2>&1)
           EXIT_CODE=$?
           echo "$LOGS"
-          
+
           if [ $EXIT_CODE -ne 0 ]; then
             echo "Migration failed with exit code $EXIT_CODE"
             exit $EXIT_CODE
           fi
-          
-          # Export logs as output
+
+          # Export logs as output (encode special characters)
           LOGS="${LOGS//'%'/'%25'}"
-          LOGS="${LOGS//
-          
+          LOGS="${LOGS//$'\n'/'%0A'}"
+          LOGS="${LOGS//$'\r'/'%0D'}"
+          echo "logs=$LOGS" >> $GITHUB_OUTPUT
+
       - name: Migration Summary
         if: steps.check_migration.outputs.exists == 'true' && success()
         run: |
-          echo "✅ Migration completed successfully!"
+          echo "Migration completed successfully!"
           echo "Source: MongoDB Atlas"
           echo "Target: PostgreSQL"
-          
+
       - name: Migration Failed
         if: steps.check_migration.outputs.exists == 'true' && failure()
         run: |
-          echo "❌ Migration failed. Please check the logs above for details."
-          exit 1\n'/'%0A'}"
-          LOGS="${LOGS//
-          
-      - name: Migration Summary
-        if: steps.check_migration.outputs.exists == 'true' && success()
-        run: |
-          echo "✅ Migration completed successfully!"
-          echo "Source: MongoDB Atlas"
-          echo "Target: PostgreSQL (${{ secrets.postgres-host }}:${{ secrets.postgres-port || '5432' }}/${{ inputs.postgres-database }})"
-          
-      - name: Migration Failed
-        if: steps.check_migration.outputs.exists == 'true' && failure()
-        run: |
-          echo "❌ Migration failed. Please check the logs above for details."
-          exit 1\r'/'%0D'}"
-          echo "logs=$LOGS" >> $GITHUB_OUTPUT
-          
-      - name: Migration Summary
-        if: steps.check_migration.outputs.exists == 'true' && success()
-        run: |
-          echo "✅ Migration completed successfully!"
-          echo "Source: MongoDB Atlas"
-          echo "Target: PostgreSQL (${{ secrets.postgres-host }}:${{ secrets.postgres-port || '5432' }}/${{ inputs.postgres-database }})"
-          
-      - name: Migration Failed
-        if: steps.check_migration.outputs.exists == 'true' && failure()
-        run: |
-          echo "❌ Migration failed. Please check the logs above for details."
+          echo "Migration failed. Please check the logs above for details."
           exit 1

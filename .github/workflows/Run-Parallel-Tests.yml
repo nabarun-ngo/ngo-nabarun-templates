@@ -1,4 +1,10 @@
 name: Run Automated Test [Parallel]
+# ─────────────────────────────────────────────────────────────────────────────
+# USAGE: call this workflow from your own repo.
+#   uses: YOUR_ORG/YOUR_TEMPLATES_REPO/.github/workflows/Run-Parallel-Tests.yml@v1
+# After forking, run scripts/setup-for-org.sh to replace all internal
+# action references with your own org/repo.
+# ─────────────────────────────────────────────────────────────────────────────
 on:
   workflow_call:
     inputs:
@@ -39,13 +45,14 @@ on:
         type: string
         default: 'target'
       repository_name:
-        description: 'Test repository name (org/repo-name)'
+        description: 'Test repository name (format: org/repo-name)'
         required: true
         type: string
       branch_name:
+        description: 'Test repository branch to checkout'
         required: false
         type: string
-        default: 'stage'
+        default: 'main'
       test_cycle:
         required: false
         type: string
@@ -58,15 +65,20 @@ on:
         required: true
         type: string
       qmetry_execution_url:
-        description: 'QMetry Execution URL with placeholder'
+        description: 'QMetry Execution URL with {executionId} placeholder'
         required: true
         type: string
       qmetry_project_id:
         description: 'QMetry Project Id'
         required: true
         type: string
+      qmetry_base_url:
+        description: 'QMetry API base URL (e.g. https://qtmcloud.qmetry.com)'
+        required: false
+        type: string
+        default: 'https://qtmcloud.qmetry.com'
       jira_url:
-        description: 'JIRA/Atlassian base URL'
+        description: 'JIRA/Atlassian base URL (e.g. https://yourcompany.atlassian.net)'
         required: true
         type: string
       upload_result:
@@ -76,7 +88,17 @@ on:
       additional_plugins:
         required: false
         type: string
-        
+      runner_os:
+        description: 'OS for the test runner jobs (e.g. windows-latest, ubuntu-latest, macos-latest)'
+        required: false
+        type: string
+        default: 'ubuntu-latest'
+      templates_repository:
+        description: 'Templates repository (org/repo). Defaults to the repo this workflow lives in.'
+        required: false
+        type: string
+        default: ''
+
     secrets:
       repo_token:
         required: false
@@ -118,7 +140,7 @@ on:
       test_summary:
         description: 'Test execution summary information'
         value: 'Environment: ${{ inputs.test_env }} | Type: ${{ inputs.test_type }} | Tags: ${{ inputs.test_cucumber_tags }} | Scenarios: ${{ jobs.discover-scenarios.outputs.scenario_count }} | UI Version: ${{ inputs.app_ui_version }} | Server Version: ${{ inputs.app_server_version }}'
-        
+
 jobs:
   discover-scenarios:
     name: 'Discover Test'
@@ -132,14 +154,17 @@ jobs:
       GITHUB_ACTOR: ${{ github.actor }}
     steps:
       - name: Setup test environment
+        # NOTE: After forking, update the org/repo below to your own fork.
         uses: nabarun-ngo/ngo-nabarun-templates/.github/actions/test-setup@main
         with:
           java_version: ${{ inputs.java_version }}
           test_repository: ${{ inputs.repository_name }}
           test_branch: ${{ inputs.branch_name }}
+          templates_repository: ${{ inputs.templates_repository }}
 
       - name: Discover test scenarios
         id: discover
+        # NOTE: After forking, update the org/repo below to your own fork.
         uses: nabarun-ngo/ngo-nabarun-templates/.github/actions/cucumber-discover-scenarios@main
         with:
           cucumber_tags: ${{ inputs.test_cucumber_tags }}
@@ -148,7 +173,7 @@ jobs:
   run_test:
     needs: discover-scenarios
     name: 'Run Test'
-    runs-on: windows-latest
+    runs-on: ${{ inputs.runner_os }}
     timeout-minutes: 60
     strategy:
       fail-fast: false
@@ -158,11 +183,13 @@ jobs:
       GITHUB_ACTOR: ${{ github.actor }}
     steps:
     - name: Setup test environment
+      # NOTE: After forking, update the org/repo below to your own fork.
       uses: nabarun-ngo/ngo-nabarun-templates/.github/actions/test-setup@main
       with:
         java_version: ${{ inputs.java_version }}
         test_repository: ${{ inputs.repository_name }}
         test_branch: ${{ inputs.branch_name }}
+        templates_repository: ${{ inputs.templates_repository }}
 
     - name: Process test scenarios
       id: test_params
@@ -176,6 +203,7 @@ jobs:
 
     - name: Run Cucumber Tests
       id: run_tests
+      # NOTE: After forking, update the org/repo below to your own fork.
       uses: nabarun-ngo/ngo-nabarun-templates/.github/actions/cucumber-run-tests@main
       with:
         scenarios: ${{ steps.test_params.outputs.scenarios }}
@@ -200,12 +228,12 @@ jobs:
         echo "Test Status: $TEST_STATUS"
         echo "Exit Code: ${{ steps.run_tests.outputs.exit_code }}"
         if [ "$TEST_STATUS" = "FAILED" ]; then
-          echo "❌ Test execution failed"
+          echo "Test execution failed"
           exit 1
         else
-          echo "✅ Test execution completed successfully"
+          echo "Test execution completed successfully"
         fi
-          
+
   upload_test_result:
     name: 'Upload Test Results'
     if: ${{ inputs.upload_result == true &&  needs.run_test.result != 'cancelled' && always() }}
@@ -218,22 +246,28 @@ jobs:
     steps:
       - name: Consolidate Test Results
         id: consolidate
+        # NOTE: After forking, update the org/repo below to your own fork.
         uses: nabarun-ngo/ngo-nabarun-templates/.github/actions/test-results-consolidation@main
-        
-      - name: Manage Test Cycle Cache  
+        with:
+          templates_repository: ${{ inputs.templates_repository }}
+
+      - name: Manage Test Cycle Cache
         id: cache_manager
+        # NOTE: After forking, update the org/repo below to your own fork.
         uses: nabarun-ngo/ngo-nabarun-templates/.github/actions/test-cycle-cache-manager@main
         with:
           workflow_name: ${{ github.workflow }}
           run_id: ${{ github.run_id }}
           run_attempt: ${{ github.run_attempt }}
           test_type: ${{ inputs.test_type }}
-          
+
       - name: Upload to QMetry
         id: qmetry_upload
+        # NOTE: After forking, update the org/repo below to your own fork.
         uses: nabarun-ngo/ngo-nabarun-templates/.github/actions/qmetry-upload-manager@main
         with:
           qmetry_api_key: ${{ secrets.qmetry_api_key }}
+          qmetry_base_url: ${{ inputs.qmetry_base_url }}
           test_environment: ${{ inputs.test_env }}
           test_cycle_summary: ${{ steps.cache_manager.outputs.test_cycle_summary }}
           test_cycle_folder: ${{ inputs.test_cycle_folder }}
@@ -245,17 +279,18 @@ jobs:
           run_attempt: ${{ github.run_attempt }}
           results_file_path: ${{ steps.consolidate.outputs.merged_file_path }}
           cached_test_cycle: ${{ steps.cache_manager.outputs.cached_test_cycle }}
-          
+          templates_repository: ${{ inputs.templates_repository }}
+
       - name: Generate Result Links
-        id: result_linker  
+        id: result_linker
+        # NOTE: After forking, update the org/repo below to your own fork.
         uses: nabarun-ngo/ngo-nabarun-templates/.github/actions/qmetry-result-linker@main
         with:
           qmetry_open_api_key: ${{ secrets.qmetry_open_api_key }}
+          qmetry_base_url: ${{ inputs.qmetry_base_url }}
           qmetry_project_id: ${{ inputs.qmetry_project_id }}
           app_execution_url: ${{ inputs.qmetry_execution_url }}
           jira_url: ${{ inputs.jira_url }}
           test_cycle_summary: ${{ steps.cache_manager.outputs.test_cycle_summary }}
           workflow_name: ${{ github.workflow }}
           run_id: ${{ github.run_id }}
-      
-      

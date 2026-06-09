@@ -98,7 +98,7 @@ runs:
                   found_by_name=true
                   break
                 fi
-              done < <(find .github/workflows -name '*.yml' -o -name '*.yaml' -print0 2>/dev/null)
+              done < <(find .github/workflows \( -name '*.yml' -o -name '*.yaml' \) -print0 2>/dev/null)
             fi
           fi
           

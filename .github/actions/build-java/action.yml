@@ -51,7 +51,7 @@ outputs:
     value: ${{ steps.build.outputs.duration }}
   maven_version:
     description: 'Maven version used for the build'
-    value: ${{ steps.setup.outputs.maven_version }}
+    value: ${{ steps.verify.outputs.maven_version }}
 
 runs:
   using: 'composite'
@@ -87,14 +87,8 @@ runs:
       with:
         distribution: 'temurin'
         java-version: ${{ inputs.java_version }}
-        server-id: ${{ inputs.server_id }} # 
-        settings-path: ${{ github.workspace }} # location for the settings.xml file
-#to be removed
-    - name: Upload Maven settings.xml for review
-      uses: actions/upload-artifact@v4
-      with:
-        name: maven-settings
-        path: ${{ github.workspace }}/settings.xml
+        server-id: ${{ inputs.server_id }}
+        settings-path: ${{ github.workspace }}
 
     - name: Cache Maven dependencies
       if: inputs.enable_cache == 'true'
@@ -107,6 +101,7 @@ runs:
           ${{ inputs.cache_key_prefix }}-${{ runner.os }}-
 
     - name: Verify Maven installation
+      id: verify
       shell: bash
       run: |
         echo "🔍 Verifying Maven installation..."
@@ -144,7 +139,11 @@ runs:
         BUILD_START=$(date +%s)
         
         # Build the full Maven command
-        MVN_CMD="mvn ${{ inputs.maven_command }} -s $GITHUB_WORKSPACE/settings.xml"
+        MVN_CMD="mvn ${{ inputs.maven_command }}"
+        # Use custom settings.xml only when setup-java generated one
+        if [[ -f "$GITHUB_WORKSPACE/settings.xml" ]]; then
+          MVN_CMD="$MVN_CMD -s $GITHUB_WORKSPACE/settings.xml"
+        fi
         if [[ -n "${{ inputs.maven_options }}" ]]; then
           MVN_CMD="$MVN_CMD ${{ inputs.maven_options }}"
         fi

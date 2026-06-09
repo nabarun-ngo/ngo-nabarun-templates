@@ -6,16 +6,16 @@ inputs:
     required: false
     default: '22'
   templates_repository:
-    description: 'Templates repository'
+    description: 'Templates repository (org/repo). Defaults to the repository this action lives in.'
     required: false
-    default: 'nabarun-ngo/ngo-nabarun-templates'
+    default: ''
   test_repository:
     description: 'Test repository'
     required: true
   test_branch:
     description: 'Test repository branch'
     required: false
-    default: 'master'
+    default: 'main'
   templates_path:
     description: 'Path to checkout templates repository'
     required: false
@@ -39,15 +39,27 @@ outputs:
     value: ${{ inputs.java_version }}
   cache_hit:
     description: 'Whether Maven cache was hit'
-    value: ${{ steps.cache_maven.outputs.cache-hit }}
+    value: ${{ steps.setup_java.outputs.cache-hit }}
 
 runs:
   using: 'composite'
   steps:
+    - name: Initialize test environment setup
+      shell: bash
+      run: |
+        echo "⚙️ Test Environment Setup"
+        echo "  Java version        : ${{ inputs.java_version }}"
+        echo "  Templates repo      : ${{ inputs.templates_repository || github.action_repository }}"
+        echo "  Templates path      : ${{ inputs.templates_path }}"
+        echo "  Test repo           : ${{ inputs.test_repository }}"
+        echo "  Test branch         : ${{ inputs.test_branch }}"
+        echo "  Test path           : ${{ inputs.test_path }}"
+        echo "  Maven cache enabled : ${{ inputs.enable_maven_cache }}"
+
     - name: Checkout template repository
       uses: actions/checkout@v4
       with:
-        repository: ${{ inputs.templates_repository }}
+        repository: ${{ inputs.templates_repository || github.action_repository }}
         path: ${{ inputs.templates_path }}
 
     - name: Checkout test repository
@@ -58,6 +70,7 @@ runs:
         path: ${{ inputs.test_path }}
 
     - name: Set up Java
+      id: setup_java
       uses: actions/setup-java@v3
       with:
         java-version: ${{ inputs.java_version }}
@@ -80,3 +93,11 @@ runs:
           echo "⚠️ Package manager not found, jq may need to be installed manually"
         fi
         echo "✅ System dependencies setup completed"
+
+    - name: Setup summary
+      shell: bash
+      run: |
+        echo "✅ Test environment ready"
+        echo "  Java    : ${{ inputs.java_version }}"
+        echo "  Templates → ${{ inputs.templates_path }}/"
+        echo "  Tests   → ${{ inputs.test_path }}/ (branch: ${{ inputs.test_branch }})"

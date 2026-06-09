@@ -49,7 +49,10 @@ runs:
       with:
         node-version: ${{ inputs.node_version }}
         cache: ${{ inputs.cache_dependencies == 'true' && inputs.package_manager || '' }}
-        cache-dependency-path: ${{ inputs.working_directory }}/package-lock.json
+        cache-dependency-path: |
+          ${{ inputs.working_directory }}/package-lock.json
+          ${{ inputs.working_directory }}/yarn.lock
+          ${{ inputs.working_directory }}/pnpm-lock.yaml
         check-latest: true
         
     - name: Install Doppler CLI
@@ -109,10 +112,9 @@ runs:
       shell: bash
       working-directory: ${{ inputs.working_directory }}
       run: |
-        echo "Doppler keys"
-        doppler secrets --only-names
-        echo "Downloading and creating .env file"
+        echo "🔐 Fetching secrets from Doppler and creating .env file..."
         doppler secrets download --no-file --format env > .env
+        echo "✅ .env file created from Doppler secrets"
         echo "🚀 Running command with Doppler: ${{ inputs.command }}"
         doppler run -- ${{ inputs.command }}
         echo "✅ Command completed successfully"

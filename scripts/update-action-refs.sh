@@ -1,64 +1,30 @@
-#!/bin/bash
-
-# =============================================================================
-# UPDATE ACTION REFERENCES SCRIPT
-# =============================================================================
-# This script updates all composite action references in GitHub workflows
+#!/usr/bin/env bash
+# update-action-refs.sh
+#
+# DEPRECATED — use scripts/setup-for-org.sh instead.
+# setup-for-org.sh replaces all internal org/repo references across the
+# entire templates library in one shot, rather than only Deploy-GCP-v2.yml.
+#
+# This wrapper is kept for backwards compatibility.
 # Usage: ./update-action-refs.sh [NEW_REPO] [NEW_REF]
 # Example: ./update-action-refs.sh "my-org/my-templates" "v1.0.0"
 
 set -euo pipefail
 
-# Configuration
-WORKFLOW_FILE=".github/workflows/Deploy-GCP-v2.yml"
-CURRENT_REPO="nabarun-ngo/ngo-nabarun-templates"
-CURRENT_REF="main"
+NEW_REPO="${1:-}"
+NEW_REF="${2:-main}"
 
-# Get new values from command line or use current values as default
-NEW_REPO="${1:-$CURRENT_REPO}"
-NEW_REF="${2:-$CURRENT_REF}"
-
-echo "🔄 Updating composite action references..."
-echo "📂 Workflow file: $WORKFLOW_FILE"
-echo "🔄 From: $CURRENT_REPO/.github/actions/gcp-*@$CURRENT_REF"
-echo "✅ To:   $NEW_REPO/.github/actions/gcp-*@$NEW_REF"
-echo ""
-
-# Check if workflow file exists
-if [[ ! -f "$WORKFLOW_FILE" ]]; then
-  echo "❌ Workflow file not found: $WORKFLOW_FILE"
+if [[ -z "$NEW_REPO" ]]; then
+  echo "Usage: update-action-refs.sh <ORG/REPO> [REF]"
+  echo ""
+  echo "Consider using scripts/setup-for-org.sh instead — it updates ALL files,"
+  echo "not just Deploy-GCP-v2.yml."
   exit 1
 fi
 
-# Create backup
-BACKUP_FILE="${WORKFLOW_FILE}.backup.$(date +%Y%m%d_%H%M%S)"
-cp "$WORKFLOW_FILE" "$BACKUP_FILE"
-echo "💾 Backup created: $BACKUP_FILE"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ORG="${NEW_REPO%%/*}"
+REPO="${NEW_REPO##*/}"
 
-# Update repository references
-echo "🔄 Updating repository references..."
-sed -i.tmp "s|${CURRENT_REPO}/\.github/actions/gcp-|${NEW_REPO}/.github/actions/gcp-|g" "$WORKFLOW_FILE"
-
-# Update ref/branch references  
-echo "🔄 Updating branch/tag references..."
-sed -i.tmp "s|@${CURRENT_REF}|@${NEW_REF}|g" "$WORKFLOW_FILE"
-
-# Update the configuration comment block
-echo "🔄 Updating configuration documentation..."
-sed -i.tmp "s|ACTION_REPO: '${CURRENT_REPO}'|ACTION_REPO: '${NEW_REPO}'|g" "$WORKFLOW_FILE"
-sed -i.tmp "s|ACTION_REF: '${CURRENT_REF}'|ACTION_REF: '${NEW_REF}'|g" "$WORKFLOW_FILE"
-sed -i.tmp "s|# Example: ${CURRENT_REPO}/.github/actions/gcp-promote-gae-traffic@${CURRENT_REF}|# Example: ${NEW_REPO}/.github/actions/gcp-promote-gae-traffic@${NEW_REF}|g" "$WORKFLOW_FILE"
-
-# Clean up temporary file
-rm -f "${WORKFLOW_FILE}.tmp"
-
-echo "✅ Action references updated successfully!"
-echo ""
-echo "📋 Summary of changes:"
-echo "  Repository: $CURRENT_REPO → $NEW_REPO"
-echo "  Branch/Tag: $CURRENT_REF → $NEW_REF"
-echo ""
-echo "🔍 Updated action references:"
-grep -n "uses.*${NEW_REPO}.*gcp-.*@${NEW_REF}" "$WORKFLOW_FILE" | head -10 || echo "  (No references found - this might indicate an issue)"
-echo ""
-echo "⚡ To revert changes, use: cp $BACKUP_FILE $WORKFLOW_FILE"
+echo "Delegating to setup-for-org.sh ..."
+bash "$SCRIPT_DIR/setup-for-org.sh" "$ORG" "$REPO" "$NEW_REF"

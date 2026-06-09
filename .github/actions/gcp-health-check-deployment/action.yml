@@ -85,6 +85,7 @@ runs:
           echo "health_check_passed=true" >> "$GITHUB_OUTPUT"
         else
           echo "⚠️ Health check failed after $MAX_ATTEMPTS attempts"
-          echo "🔍 This doesn't necessarily mean deployment failed - the app might still be starting"
+          echo "🔍 Check logs above for curl error details"
           echo "health_check_passed=false" >> "$GITHUB_OUTPUT"
+          exit 1
         fi

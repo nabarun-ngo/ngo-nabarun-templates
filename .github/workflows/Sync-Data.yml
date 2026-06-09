@@ -18,6 +18,11 @@ on:
         required: false
         type: string
         default : 'main'
+      templates_repository:
+        description: 'Templates repository (org/repo) for Auth0/Firebase scripts. Defaults to the repo this workflow lives in when empty.'
+        required: false
+        type: string
+        default: ''
       
     outputs:
       # Auth0 sync outputs
@@ -74,7 +79,7 @@ jobs:
     - name: Checkout repository | Branch ${{ inputs.branch_name }}
       uses: actions/checkout@v4
       with:
-        repository: nabarun-ngo/ngo-nabarun-templates
+        repository: ${{ inputs.templates_repository || github.repository }}
         ref: ${{ inputs.branch_name }}
     
     - name: Install Auth0 Deploy CLI
@@ -90,9 +95,12 @@ jobs:
     
     - name: Create JSON files from secret
       shell: bash
+      env:
+        AUTH0_SOURCE_CONFIG: ${{ secrets.auth0_source_config }}
+        AUTH0_DEST_CONFIG: ${{ secrets.auth0_dest_config }}
       run: |
-        echo '${{ secrets.auth0_source_config }}' > auth0-source.json
-        echo '${{ secrets.auth0_dest_config }}' > auth0-target.json
+        printf '%s' "$AUTH0_SOURCE_CONFIG" > auth0-source.json
+        printf '%s' "$AUTH0_DEST_CONFIG" > auth0-target.json
     
     - name: Export from Source Tenant
       id: export-auth0
@@ -179,8 +187,10 @@ jobs:
         run: sudo apt-get install jq -y
 
       - name: Authenticate with Firebase (Source)
+        env:
+          FIREBASE_SA_SOURCE: ${{ secrets.firebase_service_account_source }}
         run: |
-          echo '${{ secrets.firebase_service_account_source }}' > $HOME/source-firebase.json
+          printf '%s' "$FIREBASE_SA_SOURCE" > $HOME/source-firebase.json
           gcloud auth activate-service-account --key-file=$HOME/source-firebase.json
           export ACCESS_TOKEN=$(gcloud auth print-access-token)
           echo "ACCESS_TOKEN=$ACCESS_TOKEN" >> $GITHUB_ENV
@@ -215,8 +225,10 @@ jobs:
           retention-days: 7  # Keep the file for 7 days
 
       - name: Authenticate with Firebase (Target)
+        env:
+          FIREBASE_SA_TARGET: ${{ secrets.firebase_service_account_target }}
         run: |
-          echo '${{ secrets.firebase_service_account_target }}' > $HOME/target-firebase.json
+          printf '%s' "$FIREBASE_SA_TARGET" > $HOME/target-firebase.json
           gcloud auth activate-service-account --key-file=$HOME/target-firebase.json
           export ACCESS_TOKEN=$(gcloud auth print-access-token)
           echo "ACCESS_TOKEN=$ACCESS_TOKEN" >> $GITHUB_ENV

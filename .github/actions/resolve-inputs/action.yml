@@ -131,7 +131,19 @@ runs:
       run: |
         set -euo pipefail
         merged_json='${{ steps.resolve.outputs.variables }}'
+        echo "📤 Exporting merged variables to GITHUB_ENV..."
+        EXPORTED=0
+        while IFS='=' read -r key value; do
+          echo "  ✅ $key=$value"
+          EXPORTED=$((EXPORTED + 1))
+        done < <(echo "$merged_json" | jq -r 'to_entries | map("\(.key)=\(.value|tostring)") | .[]')
         echo "$merged_json" | jq -r 'to_entries | map("\(.key)=\(.value|tostring)") | .[]' >> "$GITHUB_ENV"
         echo "variables=$merged_json" >> "$GITHUB_OUTPUT"
+        echo "✅ $EXPORTED variable(s) exported"
 
-   
+    - name: Summary
+      shell: bash
+      run: |
+        echo "📊 Resolve Inputs Summary"
+        echo "  Trigger type : ${{ steps.resolve.outputs.trigger_type }}"
+        echo "  Variables    : ${{ steps.final.outputs.variables }}"

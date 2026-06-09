@@ -6,9 +6,19 @@ on:
     inputs:
       # Repository inputs
       tag_name:
-        required: true
+        description: >
+          Git tag to deploy. Leave empty or pass "latest" to automatically
+          resolve the most recent tag reachable from source_branch.
+        required: false
         type: string
-        description: 'Git tag or branch to deploy'
+        default: 'latest'
+      source_branch:
+        description: >
+          Branch used to find the latest tag when tag_name is empty or "latest".
+          Only tags whose commits are ancestors of this branch are considered.
+        required: false
+        type: string
+        default: 'main'
       repo_name:
         required: true
         type: string
@@ -140,7 +150,7 @@ on:
         value: ${{ (jobs.build_and_push.result == 'success' && jobs.deploy_to_cloudrun.result == 'success') && 'success' || 'failure' }}
       deployment_summary:
         description: 'Deployment summary information'
-        value: 'Tag: ${{ inputs.tag_name }} | Service: ${{ inputs.service_name }} | Region: ${{ inputs.region }} | Environment: ${{ inputs.environment_name }}'
+        value: 'Tag: ${{ jobs.build_and_push.outputs.resolved_tag }} | Service: ${{ inputs.service_name }} | Region: ${{ inputs.region }} | Environment: ${{ inputs.environment_name }}'
     
     secrets:
       GCP_PROJECT_ID:
@@ -169,12 +179,23 @@ jobs:
       image_tag: ${{ steps.image_meta.outputs.tag }}
       image_name: ${{ steps.image_meta.outputs.name }}
       docker_image: ${{ steps.image_meta.outputs.full }}
+      resolved_tag: ${{ steps.resolve_tag.outputs.resolved_tag }}
     
     steps:
-      - name: Checkout repository | Tag ${{ inputs.tag_name }}
+      - name: Resolve deploy tag
+        id: resolve_tag
+        # NOTE: After forking, update the org/repo below to your own fork.
+        uses: nabarun-ngo/ngo-nabarun-templates/.github/actions/resolve-deploy-tag@main
+        with:
+          tag_name: ${{ inputs.tag_name }}
+          repository: '${{ inputs.repo_owner_name }}/${{ inputs.repo_name }}'
+          source_branch: ${{ inputs.source_branch }}
+          token: ${{ secrets.REPO_TOKEN }}
+
+      - name: Checkout repository | Tag ${{ steps.resolve_tag.outputs.resolved_tag }}
         uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.tag_name }}
+          ref: ${{ steps.resolve_tag.outputs.resolved_tag }}
           repository: '${{ inputs.repo_owner_name }}/${{ inputs.repo_name }}'
           fetch-depth: 0
           token: ${{ secrets.REPO_TOKEN }}
@@ -197,7 +218,7 @@ jobs:
         run: |
           REGISTRY="${{ inputs.registry }}"
           IMAGE_NAME="${REGISTRY}/${{ inputs.image_name }}"
-          IMAGE_TAG="${{ inputs.tag_name }}"
+          IMAGE_TAG="${{ steps.resolve_tag.outputs.resolved_tag }}"
           
           echo "name=${IMAGE_NAME}" >> $GITHUB_OUTPUT
           echo "tag=${IMAGE_TAG}" >> $GITHUB_OUTPUT
@@ -230,7 +251,7 @@ jobs:
             --tag ${IMAGE_NAME}:latest \
             --label "org.opencontainers.image.source=https://github.com/${{ inputs.repo_owner_name }}/${{ inputs.repo_name }}" \
             --label "org.opencontainers.image.revision=${{ github.sha }}" \
-            --label "org.opencontainers.image.version=${{ inputs.tag_name }}" \
+            --label "org.opencontainers.image.version=${{ steps.resolve_tag.outputs.resolved_tag }}" \
             .
           
           echo "📦 Pushing Docker image..."
@@ -297,8 +318,8 @@ jobs:
           environment: ${{ inputs.environment_name }}
           repo: ${{ inputs.repo_name }}
           owner: ${{ inputs.repo_owner_name }}
-          ref: ${{ inputs.tag_name }}
-          description: 'Deploying ${{ inputs.tag_name }} to Cloud Run'
+          ref: ${{ needs.build_and_push.outputs.resolved_tag }}
+          description: 'Deploying ${{ needs.build_and_push.outputs.resolved_tag }} to Cloud Run'
             
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v2
@@ -330,7 +351,7 @@ jobs:
             --cpu ${{ inputs.cpu }} \
             --timeout ${{ inputs.timeout }} \
             --service-account ${SERVICE_ACCOUNT_EMAIL} \
-            --set-env-vars "DOPPLER_TOKEN=${{ secrets.DOPPLER_TOKEN }},DOPPLER_PROJECT=${{ inputs.doppler_project }},DOPPLER_CONFIG=${{ inputs.doppler_config }},VERSION=${{ inputs.tag_name }},NODE_ENV=${{ inputs.environment_name }}" \
+            --set-env-vars "DOPPLER_TOKEN=${{ secrets.DOPPLER_TOKEN }},DOPPLER_PROJECT=${{ inputs.doppler_project }},DOPPLER_CONFIG=${{ inputs.doppler_config }},VERSION=${{ needs.build_and_push.outputs.resolved_tag }},NODE_ENV=${{ inputs.environment_name }}" \
             --project ${{ secrets.GCP_PROJECT_ID }} \
             --quiet
 

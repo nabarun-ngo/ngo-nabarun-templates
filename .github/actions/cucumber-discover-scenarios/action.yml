@@ -42,11 +42,16 @@ runs:
       shell: bash
       working-directory: ${{ inputs.test_directory }}
       run: |
-        echo "🔍 Discovering scenarios with tag: ${{ inputs.cucumber_tags }}..."
-        
+        # Normalize tag: ensure it always has a leading '@' so the Maven
+        # filter and the jq selector use the same format.
+        RAW_TAG="${{ inputs.cucumber_tags }}"
+        NORMALIZED_TAG="${RAW_TAG#@}"           # strip leading @ if present
+        NORMALIZED_TAG="@${NORMALIZED_TAG}"     # always add exactly one @
+        echo "Discovering scenarios with tag: ${NORMALIZED_TAG}..."
+
         # Run Cucumber dry-run with JSON plugin
         mvn clean test -q -B -e \
-          -Dcucumber.filter.tags="${{ inputs.cucumber_tags }}" \
+          -Dcucumber.filter.tags="${NORMALIZED_TAG}" \
           -Dcucumber.execution.dry-run=true \
           -Dcucumber.plugin=json:target/cucumber.json
         
@@ -66,23 +71,29 @@ runs:
       shell: bash
       working-directory: ${{ inputs.test_directory }}
       run: |
-        echo "📊 Creating test execution matrix..."
-        
-        # Check if jq is available
+        echo "Creating test execution matrix..."
+
         if ! command -v jq &> /dev/null; then
-          echo "❌ ERROR: jq is not installed or not available"
+          echo "ERROR: jq is not installed or not available"
           exit 1
         fi
-        
-        # Extract scenario line numbers by tag
-        SCENARIOS=$(jq -r \
-          --arg tag "${{ inputs.cucumber_tags }}" '
+
+        # Normalize tag: strip leading '@', then always add exactly one '@'.
+        # This makes the jq selector match regardless of whether the caller
+        # included the '@' prefix or not.
+        RAW_TAG="${{ inputs.cucumber_tags }}"
+        NORMALIZED_TAG="@${RAW_TAG#@}"
+
+        # Extract scenario line numbers by normalized tag.
+        # No -r flag: keeps SCENARIOS as a JSON array so jq 'length' works correctly.
+        SCENARIOS=$(jq \
+          --arg tag "$NORMALIZED_TAG" '
           [ .[] as $feature
             | $feature.elements[]
             | select(.tags[]?.name == $tag)
             | "\($feature.uri):\(.line)"
           ]' target/cucumber.json)
-        
+
         COUNT=$(echo "$SCENARIOS" | jq 'length')
         echo "📈 Total scenarios found: $COUNT"
         

@@ -38,18 +38,22 @@ inputs:
     description: 'Cached test cycle ID for reuse (optional)'
     required: false
     default: ''
-  templates_repository:
-    description: 'Templates repository containing scripts'
+  qmetry_base_url:
+    description: 'QMetry API base URL (e.g. https://qtmcloud.qmetry.com). Override to use a different QMetry instance or TMS.'
     required: false
-    default: 'nabarun-ngo/ngo-nabarun-templates'
+    default: 'https://qtmcloud.qmetry.com'
+  templates_repository:
+    description: 'Templates repository containing scripts (org/repo). Defaults to the repo this action lives in.'
+    required: false
+    default: ''
     
 outputs:
   upload_url:
     description: 'Generated QMetry upload URL'
-    value: ${{ steps.generate_upload_url.outputs.upload_url }}
+    value: ${{ steps.process_response.outputs.upload_url }}
   tracking_id:
     description: 'QMetry import tracking ID'
-    value: ${{ steps.generate_upload_url.outputs.tracking_id }}
+    value: ${{ steps.process_response.outputs.tracking_id }}
   upload_status:
     description: 'Status of file upload'
     value: ${{ steps.upload_file.outputs.status }}
@@ -118,14 +122,14 @@ runs:
     - name: Checkout templates repository
       uses: actions/checkout@v4
       with:
-        repository: ${{ inputs.templates_repository }}
+        repository: ${{ inputs.templates_repository || github.action_repository }}
         path: 'qmetry-templates'
         
     - name: Generate QMetry upload URL
       id: generate_upload_url
       uses: fjogeleit/http-request-action@v1
       with:
-        url: 'https://qtmcloud.qmetry.com/rest/api/automation/importresult'
+        url: '${{ inputs.qmetry_base_url }}/rest/api/automation/importresult'
         method: POST
         customHeaders: '{"Content-Type": "application/json","apiKey":"${{ inputs.qmetry_api_key }}"}'
         data: |
@@ -183,6 +187,7 @@ runs:
 
           
     - name: Process upload URL response
+      id: process_response
       shell: bash
       run: |
         echo "🔗 Processing QMetry upload URL response..."
@@ -211,13 +216,16 @@ runs:
         echo "  🔗 Upload URL: $UPLOAD_URL"
         echo "  🏷️ Tracking ID: $TRACKING_ID"
         
+        echo "upload_url=$UPLOAD_URL" >> $GITHUB_OUTPUT
+        echo "tracking_id=$TRACKING_ID" >> $GITHUB_OUTPUT
+        
     - name: Upload results file to QMetry
       id: upload_file
       shell: bash
       run: |
         echo "📤 Uploading results file to QMetry..."
         
-        UPLOAD_URL='${{ fromJson(steps.generate_upload_url.outputs.response).url }}'
+        UPLOAD_URL='${{ steps.process_response.outputs.upload_url }}'
         RESULTS_FILE="${{ inputs.results_file_path }}"
         
         echo "🚀 Starting file upload:"
@@ -261,7 +269,7 @@ runs:
       run: |
         echo "⏳ Waiting for QMetry import to complete..."
         
-        TRACKING_ID='${{ fromJson(steps.generate_upload_url.outputs.response).trackingId }}'
+        TRACKING_ID='${{ steps.process_response.outputs.tracking_id }}'
         WAIT_SCRIPT="qmetry-templates/scripts/wait-for-qmetry-report-import.sh"
         
         echo "📊 Import tracking:"
@@ -280,7 +288,7 @@ runs:
         chmod +x "$WAIT_SCRIPT"
         
         echo "🕐 Starting import wait process..."
-        if bash "$WAIT_SCRIPT" "$TRACKING_ID" "${{ inputs.qmetry_api_key }}"; then
+        if bash "$WAIT_SCRIPT" "$TRACKING_ID" "${{ inputs.qmetry_api_key }}" "${{ inputs.qmetry_base_url }}"; then
           echo "✅ QMetry import completed successfully"
           echo "import_status=completed" >> $GITHUB_OUTPUT
         else
@@ -295,7 +303,7 @@ runs:
         echo "📊 QMetry Upload Manager Summary:"
         echo "  ✅ Status: Success"
         echo "  🔗 Upload URL: Generated successfully"
-        echo "  🏷️ Tracking ID: ${{ fromJson(steps.generate_upload_url.outputs.response).trackingId }}"
+        echo "  🏷️ Tracking ID: ${{ steps.process_response.outputs.tracking_id }}"
         echo "  📤 Upload Status: ${{ steps.upload_file.outputs.status }}"
         echo "  📥 Import Status: ${{ steps.wait_import.outputs.import_status }}"
         echo "  🎯 Test Results: Successfully uploaded to QMetry"

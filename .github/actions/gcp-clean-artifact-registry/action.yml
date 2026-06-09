@@ -21,6 +21,10 @@ runs:
       name: Clean Artifact Registry repositories
       shell: bash
       run: |
+        echo "🧹 GCP Clean Artifact Registry"
+        echo "  Project : ${{ inputs.project_id }}"
+        echo ""
+
         echo "🧹 Cleaning up Artifact Registry repositories..."
         
         PROJECT="${{ inputs.project_id }}"

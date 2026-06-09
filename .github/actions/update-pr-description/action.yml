@@ -1,32 +1,66 @@
 name: 'Update PR Description'
-description: 'Fetch commit messages and update a pull request description using GitHub CLI.'
+description: 'Fetches commit messages from a pull request and rewrites its description using GitHub CLI.'
+
+inputs:
+  pr_number:
+    description: "Pull Request number to update"
+    required: true
+  repository:
+    description: "Repository in owner/repo format (e.g. my-org/my-app)"
+    required: true
+  token:
+    description: "GitHub token with pull-request write access"
+    required: true
+
 runs:
   using: "composite"
   steps:
+    - name: Initialize
+      shell: bash
+      run: |
+        echo "📝 Update PR Description"
+        echo "  Repository : ${{ inputs.repository }}"
+        echo "  PR Number  : #${{ inputs.pr_number }}"
+
     - name: Install GitHub CLI
+      shell: bash
       run: |
-        sudo apt update
-        sudo apt install gh -y
+        echo "📦 Installing GitHub CLI..."
+        sudo apt update -qq
+        sudo apt install -y gh
+        echo "✅ GitHub CLI installed: $(gh --version | head -n1)"
+
     - name: Authenticate GitHub CLI
+      shell: bash
       run: |
+        echo "🔐 Authenticating GitHub CLI..."
         echo "${{ inputs.token }}" | gh auth login --with-token
-    - name: Fetch Commit Messages
+        echo "✅ GitHub CLI authenticated"
+
+    - name: Fetch commit messages
+      shell: bash
       run: |
+        echo "🔍 Fetching commit messages for PR #${{ inputs.pr_number }} in ${{ inputs.repository }}..."
         REPO="${{ inputs.repository }}"
         PR_NUMBER="${{ inputs.pr_number }}"
-        gh pr view "$PR_NUMBER" --repo "$REPO" --json commits --jq '.commits[].messageHeadline' > cat.md
-    - name: Update PR Description
+        gh pr view "$PR_NUMBER" --repo "$REPO" --json commits \
+          --jq '.commits[].messageHeadline' > pr_body.md
+        COMMIT_COUNT=$(wc -l < pr_body.md | tr -d ' ')
+        echo "✅ Fetched $COMMIT_COUNT commit message(s)"
+        echo "📋 Commit messages:"
+        cat pr_body.md
+
+    - name: Update PR description
+      shell: bash
       run: |
+        echo "✏️ Updating PR #${{ inputs.pr_number }} description..."
         REPO="${{ inputs.repository }}"
         PR_NUMBER="${{ inputs.pr_number }}"
-        gh pr edit "$PR_NUMBER" --repo "$REPO" --body-file cat.md
-inputs:
-  pr_number:
-    description: "Pull Request Number"
-    required: true
-  repository:
-    description: "Repository (owner/repo)"
-    required: true
-  token:
-    description: "GitHub Token"
-    required: true
+        gh pr edit "$PR_NUMBER" --repo "$REPO" --body-file pr_body.md
+        echo "✅ PR description updated successfully"
+
+    - name: Cleanup
+      shell: bash
+      run: |
+        rm -f pr_body.md
+        echo "🎉 PR description update complete for #${{ inputs.pr_number }} in ${{ inputs.repository }}"

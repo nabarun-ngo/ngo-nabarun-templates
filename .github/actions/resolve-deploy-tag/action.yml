@@ -1,0 +1,94 @@
+name: 'Resolve Deploy Tag'
+description: >
+  Returns the effective tag to deploy. If tag_name is provided (and not "latest"),
+  it is used as-is. Otherwise the latest git tag that is reachable from
+  source_branch is returned — guaranteeing that only tags whose commits are
+  ancestors of that branch are considered.
+
+inputs:
+  tag_name:
+    description: >
+      Explicit tag to deploy. Leave empty or pass "latest" to auto-resolve
+      the most recent tag on source_branch.
+    required: false
+    default: 'latest'
+  repository:
+    description: 'Repository to resolve the tag from (format: org/repo)'
+    required: true
+  source_branch:
+    description: >
+      Branch to search for the latest tag when auto-resolving.
+      Only tags whose commits are ancestors of this branch tip are considered,
+      so tags from unmerged branches are never picked up.
+    required: false
+    default: 'main'
+  token:
+    description: 'GitHub token for private repository access'
+    required: false
+    default: ''
+
+outputs:
+  resolved_tag:
+    description: 'The tag that will be deployed'
+    value: ${{ steps.resolve.outputs.resolved_tag }}
+  was_auto_resolved:
+    description: '"true" when the tag was auto-resolved from branch, "false" when explicitly provided'
+    value: ${{ steps.resolve.outputs.was_auto_resolved }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Resolve deploy tag
+      id: resolve
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        TAG_INPUT="${{ inputs.tag_name }}"
+
+        # ── Explicit tag provided ────────────────────────────────────────────
+        if [[ -n "$TAG_INPUT" && "$TAG_INPUT" != "latest" ]]; then
+          echo "Using explicitly provided tag: $TAG_INPUT"
+          echo "resolved_tag=$TAG_INPUT" >> "$GITHUB_OUTPUT"
+          echo "was_auto_resolved=false" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+
+        # ── Auto-resolve: find latest tag on source_branch ──────────────────
+        REPO="${{ inputs.repository }}"
+        BRANCH="${{ inputs.source_branch }}"
+
+        echo "Auto-resolving latest tag for $REPO on branch '$BRANCH'..."
+
+        TMP_DIR=$(mktemp -d)
+        trap 'rm -rf "$TMP_DIR"' EXIT
+
+        cd "$TMP_DIR"
+        git init -q
+
+        # Support private repos via token
+        if [[ -n "${{ inputs.token }}" ]]; then
+          git remote add origin \
+            "https://x-access-token:${{ inputs.token }}@github.com/${REPO}.git"
+        else
+          git remote add origin "https://github.com/${REPO}.git"
+        fi
+
+        # Fetch the branch tip + all tags.
+        # --depth=200 is enough to cover recent release history while staying fast;
+        # increase if your repo has more than ~200 commits between tags.
+        git fetch --tags --depth=200 origin "$BRANCH"
+
+        # --merged FETCH_HEAD: only tags reachable from the fetched branch tip.
+        # --sort=-creatordate:  most recent tag first (by tagger/committer date).
+        LATEST_TAG=$(git tag --sort=-creatordate --merged FETCH_HEAD | head -n1)
+
+        if [[ -z "$LATEST_TAG" ]]; then
+          echo "ERROR: No tag found reachable from branch '$BRANCH' in '$REPO'." >&2
+          echo "       Ensure at least one git tag exists that is an ancestor of '$BRANCH'." >&2
+          exit 1
+        fi
+
+        echo "Resolved tag: $LATEST_TAG  (latest tag merged into '$BRANCH' in $REPO)"
+        echo "resolved_tag=$LATEST_TAG" >> "$GITHUB_OUTPUT"
+        echo "was_auto_resolved=true" >> "$GITHUB_OUTPUT"
