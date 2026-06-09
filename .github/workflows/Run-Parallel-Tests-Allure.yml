@@ -127,7 +127,7 @@ permissions:
 
 jobs:
   discover-scenarios:
-    name: 'Discover Test'
+    name: 'Discover Tests'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     outputs:
@@ -142,7 +142,6 @@ jobs:
         with:
           repository: ${{ inputs.templates_repo }}
           path: templates
-          ref: ${{ github.workflow_sha }}
 
       - name: Setup test environment
         uses: ./templates/.github/actions/test-setup
@@ -161,7 +160,7 @@ jobs:
 
   run_test:
     needs: discover-scenarios
-    name: 'Run Test'
+    name: 'Run Tests'
     runs-on: ${{ inputs.runner_os }}
     timeout-minutes: 60
     strategy:
@@ -176,7 +175,6 @@ jobs:
       with:
           repository: ${{ inputs.templates_repo }}
           path: templates
-          ref: ${{ github.workflow_sha }}
           
     - name: Setup test environment
       uses: ./templates/.github/actions/test-setup
@@ -267,7 +265,6 @@ jobs:
         with:
           repository: ${{ inputs.templates_repo }}
           path: templates
-          ref: ${{ github.workflow_sha }}
           
       - name: Publish Allure Report to GitHub Pages
         id: publish
