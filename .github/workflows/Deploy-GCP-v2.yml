@@ -442,12 +442,13 @@ jobs:
   deploy_to_gcp:
     name: 'Deploy to GCP App Engine'
     runs-on: ubuntu-latest
-    needs: [build_application, run_db_migration]
+    needs: [build_application] #run_db_migration
     timeout-minutes: 60
     if: |
       always() &&
-      needs.build_application.result == 'success' &&
-      (needs.run_db_migration.result == 'success' || needs.run_db_migration.result == 'skipped')
+      needs.build_application.result == 'success' 
+# It's okay if we run 'App Deploy' & 'Migration' parallel
+# && (needs.run_db_migration.result == 'success' || needs.run_db_migration.result == 'skipped')
       
     environment: ${{ inputs.environment_name }}
     outputs:
