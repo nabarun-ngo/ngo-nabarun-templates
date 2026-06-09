@@ -52,7 +52,7 @@ on:
         description: 'OS for the test runner jobs (e.g. ubuntu-latest, windows-latest, macos-latest)'
         required: false
         type: string
-        default: 'ubuntu-latest'
+        default: 'windows-latest'
       templates_repository:
         description: 'Templates repository (org/repo). Defaults to the repo this workflow lives in.'
         required: false
