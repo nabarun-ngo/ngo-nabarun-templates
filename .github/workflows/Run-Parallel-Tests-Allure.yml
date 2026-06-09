@@ -86,6 +86,11 @@ on:
         required: false
         type: number
         default: 30
+      templates_repo:
+         description: 'Repository where Templates exists'
+         default: 'nabarun-ngo/ngo-nabarun-templates'
+         required: false
+         type: string
 
     secrets:
       repo_token:
@@ -132,8 +137,15 @@ jobs:
       GITHUB_TOKEN: ${{ secrets.repo_token }}
       GITHUB_ACTOR: ${{ github.actor }}
     steps:
+      - name: Checkout Templates Repository
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ inputs.templates_repo }}
+          path: templates
+          ref: ${{ github.workflow_sha }}
+
       - name: Setup test environment
-        uses: nabarun-ngo/ngo-nabarun-templates/.github/actions/test-setup@stage
+        uses: ./templates/.github/actions/test-setup
         with:
           java_version: ${{ inputs.java_version }}
           test_repository: ${{ inputs.repository_name }}
@@ -142,7 +154,7 @@ jobs:
 
       - name: Discover test scenarios
         id: discover
-        uses: nabarun-ngo/ngo-nabarun-templates/.github/actions/cucumber-discover-scenarios@stage
+        uses: ./templates/.github/actions/cucumber-discover-scenarios
         with:
           cucumber_tags: ${{ inputs.test_cucumber_tags }}
           max_scenarios_per_job: ${{ inputs.max_tests_per_matrix }}
@@ -159,8 +171,15 @@ jobs:
       GITHUB_TOKEN: ${{ secrets.repo_token }}
       GITHUB_ACTOR: ${{ github.actor }}
     steps:
+    - name: Checkout Templates Repository
+      uses: actions/checkout@v4
+      with:
+          repository: ${{ inputs.templates_repo }}
+          path: templates
+          ref: ${{ github.workflow_sha }}
+          
     - name: Setup test environment
-      uses: nabarun-ngo/ngo-nabarun-templates/.github/actions/test-setup@stage
+      uses: ./templates/.github/actions/test-setup
       with:
         java_version: ${{ inputs.java_version }}
         test_repository: ${{ inputs.repository_name }}
@@ -195,7 +214,7 @@ jobs:
 
     - name: Run Cucumber Tests
       id: run_tests
-      uses: nabarun-ngo/ngo-nabarun-templates/.github/actions/cucumber-run-tests@stage
+      uses: ./templates/.github/actions/cucumber-run-tests
       with:
         scenarios: ${{ steps.test_params.outputs.scenarios }}
         job_index: ${{ strategy.job-index }}
@@ -217,7 +236,7 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: allure-results-${{ strategy.job-index }}
-        path: ${{ inputs.allure_results_dir }}
+        path: 'test/${{ inputs.allure_results_dir }}'
 
     - name: Show Tests Result
       shell: bash
@@ -243,9 +262,16 @@ jobs:
     outputs:
       report_url: ${{ steps.publish.outputs.report_url }}
     steps:
+      - name: Checkout Templates Repository
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ inputs.templates_repo }}
+          path: templates
+          ref: ${{ github.workflow_sha }}
+          
       - name: Publish Allure Report to GitHub Pages
         id: publish
-        uses: nabarun-ngo/ngo-nabarun-templates/.github/actions/allure-publish@stage
+        uses: ./templates/.github/actions/allure-publish
         with:
           allure_results_artifact_pattern: allure-results-*
           gh_pages_branch: ${{ inputs.gh_pages_branch }}
