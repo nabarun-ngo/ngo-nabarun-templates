@@ -1,17 +1,45 @@
 name: 'Prepare Node.js Artifact'
-description: 'Prepares a production-ready Node.js artifact with optimized dependencies and tools'
+description: 'Prepares a production-ready Node.js deploy artifact for any app layout (single-repo, monorepo, subfolder)'
 
 inputs:
   artifact_pattern:
-    description: 'Pattern to match build artifacts (e.g., dist, build)'
+    description: 'Legacy: pattern to match build artifacts at repo root (e.g., dist). Prefer artifact_dist_path + app_root.'
     required: false
     default: ''
+  app_root:
+    description: 'Subdirectory containing the deployable app package (relative to workspace root)'
+    required: false
+    default: '.'
+  artifact_dist_path:
+    description: 'Build output directory relative to app_root'
+    required: false
+    default: 'dist'
+  artifact_include:
+    description: 'Comma-separated extra paths relative to app_root to copy into artifact'
+    required: false
+    default: 'prisma'
+  artifact_extra_files:
+    description: 'Comma-separated source:dest copies (source may be anywhere in repo, dest relative to artifact root)'
+    required: false
+    default: ''
+  node_modules_strategy:
+    description: 'app_local | root_hoisted | skip'
+    required: false
+    default: 'app_local'
+  workspace_packages_glob:
+    description: 'Glob for workspace packages to sync into artifact node_modules (e.g. packages/*)'
+    required: false
+    default: ''
+  output_dir:
+    description: 'Final artifact directory name'
+    required: false
+    default: 'deployment-artifact'
   package_manager:
     description: 'Package manager to use (npm, yarn, pnpm)'
     required: false
     default: 'npm'
   include_node_modules:
-    description: 'Include node_modules in artifact'
+    description: 'Include node_modules in artifact (legacy; use node_modules_strategy instead)'
     required: false
     default: 'true'
   install_doppler_cli:
@@ -23,7 +51,7 @@ inputs:
     required: false
     default: 'latest'
   include_prisma_schema:
-    description: 'Include Prisma schema for migrations'
+    description: 'Include Prisma schema when using legacy artifact_pattern mode'
     required: false
     default: 'true'
 
@@ -35,148 +63,177 @@ outputs:
 runs:
   using: "composite"
   steps:
-    - name: Prepare production deployment artifact
+    - name: Prepare deployment artifact
       shell: bash
       run: |
-        echo "📦 Preparing production-only deployment artifact..."
-        
-        # Create deployment directory
-        mkdir -p deployment-artifact
-        
-        # Copy build output
-        PATTERN="${{ inputs.artifact_pattern }}"
-        if [ -z "$PATTERN" ]; then
-          if [ -d "dist" ]; then
-            PATTERN="dist"
-          elif [ -d "build" ]; then
-            PATTERN="build"
-          else
-            echo "❌ No build output found"
-            exit 1
-          fi
-        fi
-        
-        echo "📁 Copying build output from: $PATTERN"
-        cp -r "$PATTERN" deployment-artifact/
-        
-        # Copy package files
-        echo "📄 Copying package files..."
-        cp package.json deployment-artifact/
-        [ -f package-lock.json ] && cp package-lock.json deployment-artifact/ || true
-        [ -f yarn.lock ] && cp yarn.lock deployment-artifact/ || true
-        [ -f pnpm-lock.yaml ] && cp pnpm-lock.yaml deployment-artifact/ || true
-        
-        # Copy Prisma schema if it exists (needed for migrations)
-        if [ "${{ inputs.include_prisma_schema }}" == "true" ] && [ -d "prisma" ]; then
-          echo "📋 Copying Prisma schema..."
-          mkdir -p deployment-artifact/prisma
-          cp -r prisma/* deployment-artifact/prisma/
-          echo "✅ Prisma schema copied"
+        set -euo pipefail
+
+        APP_ROOT="${{ inputs.app_root }}"
+        APP_ROOT="${APP_ROOT:-.}"
+        APP_ROOT="${APP_ROOT/#.\//}"
+        if [[ "$APP_ROOT" == "." ]]; then
+          APP_PREFIX=""
+        else
+          APP_PREFIX="${APP_ROOT}/"
         fi
 
-         # Copy .gcloudignore if it exists
-        if [ -f ".gcloudignore" ]; then
-          echo "📝 Copying .gcloudignore..."
-          cp .gcloudignore deployment-artifact/
-        fi
-        
-        # .env files may contain secrets — skip in CI; inject via Doppler at runtime instead
-        # Only copy if they exist and deployment truly needs them as fallback
-        if [ -f ".env" ]; then
-          echo "⚠️ WARNING: .env file found — skipping copy to avoid leaking secrets in artifact"
-        fi
-        if [ -f ".env.production" ]; then
-          echo "⚠️ WARNING: .env.production file found — skipping copy to avoid leaking secrets in artifact"
-        fi
-        
-        # Install production dependencies only
-        if [ "${{ inputs.include_node_modules }}" == "true" ]; then
-          echo "📦 Installing production dependencies only..."
-          cd deployment-artifact
-          
-          case "${{ inputs.package_manager }}" in
-            npm)
-              npm ci --omit=dev --ignore-scripts
-              ;;
-            yarn)
-              yarn install --production --frozen-lockfile --ignore-scripts
-              ;;
-            pnpm)
-              pnpm install --prod --frozen-lockfile --ignore-scripts
-              ;;
-          esac
-          
-          # Ensure Prisma client is generated if Prisma is present
-          if [ -d "prisma" ] && [ -d "node_modules" ]; then
-            echo "🔄 Ensuring Prisma client is generated..."
-            if command -v npx &> /dev/null; then
-              npx prisma generate 2>/dev/null || echo "⚠️ Prisma generate skipped (might not be needed)"
-            fi
+        OUTPUT_DIR="${{ inputs.output_dir }}"
+        DIST_REL="${{ inputs.artifact_dist_path }}"
+        DIST_SRC="${APP_PREFIX}${DIST_REL}"
+        STRATEGY="${{ inputs.node_modules_strategy }}"
+        LEGACY_PATTERN="${{ inputs.artifact_pattern }}"
+
+        echo "Preparing artifact: app_root=$APP_ROOT dist=$DIST_SRC strategy=$STRATEGY output=$OUTPUT_DIR"
+
+        rm -rf "$OUTPUT_DIR"
+        mkdir -p "$OUTPUT_DIR"
+
+        # Legacy mode: artifact_pattern at repo root without app_root customization
+        if [[ -n "$LEGACY_PATTERN" && "$APP_ROOT" == "." && "$DIST_REL" == "dist" && "$STRATEGY" == "app_local" && -z "${{ inputs.artifact_extra_files }}" ]]; then
+          PATTERN="$LEGACY_PATTERN"
+          if [[ -z "$PATTERN" ]]; then
+            if [[ -d "dist" ]]; then PATTERN="dist"; elif [[ -d "build" ]]; then PATTERN="build"; else echo "No build output found"; exit 1; fi
           fi
-          
-          cd ..
-          
-          # Show size comparison
-          echo "📊 Size comparison:"
-          echo "Full node_modules: $(du -sh node_modules 2>/dev/null | cut -f1 || echo 'N/A')"
-          echo "Production node_modules: $(du -sh deployment-artifact/node_modules 2>/dev/null | cut -f1 || echo 'N/A')"
+          cp -r "$PATTERN" "$OUTPUT_DIR/"
+          cp package.json "$OUTPUT_DIR/"
+          [ -f package-lock.json ] && cp package-lock.json "$OUTPUT_DIR/" || true
+          [ -f yarn.lock ] && cp yarn.lock "$OUTPUT_DIR/" || true
+          [ -f pnpm-lock.yaml ] && cp pnpm-lock.yaml "$OUTPUT_DIR/" || true
+          if [[ "${{ inputs.include_prisma_schema }}" == "true" && -d "prisma" ]]; then
+            mkdir -p "$OUTPUT_DIR/prisma"
+            cp -r prisma/* "$OUTPUT_DIR/prisma/"
+          fi
+          [ -f ".gcloudignore" ] && cp .gcloudignore "$OUTPUT_DIR/" || true
+          if [[ "${{ inputs.include_node_modules }}" == "true" && "$STRATEGY" != "skip" ]]; then
+            cd "$OUTPUT_DIR"
+            case "${{ inputs.package_manager }}" in
+              npm) npm ci --omit=dev --ignore-scripts ;;
+              yarn) yarn install --production --frozen-lockfile --ignore-scripts ;;
+              pnpm) pnpm install --prod --frozen-lockfile --ignore-scripts ;;
+            esac
+            if [[ -d "prisma" && -d "node_modules" ]]; then
+              npx prisma generate 2>/dev/null || true
+            fi
+            cd ..
+          fi
+        else
+          # Generic layout-aware staging
+          if [[ ! -d "$DIST_SRC" ]]; then
+            echo "Build output not found: $DIST_SRC" >&2
+            ls -la "${APP_PREFIX}" || true
+            exit 1
+          fi
+
+          cp -r "$DIST_SRC" "$OUTPUT_DIR/dist"
+
+          if [[ -f "${APP_PREFIX}package.json" ]]; then
+            cp "${APP_PREFIX}package.json" "$OUTPUT_DIR/"
+          else
+            cp package.json "$OUTPUT_DIR/"
+          fi
+          [ -f "${APP_PREFIX}package-lock.json" ] && cp "${APP_PREFIX}package-lock.json" "$OUTPUT_DIR/" || \
+            [ -f package-lock.json ] && cp package-lock.json "$OUTPUT_DIR/" || true
+
+          IFS=',' read -ra INCLUDES <<< "${{ inputs.artifact_include }}"
+          for item in "${INCLUDES[@]}"; do
+            item="$(echo "$item" | xargs)"
+            [[ -z "$item" ]] && continue
+            src="${APP_PREFIX}${item}"
+            if [[ -f "$src" ]]; then
+              cp "$src" "$OUTPUT_DIR/$(basename "$item")"
+            elif [[ -d "$src" ]]; then
+              mkdir -p "$OUTPUT_DIR/$(basename "$item")"
+              cp -r "$src"/* "$OUTPUT_DIR/$(basename "$item")/"
+            else
+              echo "Warning: artifact_include path not found: $src" >&2
+            fi
+          done
+
+          if [[ -n "${{ inputs.artifact_extra_files }}" ]]; then
+            IFS=',' read -ra EXTRA <<< "${{ inputs.artifact_extra_files }}"
+            for pair in "${EXTRA[@]}"; do
+              pair="$(echo "$pair" | xargs)"
+              [[ -z "$pair" ]] && continue
+              src="${pair%%:*}"
+              dest="${pair#*:}"
+              if [[ ! -f "$src" ]]; then
+                echo "artifact_extra_files source not found: $src" >&2
+                exit 1
+              fi
+              mkdir -p "$OUTPUT_DIR/$(dirname "$dest")"
+              cp "$src" "$OUTPUT_DIR/$dest"
+              chmod +x "$OUTPUT_DIR/$dest" 2>/dev/null || true
+            done
+          fi
+
+          [ -f ".gcloudignore" ] && cp .gcloudignore "$OUTPUT_DIR/" || true
+          [ -f "${APP_PREFIX}.gcloudignore" ] && cp "${APP_PREFIX}.gcloudignore" "$OUTPUT_DIR/" || true
+
+          if [[ "$STRATEGY" == "skip" ]]; then
+            echo "Skipping node_modules"
+          elif [[ "$STRATEGY" == "root_hoisted" ]]; then
+            if [[ -d "node_modules" ]]; then
+              echo "Copying hoisted root node_modules..."
+              cp -r node_modules "$OUTPUT_DIR/"
+            fi
+            GLOB="${{ inputs.workspace_packages_glob }}"
+            if [[ -n "$GLOB" ]]; then
+              for pkg_dir in $GLOB; do
+                [[ -d "$pkg_dir" ]] || continue
+                PKG_NAME=$(node -p "require('./${pkg_dir}/package.json').name")
+                PKG_DEST="$OUTPUT_DIR/node_modules/${PKG_NAME}"
+                mkdir -p "$PKG_DEST"
+                cp "${pkg_dir}/package.json" "$PKG_DEST/"
+                if [[ -d "${pkg_dir}/dist" ]]; then
+                  mkdir -p "$PKG_DEST/dist"
+                  cp -r "${pkg_dir}/dist"/* "$PKG_DEST/dist/"
+                fi
+                echo "Synced workspace package: $PKG_NAME"
+              done
+            fi
+          else
+            cd "$OUTPUT_DIR"
+            case "${{ inputs.package_manager }}" in
+              npm) npm ci --omit=dev --ignore-scripts ;;
+              yarn) yarn install --production --frozen-lockfile --ignore-scripts ;;
+              pnpm) pnpm install --prod --frozen-lockfile --ignore-scripts ;;
+            esac
+            if [[ -d "prisma" && -d "node_modules" ]]; then
+              npx prisma generate 2>/dev/null || true
+            fi
+            cd ..
+          fi
         fi
 
     - name: Install Doppler CLI in artifact
       if: inputs.install_doppler_cli == 'true'
       shell: bash
       run: |
-        echo "🔐 Installing Doppler CLI..."
-        cd deployment-artifact
-        
-        # Create bin directory
+        set -euo pipefail
+        OUTPUT_DIR="${{ inputs.output_dir }}"
+        cd "$OUTPUT_DIR"
         mkdir -p bin
-        
-        # Download and install Doppler CLI
         if [ "${{ inputs.doppler_cli_version }}" == "latest" ]; then
-          echo "Downloading latest Doppler CLI..."
           curl -Ls --tlsv1.2 --proto "=https" --retry 3 https://cli.doppler.com/install.sh | sh -s -- --no-install --no-package-manager
         else
-          echo "Downloading Doppler CLI version ${{ inputs.doppler_cli_version }}..."
           curl -Ls --tlsv1.2 --proto "=https" --retry 3 https://cli.doppler.com/install.sh | sh -s -- --no-install --no-package-manager --version ${{ inputs.doppler_cli_version }}
         fi
-        
-        # Move doppler binary to bin directory
         mv doppler bin/
         chmod +x bin/doppler
-        
-        # Verify installation
         ./bin/doppler --version
-        
-        echo "✅ Doppler CLI installed successfully"
         cd ..
 
     - name: Verify artifact contents
       shell: bash
       run: |
-        echo "📋 Verifying artifact contents..."
-        cd deployment-artifact
-        
-        echo "✅ Contents of deployment-artifact:"
-        ls -la
-        
-        if [ -d "prisma" ]; then
-          echo "✅ Prisma directory present:"
-          ls -la prisma/
-        fi
-        
-        if [ -d "node_modules" ]; then
-          echo "✅ node_modules present (size: $(du -sh node_modules | cut -f1))"
-        fi
-        
-        if [ -d "bin" ] && [ -f "bin/doppler" ]; then
-          echo "✅ Doppler CLI present:"
-          ./bin/doppler --version
-        fi
-        
-        cd ..
+        OUTPUT_DIR="${{ inputs.output_dir }}"
+        echo "Artifact contents ($OUTPUT_DIR):"
+        ls -la "$OUTPUT_DIR"
+        [ -d "$OUTPUT_DIR/dist" ] && ls -la "$OUTPUT_DIR/dist" | head -20 || true
+        [ -d "$OUTPUT_DIR/prisma" ] && echo "prisma: ok" || true
+        [ -d "$OUTPUT_DIR/node_modules" ] && du -sh "$OUTPUT_DIR/node_modules" || true
 
     - name: Set output path
       id: set-path
       shell: bash
-      run: echo "path=deployment-artifact" >> $GITHUB_OUTPUT
+      run: echo "path=${{ inputs.output_dir }}" >> "$GITHUB_OUTPUT"

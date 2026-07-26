@@ -678,7 +678,11 @@ jobs:
 ### 3.15 Publish-Package
 
 **File:** `.github/workflows/Publish-Package.yml`  
-**Purpose:** Publishes a Maven package to GitHub Packages at a specific tag. Sets the POM version to match the tag (stripping the leading `v`), builds all modules, then runs `mvn deploy`.
+**Purpose:** Publishes packages to GitHub Packages from a specific tag. Supports Maven (`mvn`) and npm monorepos (`npm`).
+
+#### Maven
+
+Sets the POM version to match the tag (stripping the leading `v`), builds all modules, then runs `mvn deploy`.
 
 ```yaml
 jobs:
@@ -686,7 +690,7 @@ jobs:
     uses: your-org/templates/.github/workflows/Publish-Package.yml@main
     with:
       source_tag: 'v1.4.2'        # tag to checkout and publish
-      package_manager: 'mvn'      # only 'mvn' is supported today
+      package_manager: 'mvn'      # Maven publish
       java_version: '17'          # default: '17'
       server_id: 'github'         # default: 'github'
     permissions:
@@ -694,7 +698,31 @@ jobs:
       packages: write
 ```
 
-> The workflow uses `GITHUB_TOKEN` implicitly via `actions/setup-java` — no additional secrets are required.
+> The Maven job uses `GITHUB_TOKEN` implicitly via `actions/setup-java` — no additional secrets are required.
+
+#### npm (Changesets monorepos)
+
+Checks out the tag, runs `npm ci`, builds publishable packages, then publishes to GitHub Packages. Configure the monorepo root and commands to match your repo scripts.
+
+```yaml
+jobs:
+  publish:
+    uses: your-org/templates/.github/workflows/Publish-Package.yml@main
+    with:
+      source_tag: 'v2.0.0'
+      package_manager: 'npm'
+      monorepo_root: '.'                    # default: '.'
+      node_version: '22'                    # default: '22'
+      npm_build_command: 'npm run release:build'
+      npm_publish_command: 'npm run release:publish'
+    secrets:
+      NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+    permissions:
+      contents: read
+      packages: write
+```
+
+> Add repository secret **`NPM_TOKEN`** with an npm automation token that can publish `@nabarun-ngo/*` packages. The monorepo must include a committed `package-lock.json` and an `.npmrc` scoped to GitHub Packages.
 
 ---
 
@@ -1620,4 +1648,67 @@ Use these prefixes so `Create-Tag-Release` produces categorised release notes:
 
 ---
 
-*Last updated: 2026-06-09*
+## 10. Generic Node.js deploy inputs
+
+`Deploy-GCP-v2.yml` and `Deploy-Firebase.yml` support **layout-agnostic** parameters for any Node.js app (single-repo, monorepo, SPA, API). All new inputs are optional; defaults preserve legacy single-repo root behavior.
+
+### New composite actions
+
+| Action | Purpose |
+|--------|---------|
+| `render-platform-config` | Render GAE/platform yaml from template via envsubst |
+| `inject-hosting-config` | Copy external `firebase.json` into app workspace |
+| `prepare-node-artifact` (extended) | Stage deploy artifacts with `app_root`, `node_modules_strategy`, etc. |
+
+### Deploy-GCP-v2 Node layout inputs
+
+| Input | Default | Description |
+|-------|---------|-------------|
+| `build_root` | `.` | Where install/build run |
+| `app_root` | `.` | Deployable package root |
+| `artifact_dist_path` | `dist` | Build output within app_root |
+| `artifact_include` | `prisma` | Extra paths to copy |
+| `artifact_extra_files` | `''` | `source:dest` file pairs |
+| `node_modules_strategy` | `app_local` | `app_local`, `root_hoisted`, or `skip` |
+| `workspace_packages_glob` | `''` | Workspace package sync glob |
+| `platform_config_source` | `repo` | `repo` or `external` |
+| `platform_config_path` | `''` | Template path in external config repo |
+| `platform_config_vars` | `{}` | JSON for envsubst |
+| `external_config_repo` | `''` | Config repo (`org/repo`) |
+| `external_config_ref` | `main` | Config repo ref |
+
+### Deploy-Firebase hosting inputs
+
+| Input | Default | Description |
+|-------|---------|-------------|
+| `build_root` | `.` | Build command working directory |
+| `hosting_config_source` | `repo` | `repo` or `external` |
+| `hosting_config_path` | `''` | Path to firebase.json in config repo |
+| `external_config_repo` / `external_config_ref` | | External config source |
+
+### Example: monorepo API deploy caller
+
+```yaml
+uses: your-org/templates/.github/workflows/Deploy-GCP-v2.yml@main
+with:
+  app_type: node
+  repo_name: my-api-monorepo
+  repo_owner_name: my-org
+  build_root: .
+  app_root: apps/api
+  install_command: npm ci
+  build_command: npm run build
+  node_modules_strategy: root_hoisted
+  workspace_packages_glob: packages/*
+  artifact_include: prisma,prisma.config.ts
+  artifact_extra_files: infra/appengine/start.sh:start.sh
+  platform_config_source: external
+  platform_config_path: config/deploy/gae/app.yaml.template
+  platform_config_vars: '{"GAE_SERVICE":"api-staging"}'
+  external_config_repo: my-org/my-ops
+  gae_service_name: api-staging
+```
+
+---
+
+*Last updated: 2026-07-26*

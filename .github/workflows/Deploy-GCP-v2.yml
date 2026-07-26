@@ -179,6 +179,73 @@ on:
         required: false
         type: boolean
         default: true
+
+      # Generic Node.js layout inputs
+      build_root:
+        description: "Directory where install and build commands run"
+        required: false
+        type: string
+        default: '.'
+      app_root:
+        description: "Deployable app package root relative to repository root"
+        required: false
+        type: string
+        default: '.'
+      artifact_dist_path:
+        description: "Build output directory relative to app_root"
+        required: false
+        type: string
+        default: 'dist'
+      artifact_include:
+        description: "Comma-separated extra paths relative to app_root for artifact"
+        required: false
+        type: string
+        default: 'prisma'
+      artifact_extra_files:
+        description: "Comma-separated source:dest file copies into artifact"
+        required: false
+        type: string
+        default: ''
+      node_modules_strategy:
+        description: "app_local, root_hoisted, or skip"
+        required: false
+        type: string
+        default: 'app_local'
+      workspace_packages_glob:
+        description: "Glob for workspace packages to sync (e.g. packages/*)"
+        required: false
+        type: string
+        default: ''
+      output_dir:
+        description: "Prepared Node artifact directory name"
+        required: false
+        type: string
+        default: 'deployment-artifact'
+      platform_config_source:
+        description: "repo or external"
+        required: false
+        type: string
+        default: 'repo'
+      platform_config_path:
+        description: "Path to platform config template in external repo"
+        required: false
+        type: string
+        default: ''
+      platform_config_vars:
+        description: "JSON variables for platform config rendering"
+        required: false
+        type: string
+        default: '{}'
+      external_config_repo:
+        description: "External config repository (org/repo)"
+        required: false
+        type: string
+        default: ''
+      external_config_ref:
+        description: "Branch or tag for external config repository"
+        required: false
+        type: string
+        default: 'main'
       
     outputs:
       # Build outputs
@@ -291,10 +358,12 @@ jobs:
       
       - name: Install dependencies (Node - with dev dependencies)
         if: inputs.app_type == 'node'
+        working-directory: ${{ inputs.build_root }}
         run: ${{ inputs.install_command }}
       
       - name: Build Node Application
         if: inputs.app_type == 'node'
+        working-directory: ${{ inputs.build_root }}
         run: ${{ inputs.build_command }}
       
       - name: Prepare production deployment artifact
@@ -302,6 +371,13 @@ jobs:
         uses: nabarun-ngo/ngo-nabarun-templates/.github/actions/prepare-node-artifact@main
         with:
           artifact_pattern: ${{ inputs.artifact_pattern }}
+          app_root: ${{ inputs.app_root }}
+          artifact_dist_path: ${{ inputs.artifact_dist_path }}
+          artifact_include: ${{ inputs.artifact_include }}
+          artifact_extra_files: ${{ inputs.artifact_extra_files }}
+          node_modules_strategy: ${{ inputs.node_modules_strategy }}
+          workspace_packages_glob: ${{ inputs.workspace_packages_glob }}
+          output_dir: ${{ inputs.output_dir }}
           package_manager: ${{ inputs.package_manager }}
           include_node_modules: ${{ inputs.include_node_modules }}
           install_doppler_cli: ${{ inputs.install_doppler_cli }}
@@ -314,7 +390,7 @@ jobs:
         id: find-node-artifacts
         run: |
           if [ "${{ inputs.prod_only_dependencies }}" == "true" ]; then
-            echo "artifact_pattern=deployment-artifact" >> $GITHUB_OUTPUT
+            echo "artifact_pattern=${{ inputs.output_dir }}" >> $GITHUB_OUTPUT
           else
             # Original behavior - use full directory
             PATTERN="${{ inputs.artifact_pattern }}"
@@ -352,7 +428,33 @@ jobs:
           path: ${{ steps.get-artifact-info.outputs.artifact_path }}
           retention-days: 1
           
-      - name: Upload app.yaml artifact
+      - name: Checkout external platform config
+        if: inputs.platform_config_source == 'external'
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ inputs.external_config_repo }}
+          ref: ${{ inputs.external_config_ref }}
+          path: external-config
+          token: ${{ secrets.repo_token }}
+
+      - name: Render external app.yaml
+        if: inputs.platform_config_source == 'external'
+        uses: nabarun-ngo/ngo-nabarun-templates/.github/actions/render-platform-config@main
+        with:
+          template_path: external-config/${{ inputs.platform_config_path }}
+          output_path: app.yaml
+          subst_vars: ${{ inputs.platform_config_vars }}
+
+      - name: Upload app.yaml artifact (external)
+        if: inputs.platform_config_source == 'external'
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-yaml-${{ steps.resolve_tag.outputs.resolved_tag }}
+          path: app.yaml
+          retention-days: 1
+
+      - name: Upload app.yaml artifact (repo)
+        if: inputs.platform_config_source != 'external'
         uses: actions/upload-artifact@v4
         with:
           name: app-yaml-${{ steps.resolve_tag.outputs.resolved_tag }}

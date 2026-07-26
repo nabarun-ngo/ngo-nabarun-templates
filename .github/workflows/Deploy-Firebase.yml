@@ -74,6 +74,31 @@ on:
         description: "Doppler config name (optional)"
         required: false
         type: string
+      build_root:
+        description: "Directory where the build command executes"
+        required: false
+        type: string
+        default: '.'
+      hosting_config_source:
+        description: "repo or external"
+        required: false
+        type: string
+        default: 'repo'
+      hosting_config_path:
+        description: "Path to firebase.json in external config repo"
+        required: false
+        type: string
+        default: ''
+      external_config_repo:
+        description: "External config repository (org/repo)"
+        required: false
+        type: string
+        default: ''
+      external_config_ref:
+        description: "Branch or tag for external config repository"
+        required: false
+        type: string
+        default: 'main'
     secrets:
       firebase_project_id:
         required: true
@@ -170,7 +195,7 @@ jobs:
         uses: nabarun-ngo/ngo-nabarun-templates/.github/actions/build-node@main
         with:
           node_version: ${{ inputs.node_version }}
-          working_directory: ${{ inputs.working_directory }}
+          working_directory: ${{ inputs.build_root != '' && inputs.build_root || inputs.working_directory }}
           command: ${{ inputs.npm_run_command }}
           package_manager: ${{ inputs.package_manager }}
           use_doppler: 'true'
@@ -184,7 +209,7 @@ jobs:
         uses: nabarun-ngo/ngo-nabarun-templates/.github/actions/build-node@main
         with:
           node_version: ${{ inputs.node_version }}
-          working_directory: ${{ inputs.working_directory }}
+          working_directory: ${{ inputs.build_root != '' && inputs.build_root || inputs.working_directory }}
           command: ${{ inputs.npm_run_command }}
           package_manager: ${{ inputs.package_manager }}
           use_doppler: 'false'
@@ -193,12 +218,13 @@ jobs:
         shell: bash
         run: |
           echo "🔍 Validating build output..."
-          BUILD_DIR="${{ inputs.working_directory }}/${{ inputs.build_output_dir }}"
+          ROOT="${{ inputs.build_root != '' && inputs.build_root || inputs.working_directory }}"
+          BUILD_DIR="${ROOT}/${{ inputs.build_output_dir }}"
           
           if [[ ! -d "$BUILD_DIR" ]]; then
             echo "❌ Build output directory not found: $BUILD_DIR"
-            echo "📁 Available directories in ${{ inputs.working_directory }}:"
-            ls -la "${{ inputs.working_directory }}" || echo "Could not list directory"
+            echo "📁 Available directories in ${ROOT}:"
+            ls -la "${ROOT}" || echo "Could not list directory"
             exit 1
           fi
           
@@ -243,6 +269,32 @@ jobs:
           name: firebase-build-${{ needs.build_application.outputs.resolved_tag }}
           path: ${{ inputs.working_directory }}/${{ inputs.build_output_dir }}
 
+      - name: Checkout external hosting config
+        if: inputs.hosting_config_source == 'external'
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ inputs.external_config_repo }}
+          ref: ${{ inputs.external_config_ref }}
+          path: external-config
+          token: ${{ secrets.repo_token }}
+
+      - name: Inject external hosting config
+        if: inputs.hosting_config_source == 'external'
+        uses: nabarun-ngo/ngo-nabarun-templates/.github/actions/inject-hosting-config@main
+        with:
+          config_source: external
+          external_config_path: external-config/${{ inputs.hosting_config_path }}
+          destination: firebase.json
+          working_directory: ${{ inputs.working_directory }}
+
+      - name: Validate repo hosting config
+        if: inputs.hosting_config_source != 'external'
+        uses: nabarun-ngo/ngo-nabarun-templates/.github/actions/inject-hosting-config@main
+        with:
+          config_source: repo
+          destination: firebase.json
+          working_directory: ${{ inputs.working_directory }}
+
       - name: Create GitHub Deployment
         uses: chrnorm/deployment-action@v2
         id: deployment
@@ -253,20 +305,6 @@ jobs:
           repo: ${{ inputs.repo_name }}
           owner: ${{ inputs.repo_owner_name }}
           ref: ${{ needs.build_application.outputs.resolved_tag }}
-
-      - name: Validate Firebase configuration
-        shell: bash
-        working-directory: ${{ inputs.working_directory }}
-        run: |
-          echo "🔍 Validating Firebase deployment configuration..."
-          
-          # Check Firebase configuration
-          if [[ ! -f "firebase.json" ]]; then
-            echo "❌ Firebase configuration file not found: firebase.json"
-            exit 1
-          fi
-          
-          echo "✅ Firebase configuration validated"
 
       - name: Deploy to Firebase Hosting
         id: firebase_deploy

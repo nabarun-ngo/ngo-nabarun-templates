@@ -1,0 +1,61 @@
+name: 'Inject Hosting Config'
+description: 'Copy external firebase.json into the app workspace before Firebase deploy'
+
+inputs:
+  config_source:
+    description: 'repo or external'
+    required: false
+    default: 'repo'
+  config_path:
+    description: 'Path to firebase.json when config_source=external (relative to external checkout or absolute)'
+    required: false
+    default: ''
+  destination:
+    description: 'Destination path for firebase.json'
+    required: false
+    default: 'firebase.json'
+  working_directory:
+    description: 'Working directory relative to workspace root'
+    required: false
+    default: '.'
+  external_config_path:
+    description: 'Absolute or workspace-relative path to already-checked-out external config file'
+    required: false
+    default: ''
+
+runs:
+  using: composite
+  steps:
+    - name: Inject hosting config from external source
+      if: inputs.config_source == 'external'
+      shell: bash
+      run: |
+        set -euo pipefail
+        WORKDIR="${{ inputs.working_directory }}"
+        DEST="${{ inputs.destination }}"
+        CONFIG="${{ inputs.external_config_path }}"
+
+        if [[ -z "$CONFIG" ]]; then
+          CONFIG="${{ inputs.config_path }}"
+        fi
+
+        if [[ ! -f "$CONFIG" ]]; then
+          echo "External hosting config not found: $CONFIG" >&2
+          exit 1
+        fi
+
+        mkdir -p "$WORKDIR"
+        cp "$CONFIG" "$WORKDIR/$DEST"
+        echo "Injected hosting config to $WORKDIR/$DEST"
+        cat "$WORKDIR/$DEST"
+
+    - name: Validate repo hosting config
+      if: inputs.config_source == 'repo'
+      shell: bash
+      working-directory: ${{ inputs.working_directory }}
+      run: |
+        if [[ ! -f "${{ inputs.destination }}" ]]; then
+          echo "Hosting config not found in repo: ${{ inputs.destination }}" >&2
+          exit 1
+        fi
+        echo "Using repo hosting config: ${{ inputs.destination }}"

@@ -1,0 +1,49 @@
+name: 'Render Platform Config'
+description: 'Render a platform config template via envsubst or copy a static config file'
+
+inputs:
+  template_path:
+    description: 'Path to template or static config file'
+    required: true
+  output_path:
+    description: 'Output file path'
+    required: false
+    default: 'app.yaml'
+  subst_vars:
+    description: 'JSON object of variables for envsubst (e.g. {"GAE_SERVICE":"api"})'
+    required: false
+    default: '{}'
+
+outputs:
+  output_path:
+    description: 'Path to rendered config file'
+    value: ${{ inputs.output_path }}
+
+runs:
+  using: composite
+  steps:
+    - name: Render platform config
+      shell: bash
+      run: |
+        set -euo pipefail
+        TEMPLATE="${{ inputs.template_path }}"
+        OUTPUT="${{ inputs.output_path }}"
+
+        if [[ ! -f "$TEMPLATE" ]]; then
+          echo "Config file not found: $TEMPLATE" >&2
+          exit 1
+        fi
+
+        SUBST_VARS='${{ inputs.subst_vars }}'
+        if [[ "$SUBST_VARS" == "{}" ]] || [[ -z "$SUBST_VARS" ]]; then
+          cp "$TEMPLATE" "$OUTPUT"
+          echo "Copied static config to $OUTPUT"
+        else
+          eval "$(echo "$SUBST_VARS" | jq -r 'to_entries[] | "export \(.key)=\(.value|@sh)"')"
+          VAR_LIST="$(echo "$SUBST_VARS" | jq -r 'keys[] | "${" + . + "}"' | paste -sd, -)"
+          envsubst "$VAR_LIST" < "$TEMPLATE" > "$OUTPUT"
+          echo "Rendered template to $OUTPUT with vars: $SUBST_VARS"
+        fi
+
+        echo "--- Rendered config preview ---"
+        head -20 "$OUTPUT"

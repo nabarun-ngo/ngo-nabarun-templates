@@ -1,21 +1,40 @@
-name: Publish to Github Packages
+name: Publish Package
 on:
   workflow_call:
-     inputs:
+    inputs:
       source_tag:
         required: true
         type: string
       package_manager:
-         required: true
-         type: string
+        required: true
+        type: string
       java_version:
-         required: false
-         type: string
-         default: '17'
+        required: false
+        type: string
+        default: '17'
       server_id:
-         required: false
-         type: string
-         default: 'github'
+        required: false
+        type: string
+        default: 'github'
+      monorepo_root:
+        required: false
+        type: string
+        default: '.'
+      node_version:
+        required: false
+        type: string
+        default: '22'
+      npm_build_command:
+        required: false
+        type: string
+        default: 'npm run release:build'
+      npm_publish_command:
+        required: false
+        type: string
+        default: 'npm run release:publish'
+    secrets:
+      NPM_TOKEN:
+        required: false
 
 jobs:
   mvn_publish:
@@ -40,25 +59,65 @@ jobs:
         server-id: ${{ inputs.server_id }}
         server-username: GITHUB_ACTOR
         server-password: GITHUB_TOKEN
-    
+
     - name: Update POM version
       run: |
         # Remove the leading 'v' if present (e.g., v1.0.4 -> 1.0.4)
         version="${{ inputs.source_tag }}"
         version="${version#v}"
-        echo "🔧 Setting POM version to: $version"
+        echo "Setting POM version to: $version"
         mvn versions:set -DnewVersion=$version -DgenerateBackupPoms=false -DprocessAllModules=true
         mvn versions:commit
-    
+
     - name: Build all modules
       run: mvn -B clean install
       env:
         GITHUB_ACTOR: ${{ github.actor }}
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-    
+
     - name: Publish modules to GitHub Packages
       run: mvn -B deploy -DskipTests
       env:
         GITHUB_ACTOR: ${{ github.actor }}
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+  npm_publish:
+    name: Publish npm Package
+    if: ${{ inputs.package_manager == 'npm' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    defaults:
+      run:
+        working-directory: ${{ inputs.monorepo_root }}
+
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        ref: ${{ inputs.source_tag }}
+
+    - name: Set up Node.js ${{ inputs.node_version }}
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ inputs.node_version }}
+        cache: npm
+        cache-dependency-path: ${{ inputs.monorepo_root }}/package-lock.json
+        registry-url: https://npm.pkg.github.com
+        scope: '@nabarun-ngo'
+
+    - name: Install dependencies
+      run: npm ci
+
+    - name: Build packages
+      run: ${{ inputs.npm_build_command }}
+      env:
+        NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+    - name: Publish to GitHub Packages
+      run: ${{ inputs.npm_publish_command }}
+      env:
+        NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
