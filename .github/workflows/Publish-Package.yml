@@ -28,6 +28,10 @@ on:
         required: false
         type: string
         default: 'npm run release:build'
+      npm_publish_scope:
+        required: false
+        type: string
+        default: '@nabarun-ngo'
       npm_publish_command:
         required: false
         type: string
@@ -105,7 +109,7 @@ jobs:
         cache: npm
         cache-dependency-path: ${{ inputs.monorepo_root }}/package-lock.json
         registry-url: https://npm.pkg.github.com
-        scope: '@nabarun-ngo'
+        scope: ${{ inputs.npm_publish_scope }}
 
     - name: Install dependencies
       run: npm ci
